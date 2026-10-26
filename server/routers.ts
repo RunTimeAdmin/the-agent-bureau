@@ -57,8 +57,8 @@ function getRequestIp(req: {
   ip?: string;
   socket?: { remoteAddress?: string };
 }): string {
-  // Express req.ip is the framework's resolved address. Do not trust a raw
-  // x-forwarded-for header; this server does not configure arbitrary proxy trust.
+  // Express req.ip honors X-Forwarded-For only from the private-network proxies
+  // trusted in server/_core/index.ts. Never read the raw header here.
   return req.ip?.trim() || req.socket?.remoteAddress?.trim() || "unknown";
 }
 

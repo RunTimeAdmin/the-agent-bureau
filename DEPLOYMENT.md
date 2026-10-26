@@ -82,7 +82,7 @@ The build emits real HTML for `/`, `/privacy`, and `/terms`, with a public-only 
 
 A successful contact submission means an inquiry was stored, not that an email was sent, an agent was booked, or payment was taken. No email delivery provider is configured. Service examples are illustrative. No token, wallet checkout, or Solana escrow is live.
 
-The rate limiters are in-memory and keyed by the Express-resolved connection IP. Behind a reverse proxy, every visitor may appear to come from the proxy's address and share one limit. Configure Express `trust proxy` for your host's proxy before relying on per-visitor limits.
+The rate limiters are in-memory and keyed by the visitor's IP. Express trusts `X-Forwarded-For` only when the request arrives from a loopback or private-network address, which covers a reverse proxy on the same server or internal network (as on Hostinger). If your proxy connects from a public address, every visitor will share one limit; adjust `trust proxy` in `server/_core/index.ts` for that host.
 
 ## Final checks on your own host
 

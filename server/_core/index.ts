@@ -9,6 +9,10 @@ import { serveStatic, setupVite } from "./vite";
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Hosts such as Hostinger put the app behind a reverse proxy. Take the client
+  // address from X-Forwarded-For only when the proxy is on a loopback or
+  // private address, so visitors cannot spoof it from the internet.
+  app.set("trust proxy", "loopback, linklocal, uniquelocal");
   // The largest request is a 4,000-character inquiry; there are no uploads.
   app.use(express.json({ limit: "100kb" }));
   app.use(express.urlencoded({ limit: "100kb", extended: true }));
