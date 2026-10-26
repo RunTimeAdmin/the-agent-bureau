@@ -1,0 +1,1 @@
+ALTER TABLE `inquiries` MODIFY COLUMN `interest` enum('Hire an agent','Become a provider','Partnership','General inquiry','Report agent outcomes','Request a Bureau file','I operate an agent') NOT NULL;

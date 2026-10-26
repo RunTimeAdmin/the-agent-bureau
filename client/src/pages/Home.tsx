@@ -5,116 +5,157 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
-  Fingerprint,
-  Layers3,
-  ShieldCheck,
-  Radar,
-  ScanLine,
-  Workflow,
   FileCheck2,
-  LockKeyhole,
-  UserRoundCheck,
-  Plus,
   Minus,
+  Plus,
+  Scale,
+  ScrollText,
+  ShieldCheck,
 } from "lucide-react";
 import { Header, Footer } from "@/components/SiteChrome";
 import HeroVisual from "@/components/HeroVisual";
 import ContactForm from "@/components/ContactForm";
-import ServiceDialog from "@/components/ServiceDialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  artwork,
-  categories,
-  services,
-  startInquiry,
-  type Category,
-  type Service,
-} from "@/lib/bureau";
-const serviceIcons = {
-  shield: ShieldCheck,
-  fingerprint: Fingerprint,
-  layers: Layers3,
-  radar: Radar,
-  scan: ScanLine,
-  workflow: Workflow,
-};
-const steps = [
+import { FURNISH_TOOL_URL, startInquiry } from "@/lib/bureau";
+
+const fileSections = [
   {
-    name: "Define the mission",
-    tag: "01 / SCOPE",
-    title: "Start with an outcome. Not a prompt.",
-    text: "Tell us what you need to know or get done. We agree on inputs, exclusions, deliverables, and acceptance criteria before the work starts.",
+    name: "Subject",
+    tag: "01 / SUBJECT",
+    title: "One operator, however many registrations.",
+    text: "The Bureau matches registrations across chains to the operator behind them, and says why: the same owner wallet, a signed claim, or a shared identity. Matches it can't confirm are listed apart and never merged.",
     lines: [
-      "Desired outcome documented",
-      "Data boundaries agreed",
-      "Scope and price confirmed",
+      "Registrations matched across Base, Arc and Solana",
+      "The basis for every match, shown",
+      "Unconfirmed matches listed separately",
     ],
   },
   {
-    name: "Match the specialist",
-    tag: "02 / ASSIGN",
-    title: "The right capability. A named owner.",
-    text: "The Bureau matches a provider to the brief. Their tools, experience, data handling, and human-review responsibilities are made explicit.",
+    name: "Public record",
+    tag: "02 / PUBLIC RECORD",
+    title: "What the registries already show.",
+    text: "First seen, registry events, ownership changes and revoked ratings, read from the public chain registries along with when they were read.",
     lines: [
-      "Provider and human sponsor named",
-      "Tools and review points disclosed",
-      "Capacity and timeline confirmed",
+      "First seen and registry events",
+      "Ownership changes on record",
+      "Share of ratings revoked",
     ],
   },
   {
-    name: "Review the delivery",
-    tag: "03 / REVIEW",
-    title: "Evidence you can actually inspect.",
-    text: "Receive a bounded deliverable, supporting evidence, and clear limitation notes. Ask for clarification or the agreed revision before accepting.",
+    name: "Payment history",
+    tag: "03 / PAYMENTS",
+    title: "Who it paid, and who paid it.",
+    text: "Payments the operator received on-chain, with count, volume and distinct payers, plus subscription charges it paid or missed, over the last 90 and 365 days.",
     lines: [
-      "Versioned deliverable shared",
-      "Evidence and limitations included",
-      "Customer review and revision",
+      "Payments received, by distinct payer",
+      "Subscription charges paid and failed",
+      "90 and 365 day windows",
     ],
   },
   {
-    name: "Keep the record",
-    tag: "04 / CLOSE",
-    title: "A record of what was done.",
-    text: "Close the engagement with the agreed work receipt. Its scope, provider, dates, and output references tell a clear story without exposing your private files.",
+    name: "Reported outcomes",
+    tag: "04 / OUTCOMES",
+    title: "What businesses saw firsthand.",
+    text: "Outcomes reported by the businesses that dealt with the agent: paid, delivered, cut off, disputed. Each line links to its sealed record, and a negative needs evidence before it shows.",
     lines: [
-      "Scope and provider recorded",
-      "Acceptance status documented",
-      "Private material stays private",
+      "Counts by outcome and window",
+      "Number of distinct reporting businesses",
+      "Evidence behind every negative",
+    ],
+  },
+  {
+    name: "Disputes and statements",
+    tag: "05 / DISPUTES",
+    title: "The owner's side, on the same page.",
+    text: "Open and closed disputes with their results, the owner's own statement, and a record of who pulled the file.",
+    lines: [
+      "Disputes and their results",
+      "Owner statement, up to 500 characters",
+      "File pulls in the last 90 days",
+    ],
+  },
+  {
+    name: "Not on file",
+    tag: "06 / BLIND SPOTS",
+    title: "And what the Bureau couldn't see.",
+    text: "Every file lists its blind spots, such as batched settlement and chains it doesn't read. Nothing is rolled up into a score, a grade or a recommendation.",
+    lines: [
+      "Known blind spots, listed",
+      "No score or grade",
+      "No recommendation",
     ],
   },
 ];
-const work = [
+
+const furnisherCards = [
   {
-    title: "From invisible tools to a clear exposure map.",
-    type: "MCP SECURITY / ILLUSTRATIVE ENGAGEMENT",
-    image: artwork.security,
-    description:
-      "A sample review of an agent configuration, translating tool access and permission boundaries into a prioritized remediation brief.",
-    deliverables: [
-      "Redacted tool inventory",
-      "Permission boundary observations",
-      "Prioritized remediation brief",
-    ],
+    icon: ScrollText,
+    code: "01 / REPORT",
+    title: "What you send",
+    text: "One line per outcome: paid, payment failed, delivered, not delivered, disputed, refunded, access revoked or policy violation. Your reference, the agent, the time, an amount for payments, and evidence for negatives.",
+    link: { label: "Event format", href: `${FURNISH_TOOL_URL}#csv-columns` },
   },
   {
-    title: "Trace the origin. Make the evidence useful.",
-    type: "CONTENT PROVENANCE / ILLUSTRATIVE ENGAGEMENT",
-    image: artwork.provenance,
-    description:
-      "A sample provenance check, bringing metadata and fingerprint observations together with honest notes on what can and cannot be established.",
-    deliverables: [
-      "Metadata and fingerprint summary",
-      "Available lineage observations",
-      "Evidence gaps and limitations",
-    ],
+    icon: FileCheck2,
+    code: "02 / SIGN",
+    title: "How you send it",
+    text: "Export a CSV and sign it with our free, open-source tool. The signature proves the report came from you and hasn't changed since.",
+    command: "npx github:RunTimeAdmin/agent-bureau-furnish",
+    link: { label: "Signing tool", href: FURNISH_TOOL_URL },
+  },
+  {
+    icon: ShieldCheck,
+    code: "03 / PROTECT",
+    title: "What we commit to",
+    text: "Your reports appear only inside Bureau files: never resold raw, never published, including on Nooscape. Subscribers see your category, not your name, unless you opt in. You can stop at any time.",
+    link: { label: "Site terms", href: "/terms" },
   },
 ];
+
+const rules = [
+  {
+    icon: Scale,
+    title: "Facts, never a verdict.",
+    text: "A file says what happened, when, and where the record came from. No line rolls up into a score; subscribers set their own thresholds.",
+  },
+  {
+    icon: FileCheck2,
+    title: "Evidence for every negative.",
+    text: "A missed payment or a cut-off needs a transaction hash or a log reference. Without evidence it is held, not shown.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Complete, not selective.",
+    text: "Businesses report every outcome of a type for the agents they report on, good and bad. Reporting only negatives gets a business dropped.",
+  },
+];
+
+const parties = [
+  {
+    label: "01 / FURNISHERS",
+    name: "Report outcomes, get files",
+    state: "PILOT OPEN",
+    copy: "Vetted businesses send signed outcome reports, and each one is sealed in a tamper-evident log before it can reach a file. During the pilot, a business that hasn't set up signing can send a CSV through a channel agreed when it joins; those lines are labeled unsigned.",
+  },
+  {
+    label: "02 / SUBSCRIBERS",
+    name: "Check an agent before you transact",
+    state: "BY REQUEST",
+    copy: "Ask for a file before you serve an agent, bill it later or give it terms. During the pilot, files are assembled by hand and sent signed. Pricing after the pilot is still being set.",
+  },
+  {
+    label: "03 / AGENT OWNERS",
+    name: "See and dispute your file",
+    state: "FREE",
+    copy: "Prove control by signing one message with the wallet that owns the registration. Dispute any line: the business that reported it has 15 days to back it up, or the line comes off. You can also add a statement to your file.",
+  },
+  {
+    label: "04 / LIMITS",
+    name: "What the Bureau doesn't do",
+    state: "BY DESIGN",
+    copy: "No scores, no rankings for sale, no token. Reported data never appears on public sites, and paying never changes a record. Files cover agents and the businesses that run them, and must not be used to decide a person's credit, employment, insurance or housing.",
+  },
+];
+
 function Reveal({
   children,
   className = "",
@@ -139,68 +180,45 @@ function Reveal({
     </motion.div>
   );
 }
-function Roadmap() {
+
+function Parties() {
   const [open, setOpen] = useState(0);
-  const phases = [
-    {
-      label: "01 / NOW",
-      name: "The curated bureau",
-      state: "EARLY ACCESS",
-      copy: "Scoped inquiries, specialist matching, accountable delivery. No wallet required. Pricing and availability are confirmed before engagement.",
-    },
-    {
-      label: "02 / PLANNED",
-      name: "Optional Solana payments",
-      state: "NOT LIVE",
-      copy: "SOL and native USDC payment escrow, subject to implementation, independent security review, and a limited pilot. There is no crypto checkout or deployed Bureau escrow on this website.",
-    },
-    {
-      label: "03 / EXPLORING",
-      name: "Portable provider credentials",
-      state: "NOT ISSUED",
-      copy: "An optional, non-transferable provider credential could record a completed vetting check. Current approval, renewal, and revocation would still require an accountable process.",
-    },
-    {
-      label: "04 / CONDITIONAL",
-      name: "Useful access, not speculation",
-      state: "NO TOKEN LAUNCHED",
-      copy: "Potential sandbox or advanced provider tools, only when real demand and legal review support them. Core hiring, dispute rights, and trust status would not depend on buying a tradable token.",
-    },
-  ];
   return (
     <div className="roadmap-list">
-      {phases.map((phase, index) => (
+      {parties.map((party, index) => (
         <div
-          key={phase.name}
+          key={party.name}
           className={`roadmap-item ${open === index ? "open" : ""}`}
         >
           <button
             onClick={() => setOpen(open === index ? -1 : index)}
             aria-expanded={open === index}
-            aria-controls={`phase-${index}`}
+            aria-controls={`party-${index}`}
           >
-            <span className="mini-label">{phase.label}</span>
-            <span>{phase.name}</span>
+            <span className="mini-label">{party.label}</span>
+            <span>{party.name}</span>
             {open === index ? <Minus size={19} /> : <Plus size={19} />}
           </button>
-          <div id={`phase-${index}`} hidden={open !== index}>
-            <span className="phase-state">{phase.state}</span>
-            <p>{phase.copy}</p>
+          <div id={`party-${index}`} hidden={open !== index}>
+            <span className="phase-state">{party.state}</span>
+            <p>{party.copy}</p>
           </div>
         </div>
       ))}
     </div>
   );
 }
-export default function Home() {
-  const [category, setCategory] = useState<Category>("All capabilities");
-  const [service, setService] = useState<Service | null>(null);
-  const [step, setStep] = useState(0);
-  const [caseStudy, setCaseStudy] = useState<number | null>(null);
-  const activeWork = caseStudy === null ? null : work[caseStudy];
-  const filtered = services.filter(
-    item => category === "All capabilities" || item.category === category
+
+function joinAsFurnisher() {
+  startInquiry(
+    "Report agent outcomes",
+    "We run: \n\nOutcomes we could report: "
   );
+}
+
+export default function Home() {
+  const [section, setSection] = useState(0);
+  const active = fileSections[section];
   return (
     <>
       <Header />
@@ -209,23 +227,24 @@ export default function Home() {
           <div className="hero-grid">
             <div className="hero-copy">
               <div className="eyebrow">
-                <i /> THE NEXT WAY TO GET REAL WORK DONE
+                <i /> THE AGENT BUREAU / PILOT 2026
               </div>
               <h1>
-                Intelligence.
+                The file on
                 <br />
-                On <span className="serif">assignment.</span>
+                every <span className="serif">agent.</span>
               </h1>
               <p className="hero-description">
-                Specialist agents. Clear scope. A human accountable for the
-                result. Meet the bureau built for work that needs to be right.
+                One file per AI agent operator across five chains, built from
+                outcomes reported by the businesses that deal with agents.
+                Facts with sources. Never a score.
               </p>
               <div className="hero-actions">
-                <a className="button button-primary" href="#capabilities">
-                  Find your capability <ArrowUpRight size={18} />
+                <a className="button button-primary" href="#furnish">
+                  Join as a furnisher <ArrowUpRight size={18} />
                 </a>
-                <a className="hero-secondary" href="#process">
-                  How the bureau works{" "}
+                <a className="hero-secondary" href="#file">
+                  See what a file shows{" "}
                   <span>
                     <ArrowRight size={17} />
                   </span>
@@ -233,140 +252,59 @@ export default function Home() {
               </div>
               <div className="hero-assurance">
                 <ShieldCheck size={15} />
-                <span>Curated by design</span>
+                <span>Facts, not scores</span>
                 <span className="assurance-dot">·</span>
-                <span>Evidence-led delivery</span>
+                <span>Owners can dispute</span>
               </div>
             </div>
             <HeroVisual />
           </div>
           <div className="hero-foot">
-            <a href="#capabilities">
-              <ArrowDown size={14} /> EXPLORE THE BUREAU
+            <a href="#file">
+              <ArrowDown size={14} /> EXPLORE THE FILE
             </a>
-            <span>HUMAN OVERSIGHT. MACHINE CAPABILITY.</span>
-            <span>EST. 2026</span>
+            <span>EVIDENCE ON EVERY LINE.</span>
+            <span>PILOT 2026</span>
           </div>
         </section>
-        <div
-          className="principle-strip"
-          aria-label="Bureau operating principles"
-        >
+        <div className="principle-strip" aria-label="Bureau principles">
           <span>
-            <i /> CLEAR SCOPE
+            <i /> FACTS, NOT SCORES
           </span>
-          <span>ACCOUNTABLE PROVIDERS</span>
-          <span>TRACEABLE DELIVERABLES</span>
-          <span>HUMAN REVIEW</span>
-          <span>NO WALLET REQUIRED</span>
+          <span>EVIDENCE FOR NEGATIVES</span>
+          <span>OWNERS CAN DISPUTE</span>
+          <span>FIVE CHAINS</span>
+          <span>NO TOKEN</span>
         </div>
-        <section className="section capabilities" id="capabilities">
+        <section className="section process" id="file">
           <Reveal className="section-heading">
             <div>
               <span className="eyebrow section-index">
-                01 / THE CAPABILITIES
+                01 / WHAT A FILE SHOWS
               </span>
               <h2>
-                A specialist for
+                Everything on record.
                 <br />
-                <span className="serif">the important stuff.</span>
+                <span className="serif">Nothing made up.</span>
               </h2>
             </div>
             <p>
-              Not another directory of everything.
-              <br />A focused set of capabilities for AI,
-              <br />
-              software, and the trust in between.
-            </p>
-          </Reveal>
-          <div className="catalog-toolbar">
-            <div
-              className="category-tabs"
-              role="group"
-              aria-label="Filter capabilities"
-            >
-              {categories.map(item => (
-                <button
-                  key={item}
-                  className={category === item ? "selected" : ""}
-                  onClick={() => setCategory(item)}
-                  aria-pressed={category === item}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-            <span className="catalog-count" aria-live="polite">
-              {String(filtered.length).padStart(2, "0")} CAPABILITIES
-            </span>
-          </div>
-          <div className="service-grid">
-            {filtered.map((item, index) => {
-              const Icon = serviceIcons[item.icon];
-              return (
-                <Reveal key={item.id} delay={Math.min(index * 0.04, 0.16)}>
-                  <button
-                    className="service-card"
-                    onClick={() => setService(item)}
-                  >
-                    <div className="service-top">
-                      <span className="service-icon">
-                        <Icon size={23} />
-                      </span>
-                      <span className="mini-label">{item.code}</span>
-                    </div>
-                    <div className="service-content">
-                      <span className="service-category">{item.category}</span>
-                      <h3>{item.title}</h3>
-                      <p>{item.description}</p>
-                    </div>
-                    <div className="service-bottom">
-                      <span>Explore the scope</span>
-                      <ArrowUpRight size={20} />
-                    </div>
-                  </button>
-                </Reveal>
-              );
-            })}
-          </div>
-          <p className="catalog-note">
-            <span className="status-dot" />
-            Pilot service menu. Scope, provider availability, and pricing are
-            confirmed individually.
-          </p>
-        </section>
-        <section className="section process" id="process">
-          <Reveal className="section-heading">
-            <div>
-              <span className="eyebrow section-index">
-                02 / FROM BRIEF TO EVIDENCE
-              </span>
-              <h2>
-                Less black box.
-                <br />
-                <span className="serif">More follow-through.</span>
-              </h2>
-            </div>
-            <p>
-              A simple, considered process.
-              <br />
-              Built around the outcome,
-              <br />
-              not the agent hype.
+              One file per operator. Every line carries its date, its source
+              and its evidence. No line rolls up into a score.
             </p>
           </Reveal>
           <div className="process-grid">
             <div
               className="process-steps"
               role="group"
-              aria-label="Explore the hiring and delivery process"
+              aria-label="Sections of a Bureau file"
             >
-              {steps.map((item, index) => (
+              {fileSections.map((item, index) => (
                 <button
                   key={item.name}
-                  className={step === index ? "active" : ""}
-                  onClick={() => setStep(index)}
-                  aria-pressed={step === index}
+                  className={section === index ? "active" : ""}
+                  onClick={() => setSection(index)}
+                  aria-pressed={section === index}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <h3>{item.name}</h3>
@@ -375,170 +313,71 @@ export default function Home() {
               ))}
             </div>
             <div className="process-detail" aria-live="polite">
-              <span className="mini-label">{steps[step].tag}</span>
-              <h3>{steps[step].title}</h3>
-              <p>{steps[step].text}</p>
+              <span className="mini-label">{active.tag}</span>
+              <h3>{active.title}</h3>
+              <p>{active.text}</p>
               <div className="dossier">
                 <div className="dossier-head">
                   <span>
-                    <FileCheck2 size={16} /> BUREAU WORK RECORD
+                    <FileCheck2 size={16} /> BUREAU FILE
                   </span>
                   <span>EXAMPLE</span>
                 </div>
-                {steps[step].lines.map(line => (
+                {active.lines.map(line => (
                   <div key={line}>
                     <Check size={14} />
                     <span>{line}</span>
                   </div>
                 ))}
                 <div className="dossier-foot">
-                  <span>ILLUSTRATIVE WORKFLOW</span>
-                  <span>NOT A LIVE ORDER</span>
+                  <span>ILLUSTRATIVE</span>
+                  <span>NOT A REAL AGENT</span>
                 </div>
               </div>
             </div>
           </div>
-        </section>
-        <section className="section selected-work" id="work">
-          <Reveal className="section-heading">
-            <div>
-              <span className="eyebrow section-index">
-                03 / WHAT THE WORK LOOKS LIKE
-              </span>
-              <h2>
-                From complexity
-                <br />
-                <span className="serif">to something clear.</span>
-              </h2>
-            </div>
-            <p>
-              Illustrative engagements that show
-              <br />
-              the kind of work we're designed for.
-              <br />
-              Not customer case studies.
-            </p>
-          </Reveal>
-          <div className="work-grid">
-            {work.map((item, index) => (
-              <Reveal key={item.title} delay={index * 0.1}>
-                <button
-                  className="work-card"
-                  onClick={() => setCaseStudy(index)}
-                >
-                  <div className="work-image">
-                    <img
-                      src={item.image}
-                      alt={
-                        index === 0
-                          ? "Abstract tool connections with contained security signals"
-                          : "Layered materials illuminated for provenance inspection"
-                      }
-                      loading="lazy"
-                    />
-                    <span className="work-image-label">
-                      ILLUSTRATIVE ENGAGEMENT
-                    </span>
-                    <span className="work-image-arrow">
-                      <ArrowUpRight size={24} />
-                    </span>
-                  </div>
-                  <span className="mini-label">{item.type}</span>
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
-                </button>
-              </Reveal>
-            ))}
-          </div>
-        </section>
-        <section className="approach" id="approach">
-          <div className="section approach-inner">
-            <Reveal>
-              <span className="eyebrow section-index">
-                04 / THE BUREAU STANDARD
-              </span>
-              <h2>
-                AI can do more.
-                <br />
-                Trust should
-                <br />
-                <span className="serif">mean more, too.</span>
-              </h2>
-              <p className="approach-intro">
-                We believe useful intelligence needs more than a clever demo. It
-                needs boundaries, a named owner, and work you can inspect.
-              </p>
-              <a href="#contact" className="text-link">
-                Build with the bureau <ArrowUpRight size={18} />
+          <p className="catalog-note">
+            <span className="status-dot" />
+            <span>
+              Files draw on{" "}
+              <a href="https://nooscape.si" target="_blank" rel="noreferrer">
+                Nooscape
               </a>
-            </Reveal>
-            <div className="trust-principles">
-              {[
-                {
-                  icon: UserRoundCheck,
-                  title: "A person behind the provider.",
-                  text: "Provider onboarding is designed to check identity, relevant work, tools, and human-review responsibilities. Approval is not a blanket guarantee of quality.",
-                },
-                {
-                  icon: LockKeyhole,
-                  title: "Boundaries before capability.",
-                  text: "Agree what the work can access and what it cannot. No secrets in the inquiry form. Sensitive data handling is scoped before transfer.",
-                },
-                {
-                  icon: FileCheck2,
-                  title: "Evidence, not inflated claims.",
-                  text: "Deliverables should include context, limitations, and a clear review path. Findings should distinguish observations from assumptions, with no unsupported trust scores or guarantees.",
-                },
-              ].map((item, index) => (
-                <Reveal
-                  key={item.title}
-                  className="trust-principle"
-                  delay={index * 0.08}
-                >
-                  <item.icon size={23} />
-                  <div>
-                    <span className="mini-label">STANDARD / 0{index + 1}</span>
-                    <h3>{item.title}</h3>
-                    <p>{item.text}</p>
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-          </div>
+              's public agent atlas and{" "}
+              <a href="https://sigvara.xyz" target="_blank" rel="noreferrer">
+                Sigvara
+              </a>
+              's on-chain standing, alongside outcomes businesses report.
+            </span>
+          </p>
         </section>
-        <section className="section provider-section" id="providers">
+        <section className="section provider-section" id="furnish">
           <Reveal className="provider-panel">
             <div>
-              <span className="eyebrow">FOR THE SPECIALISTS</span>
+              <span className="eyebrow">
+                02 / FOR BUSINESSES THAT DEAL WITH AGENTS
+              </span>
               <h2>
-                Good at the work?
+                You already know
                 <br />
-                <span className="serif">Join the bureau.</span>
+                who pays. <span className="serif">Report it.</span>
               </h2>
               <p>
-                We're shaping our founding provider roster. Bring a focused
-                capability, a sample deliverable, and a clear explanation of how
-                your agents work.
+                If your API, MCP server or marketplace deals with AI agents,
+                you know which ones pay, deliver and stay within your rules.
+                Report those outcomes, and check every agent's record with the
+                businesses that saw it before you.
               </p>
-              <button
-                className="button button-primary"
-                onClick={() =>
-                  startInquiry(
-                    "Become a provider",
-                    "I'd like to join the founding provider roster.\n\nMy specialist capability is: "
-                  )
-                }
-              >
-                Introduce your capability <ArrowUpRight size={18} />
+              <button className="button button-primary" onClick={joinAsFurnisher}>
+                Join the pilot <ArrowUpRight size={18} />
               </button>
             </div>
             <div className="provider-list">
-              <span className="mini-label">THE FOUNDING PROVIDER PATH</span>
+              <span className="mini-label">WHAT YOU GET</span>
               {[
-                "Introduce your specialism",
-                "Show a sample deliverable",
-                "Agree the service boundaries",
-                "Complete a scoped pilot",
+                "Free Bureau files during the pilot",
+                "Alerts on agents you reported on",
+                "A record bad operators can't rename away",
               ].map((item, index) => (
                 <div key={item}>
                   <span>0{index + 1}</span>
@@ -547,55 +386,127 @@ export default function Home() {
                 </div>
               ))}
               <small>
-                Applications are expressions of interest.
+                The 90-day pilot is free for furnishers.
                 <br />
-                Listings and vetting are not automatic.
+                Draft terms, pending legal review.
               </small>
             </div>
           </Reveal>
+          <div className="service-grid furnisher-cards">
+            {furnisherCards.map((card, index) => {
+              const Icon = card.icon;
+              const external = card.link.href.startsWith("http");
+              return (
+                <Reveal key={card.title} delay={Math.min(index * 0.05, 0.15)}>
+                  <div className="service-card info">
+                    <div className="service-top">
+                      <span className="service-icon">
+                        <Icon size={23} />
+                      </span>
+                      <span className="mini-label">{card.code}</span>
+                    </div>
+                    <div className="service-content">
+                      <h3>{card.title}</h3>
+                      <p>{card.text}</p>
+                      {card.command && (
+                        <code className="code-line">{card.command}</code>
+                      )}
+                    </div>
+                    <a
+                      className="service-bottom"
+                      href={card.link.href}
+                      {...(external
+                        ? { target: "_blank", rel: "noreferrer" }
+                        : {})}
+                    >
+                      <span>{card.link.label}</span>
+                      <ArrowUpRight size={20} />
+                    </a>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
         </section>
-        <section className="section future-section" id="roadmap">
-          <Reveal className="section-heading">
-            <div>
+        <section className="approach" id="rules">
+          <div className="section approach-inner">
+            <Reveal>
               <span className="eyebrow section-index">
-                05 / BUILT TO EVOLVE
+                03 / THE BUREAU RULES
               </span>
               <h2>
-                Useful first.
+                Facts first.
                 <br />
-                <span className="serif">On-chain, when ready.</span>
+                Fair to
+                <br />
+                <span className="serif">everyone on file.</span>
+              </h2>
+              <p className="approach-intro">
+                A file only helps if the businesses checking it and the
+                operators named in it can both trust it.
+              </p>
+              <a href="/terms" className="text-link">
+                Read the site terms <ArrowUpRight size={18} />
+              </a>
+            </Reveal>
+            <div className="trust-principles">
+              {rules.map((item, index) => (
+                <Reveal
+                  key={item.title}
+                  className="trust-principle"
+                  delay={index * 0.08}
+                >
+                  <item.icon size={23} />
+                  <div>
+                    <span className="mini-label">RULE / 0{index + 1}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.text}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="section future-section" id="how">
+          <Reveal className="section-heading">
+            <div>
+              <span className="eyebrow section-index">04 / HOW IT WORKS</span>
+              <h2>
+                Three parties.
+                <br />
+                <span className="serif">One record.</span>
               </h2>
             </div>
             <p>
-              The marketplace comes first.
+              Businesses report. Subscribers check.
               <br />
-              Optional Solana rails come later.
+              Owners see and answer.
               <br />
-              No token required to do good work.
+              Paying never changes a record.
             </p>
           </Reveal>
-          <Roadmap />
+          <Parties />
         </section>
         <section className="contact-section" id="contact">
           <div className="section contact-grid">
             <Reveal className="contact-copy">
-              <span className="eyebrow">YOUR NEXT ASSIGNMENT STARTS HERE</span>
+              <span className="eyebrow">JOIN THE PILOT</span>
               <h2>
-                What's
+                Which side
                 <br />
-                the <span className="serif">mission?</span>
+                are <span className="serif">you on?</span>
               </h2>
               <p>
-                Start with the outcome you need.
+                Report outcomes, ask for a file,
                 <br />
-                We'll take it from there.
+                or ask about your own agent's file.
               </p>
               <div className="contact-note">
                 <ShieldCheck size={18} />
                 <p>
-                  This form is the Bureau's current contact channel. Please
-                  don't include credentials, private keys, or confidential
-                  documents.
+                  This form is the Bureau's contact channel during the pilot.
+                  Please don't include credentials, private keys or customer
+                  records.
                 </p>
               </div>
             </Reveal>
@@ -606,60 +517,6 @@ export default function Home() {
         </section>
       </main>
       <Footer />
-      <ServiceDialog service={service} onClose={() => setService(null)} />
-      <Dialog
-        open={caseStudy !== null}
-        onOpenChange={open => {
-          if (!open) setCaseStudy(null);
-        }}
-      >
-        <DialogContent className="bureau-dialog">
-          {activeWork && (
-            <>
-              <span className="mini-label">
-                ILLUSTRATIVE ENGAGEMENT / NOT CUSTOMER WORK
-              </span>
-              <DialogTitle>{activeWork.title}</DialogTitle>
-              <DialogDescription>{activeWork.description}</DialogDescription>
-              <img
-                className="dialog-art"
-                src={activeWork.image}
-                alt="Illustrative engagement artwork"
-              />
-              <div className="dialog-section">
-                <h4>Example deliverables</h4>
-                {activeWork.deliverables.map(item => (
-                  <p key={item} className="output-line">
-                    <Check size={16} />
-                    {item}
-                  </p>
-                ))}
-              </div>
-              <p className="small-note">
-                These examples describe a proposed service format. They are not
-                evidence of completed customer engagements, results, or provider
-                certification.
-              </p>
-              <button
-                className="button button-primary"
-                onClick={() => {
-                  setCaseStudy(null);
-                  setTimeout(
-                    () =>
-                      startInquiry(
-                        "Hire an agent",
-                        `I'd like a scoped engagement similar to: ${activeWork.title}\n\nMy goal is: `
-                      ),
-                    100
-                  );
-                }}
-              >
-                Discuss a similar brief <ArrowUpRight size={17} />
-              </button>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

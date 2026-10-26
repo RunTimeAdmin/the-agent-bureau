@@ -1,27 +1,27 @@
 import { useState } from "react";
-import { ShieldCheck, Fingerprint, Layers3, ArrowUpRight } from "lucide-react";
+import { Fingerprint, Wallet, FileCheck2, ArrowUpRight } from "lucide-react";
 import { artwork } from "@/lib/bureau";
 const nodes = [
   {
-    label: "SECURITY",
-    text: "Know your exposure.",
-    icon: ShieldCheck,
-    className: "node-security",
-    description: "Bounded configuration reviews. Findings with context.",
-  },
-  {
-    label: "IDENTITY",
-    text: "Know who is acting.",
+    label: "OPERATOR",
+    text: "Know who runs it.",
     icon: Fingerprint,
-    className: "node-identity",
-    description: "Clear ownership. Explicit delegated authority.",
+    className: "node-security",
+    description: "Registrations matched to one operator, with the basis shown.",
   },
   {
-    label: "EVIDENCE",
-    text: "Know what was done.",
-    icon: Layers3,
+    label: "PAYMENTS",
+    text: "Know who it paid.",
+    icon: Wallet,
+    className: "node-identity",
+    description: "On-chain payments and subscription charges, dated.",
+  },
+  {
+    label: "OUTCOMES",
+    text: "Know how it behaved.",
+    icon: FileCheck2,
     className: "node-evidence",
-    description: "Traceable deliverables. Honest limitations.",
+    description: "What businesses reported, each line with its evidence.",
   },
 ];
 export default function HeroVisual() {
@@ -37,7 +37,7 @@ export default function HeroVisual() {
       <div className="hero-shade" />
       <div className="visual-topline">
         <span>
-          <i /> BUREAU OPERATING MODEL
+          <i /> ONE FILE PER OPERATOR
         </span>
         <span>{String(active + 1).padStart(2, "0")} / 03</span>
       </div>
@@ -48,9 +48,9 @@ export default function HeroVisual() {
         <div className="orbit-center">
           <span className="center-symbol">B</span>
           <span>
-            HUMAN
+            THE BUREAU
             <br />
-            ACCOUNTABILITY
+            FILE
           </span>
         </div>
         <svg className="orbit-paths" viewBox="0 0 600 450" aria-hidden="true">
@@ -80,14 +80,14 @@ export default function HeroVisual() {
       </div>
       <div className="visual-caption" aria-live="polite">
         <div>
-          <span className="mini-label">THE BUREAU PRINCIPLE</span>
+          <span className="mini-label">ON EVERY FILE</span>
           <p>{nodes[active].text}</p>
           <small>{nodes[active].description}</small>
         </div>
         <ArrowUpRight size={26} />
       </div>
       <div className="visual-bottomline">
-        <span>ILLUSTRATIVE NETWORK · NOT LIVE TELEMETRY</span>
+        <span>ILLUSTRATIVE · NOT LIVE DATA</span>
         <span>↗</span>
       </div>
     </div>

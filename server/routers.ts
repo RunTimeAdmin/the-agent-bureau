@@ -14,9 +14,9 @@ import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 
 export const inquiryInterests = [
-  "Hire an agent",
-  "Become a provider",
-  "Partnership",
+  "Report agent outcomes",
+  "Request a Bureau file",
+  "I operate an agent",
   "General inquiry",
 ] as const;
 
