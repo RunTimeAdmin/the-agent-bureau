@@ -1,12 +1,65 @@
+import { useState } from "react";
 import { Header, Footer } from "@/components/SiteChrome";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { startLogin } from "@/const";
-import { Loader2, LockKeyhole, RefreshCw } from "lucide-react";
+import { Loader2, LockKeyhole, LogOut, RefreshCw } from "lucide-react";
+function SignIn() {
+  const { loginConfigured, login, loginPending, loginError } = useAuth();
+  const [password, setPassword] = useState("");
+  if (!loginConfigured)
+    return (
+      <div className="access-card">
+        <LockKeyhole />
+        <h2>Operator sign-in is not set up.</h2>
+        <p>
+          Set OPERATOR_PASSWORD and SESSION_SECRET on the server, then restart
+          it. See DEPLOYMENT.md.
+        </p>
+      </div>
+    );
+  return (
+    <div className="access-card">
+      <LockKeyhole />
+      <h2>Operator sign-in required.</h2>
+      <p>Customer inquiries are private. Enter the operator password.</p>
+      <form
+        className="inquiry-form operator-sign-in"
+        onSubmit={event => {
+          event.preventDefault();
+          login(password);
+        }}
+      >
+        <label>
+          Operator password
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+          />
+        </label>
+        {loginError && (
+          <p className="form-error" role="alert">
+            {loginError}
+          </p>
+        )}
+        <button
+          className="button button-primary"
+          type="submit"
+          disabled={loginPending}
+        >
+          {loginPending ? <Loader2 size={17} className="spin" /> : null}
+          Sign in
+        </button>
+      </form>
+    </div>
+  );
+}
 export default function Inbox() {
-  const { user, loading } = useAuth();
+  const { isOperator, loading, logout, logoutPending } = useAuth();
   const list = trpc.inquiries.list.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
+    enabled: isOperator,
     retry: false,
   });
   const utils = trpc.useUtils();
@@ -23,38 +76,26 @@ export default function Inbox() {
           <p className="loading-state">
             <Loader2 className="spin" /> Checking your session
           </p>
-        ) : !user ? (
-          <div className="access-card">
-            <LockKeyhole />
-            <h2>Operator sign-in required.</h2>
-            <p>
-              Customer inquiries are private. Sign in with your Manus account to
-              continue.
-            </p>
-            <button
-              className="button button-primary"
-              onClick={() => startLogin()}
-            >
-              Sign in
-            </button>
-          </div>
-        ) : user.role !== "admin" ? (
-          <div className="access-card">
-            <LockKeyhole />
-            <h2>Owner access only.</h2>
-            <p>
-              Your account is signed in, but it does not have permission to read
-              the Bureau inbox.
-            </p>
-          </div>
+        ) : !isOperator ? (
+          <SignIn />
         ) : (
           <>
             <div className="inbox-toolbar">
               <p>Saved inquiries from the website form.</p>
-              <button className="text-link" onClick={() => list.refetch()}>
-                <RefreshCw size={15} />
-                Refresh
-              </button>
+              <div className="inbox-actions">
+                <button className="text-link" onClick={() => list.refetch()}>
+                  <RefreshCw size={15} />
+                  Refresh
+                </button>
+                <button
+                  className="text-link"
+                  onClick={logout}
+                  disabled={logoutPending}
+                >
+                  <LogOut size={15} />
+                  Sign out
+                </button>
+              </div>
             </div>
             {list.isLoading ? (
               <p>Loading inquiries…</p>

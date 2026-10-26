@@ -1511,6 +1511,16 @@ img {
   font-size: 12px;
   color: #9bb08d;
 }
+.inbox-actions {
+  display: flex;
+  gap: 22px;
+}
+.operator-sign-in {
+  max-width: 380px;
+}
+.operator-sign-in .button {
+  align-self: flex-start;
+}
 .access-card {
   border: 1px solid var(--border);
   background: #1b271b;
