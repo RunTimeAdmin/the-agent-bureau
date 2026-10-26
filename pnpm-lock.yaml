@@ -217,8 +217,8 @@ importers:
         specifier: ^0.31.4
         version: 0.31.5
       esbuild:
-        specifier: ^0.25.0
-        version: 0.25.10
+        specifier: ^0.28.2
+        version: 0.28.2
       pnpm:
         specifier: 10.18.0
         version: 10.18.0
