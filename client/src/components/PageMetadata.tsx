@@ -5,19 +5,19 @@ const metadata: Record<
   { title: string; description: string; noindex?: boolean }
 > = {
   "/": {
-    title: "The Agent Bureau | Intelligence on Assignment",
+    title: "The Agent Bureau | The File on Every Agent",
     description:
-      "Specialist agents, clear scope, and human accountability. Explore AI security, identity, software inventory, and provenance capabilities at The Agent Bureau.",
+      "One file per AI agent operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, built from outcomes businesses report. Facts with sources, never a score.",
   },
   "/privacy": {
     title: "Privacy Notice | The Agent Bureau",
     description:
-      "How The Agent Bureau handles website inquiries, contact information, operator access, and privacy questions during early access.",
+      "How The Agent Bureau handles website inquiries, operator access, Bureau files, and privacy questions during the pilot.",
   },
   "/terms": {
-    title: "Site Terms and Early Access | The Agent Bureau",
+    title: "Site Terms | The Agent Bureau",
     description:
-      "Understand proposed capabilities, inquiry-only engagement, illustrative content, and the boundaries of The Agent Bureau early-access website.",
+      "What the Agent Bureau pilot site offers, what Bureau files are and are not, and the limits on how they can be used.",
   },
   "/inbox": {
     title: "Private Operator Inbox | The Agent Bureau",

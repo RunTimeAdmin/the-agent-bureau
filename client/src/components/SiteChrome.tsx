@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { Link } from "wouter";
+import { FURNISH_TOOL_URL } from "@/lib/bureau";
 export function BureauMark({ small = false }: { small?: boolean }) {
   return (
     <span className={`brand ${small ? "brand-small" : ""}`}>
@@ -20,9 +21,10 @@ export function BureauMark({ small = false }: { small?: boolean }) {
   );
 }
 const links = [
-  { label: "Capabilities", href: "/#capabilities" },
-  { label: "The process", href: "/#process" },
-  { label: "Our approach", href: "/#approach" },
+  { label: "The file", href: "/#file" },
+  { label: "For furnishers", href: "/#furnish" },
+  { label: "Rules", href: "/#rules" },
+  { label: "How it works", href: "/#how" },
 ];
 export function Header() {
   const [open, setOpen] = useState(false);
@@ -59,7 +61,7 @@ export function Header() {
             href="/#contact"
             onClick={() => setOpen(false)}
           >
-            Brief the bureau <ArrowUpRight size={15} />
+            Join the pilot <ArrowUpRight size={15} />
           </a>
         </nav>
         <button
@@ -84,9 +86,9 @@ export function Footer() {
           <BureauMark />
         </Link>
         <p>
-          Intelligence, with accountability.
+          The file on every agent.
           <br />
-          <span>Built for the work that needs to be right.</span>
+          <span>Facts with sources. Never a score.</span>
         </p>
         <a href="/#contact" className="footer-contact">
           Start a conversation <ArrowUpRight size={20} />
@@ -95,11 +97,14 @@ export function Footer() {
       <div className="footer-bottom">
         <span>© {new Date().getFullYear()} The Agent Bureau</span>
         <span className="footer-status">
-          <i /> Early-access bureau
+          <i /> Pilot, 2026
         </span>
         <div>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Site terms</Link>
+          <a href={FURNISH_TOOL_URL} target="_blank" rel="noreferrer">
+            Signing tool
+          </a>
           <Link href="/inbox">Operator access</Link>
         </div>
       </div>

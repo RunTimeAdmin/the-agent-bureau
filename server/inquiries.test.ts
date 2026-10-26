@@ -36,7 +36,7 @@ function createContext(
 const validInput = {
   name: "Ada Lovelace",
   email: "ada@example.com",
-  interest: "Hire an agent" as const,
+  interest: "Report agent outcomes" as const,
   message: "I would like to discuss an agent engagement for our team.",
   website: "",
 };
@@ -65,6 +65,17 @@ describe("inquiry validation", () => {
     expect(
       inquiryInputSchema.safeParse({ ...validInput, interest: "Other" }).success
     ).toBe(false);
+    // Retired topics stay valid in the database but are no longer accepted.
+    expect(
+      inquiryInputSchema.safeParse({ ...validInput, interest: "Hire an agent" })
+        .success
+    ).toBe(false);
+    expect(
+      inquiryInputSchema.safeParse({
+        ...validInput,
+        interest: "I operate an agent",
+      }).success
+    ).toBe(true);
   });
 });
 

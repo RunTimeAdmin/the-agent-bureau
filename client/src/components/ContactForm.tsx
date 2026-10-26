@@ -3,16 +3,16 @@ import { ArrowUpRight, Check, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Interest } from "@/lib/bureau";
 const interests: Interest[] = [
-  "Hire an agent",
-  "Become a provider",
-  "Partnership",
+  "Report agent outcomes",
+  "Request a Bureau file",
+  "I operate an agent",
   "General inquiry",
 ];
 export default function ContactForm() {
   const [form, setForm] = useState({
     name: "",
     email: "",
-    interest: "Hire an agent" as Interest,
+    interest: "Report agent outcomes" as Interest,
     message: "",
     website: "",
   });
@@ -39,7 +39,7 @@ export default function ContactForm() {
         <h3>Your brief is on file.</h3>
         <p>
           Thanks, {form.name.split(" ")[0]}. Your inquiry has been saved for the
-          Bureau team to review. This is an inquiry, not a confirmed booking.
+          Bureau team to review. This is an inquiry, not an agreement.
         </p>
         <div className="reference">
           REFERENCE <strong>{submit.data.reference}</strong>
@@ -51,7 +51,7 @@ export default function ContactForm() {
             setForm({
               name: "",
               email: "",
-              interest: "Hire an agent",
+              interest: "Report agent outcomes",
               message: "",
               website: "",
             });
@@ -97,7 +97,7 @@ export default function ContactForm() {
         </label>
       </div>
       <label>
-        I'm here to
+        Topic
         <select
           value={form.interest}
           onChange={event =>
@@ -118,7 +118,7 @@ export default function ContactForm() {
           rows={4}
           value={form.message}
           onChange={event => setForm({ ...form, message: event.target.value })}
-          placeholder="What do you need done? Tell us about the outcome, your environment, and any constraints."
+          placeholder="What do you run, and which agent outcomes could you report? Or which agent do you want a file on?"
         />
       </label>
       <div className="honeypot" aria-hidden="true">

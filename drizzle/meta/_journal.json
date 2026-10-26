@@ -22,6 +22,13 @@
       "when": 1793044420042,
       "tag": "0002_drop_users",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1793057154842,
+      "tag": "0003_inquiry_topics",
+      "breakpoints": true
     }
   ]
 }

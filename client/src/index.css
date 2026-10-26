@@ -1081,6 +1081,38 @@ img {
   display: block;
   margin-top: 20px;
 }
+.furnisher-cards {
+  margin-top: 16px;
+}
+/* Informational cards: only the bottom link is clickable, so no lift. */
+.service-card.info:hover {
+  border-color: #a9c4941d;
+  transform: none;
+}
+.service-card.info:hover:after {
+  opacity: 0;
+}
+.service-card.info .service-bottom:hover span {
+  color: #d0ee85;
+}
+.code-line {
+  display: block;
+  margin-top: 14px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+  color: #d0ee85;
+  background: #0f150f;
+  border: 1px solid #bad0a229;
+  border-radius: 3px;
+}
+.catalog-note a {
+  color: #b9d595;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .future-section {
   padding-top: 20px;
   padding-bottom: 95px;
@@ -2117,6 +2149,9 @@ img {
   .service-grid {
     gap: 12px;
     grid-template-columns: 1fr 1fr;
+  }
+  .furnisher-cards {
+    grid-template-columns: 1fr;
   }
   .service-card {
     padding: 18px 15px 0;
