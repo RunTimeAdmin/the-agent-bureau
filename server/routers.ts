@@ -2,7 +2,12 @@ import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
-import { createInquiry, listInquiries, updateInquiryStatus } from "./db";
+import {
+  createInquiry,
+  deleteInquiry,
+  listInquiries,
+  updateInquiryStatus,
+} from "./db";
 import { createRateLimiter } from "./rateLimit";
 import {
   checkOperatorPassword,
@@ -155,6 +160,12 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         await updateInquiryStatus(input.id, input.status);
+        return { success: true } as const;
+      }),
+    remove: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        await deleteInquiry(input.id);
         return { success: true } as const;
       }),
   }),

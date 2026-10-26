@@ -56,3 +56,12 @@ export async function updateInquiryStatus(
   }
   await db.update(inquiries).set({ status }).where(eq(inquiries.id, id));
 }
+
+// Permanent: used for deletion requests and test entries.
+export async function deleteInquiry(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database is not available");
+  }
+  await db.delete(inquiries).where(eq(inquiries.id, id));
+}

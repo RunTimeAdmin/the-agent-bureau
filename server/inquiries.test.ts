@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
-const { createInquiry, listInquiries, updateInquiryStatus } = vi.hoisted(
-  () => ({
+const { createInquiry, deleteInquiry, listInquiries, updateInquiryStatus } =
+  vi.hoisted(() => ({
     createInquiry: vi.fn(),
+    deleteInquiry: vi.fn(),
     listInquiries: vi.fn(),
     updateInquiryStatus: vi.fn(),
-  })
-);
+  }));
 
 vi.mock("./db", () => ({
   createInquiry,
+  deleteInquiry,
   listInquiries,
   updateInquiryStatus,
 }));
@@ -45,6 +46,7 @@ afterEach(() => {
   createInquiry.mockReset();
   listInquiries.mockReset();
   updateInquiryStatus.mockReset();
+  deleteInquiry.mockReset();
   resetInquiryRateLimiter();
 });
 
@@ -115,8 +117,12 @@ describe("admin inquiry procedures", () => {
     await expect(
       visitor.inquiries.setStatus({ id: 1, status: "reviewed" })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(visitor.inquiries.remove({ id: 1 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     expect(listInquiries).not.toHaveBeenCalled();
     expect(updateInquiryStatus).not.toHaveBeenCalled();
+    expect(deleteInquiry).not.toHaveBeenCalled();
   });
 
   it("allow inbox access with an operator session", async () => {
@@ -125,5 +131,20 @@ describe("admin inquiry procedures", () => {
     await expect(operator.inquiries.list()).resolves.toEqual([]);
     await operator.inquiries.setStatus({ id: 1, status: "reviewed" });
     expect(updateInquiryStatus).toHaveBeenCalledWith(1, "reviewed");
+    await expect(operator.inquiries.remove({ id: 7 })).resolves.toEqual({
+      success: true,
+    });
+    expect(deleteInquiry).toHaveBeenCalledWith(7);
+  });
+
+  it("only removes inquiries by a positive integer id", async () => {
+    const operator = appRouter.createCaller(createContext(true));
+    await expect(operator.inquiries.remove({ id: 0 })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(
+      operator.inquiries.remove({ id: 1.5 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(deleteInquiry).not.toHaveBeenCalled();
   });
 });

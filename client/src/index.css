@@ -1548,6 +1548,40 @@ img {
   display: flex;
   gap: 22px;
 }
+.inbox-filters {
+  margin-bottom: 14px;
+}
+.inbox-notice {
+  min-height: 18px;
+  margin-bottom: 14px;
+  font-size: 11px;
+  color: #b9d595;
+}
+.inbox-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.inbox-card-foot .text-link {
+  font-size: 11px;
+  gap: 8px;
+}
+.inbox-card-foot .text-link.muted {
+  color: #8ca575;
+}
+.inbox-card-foot .text-link.danger {
+  color: #ffb6a9;
+}
+.inbox-confirm {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 11px;
+  color: #ffb6a9;
+}
 .operator-sign-in {
   max-width: 380px;
 }
