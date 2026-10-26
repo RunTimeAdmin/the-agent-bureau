@@ -7,9 +7,6 @@ dist/
 build/
 *.dist
 
-# Furnisher signing keys (pnpm furnish keygen)
-*.key
-
 # Environment variables
 .env
 .env.local

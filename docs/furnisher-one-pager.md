@@ -27,7 +27,9 @@ You set your own thresholds.
 
 One line per outcome: `paid`, `payment_failed`, `delivered`, `not_delivered`, `disputed`, `refunded`, `access_revoked` or `policy_violation`.
 
-Each line carries your own reference, the agent (registry id, wallet or DID), the time, an amount for payments, and evidence for negative outcomes (a transaction hash or a reference to your logs). Export a CSV from your system, sign it with the small command-line tool we provide, and send us the signed file. The signature proves the report came from you and hasn't been changed.
+Each line carries your own reference, the agent (registry id, wallet or DID), the time, an amount for payments, and evidence for negative outcomes (a transaction hash or a reference to your logs). Export a CSV from your system, sign it with our free, open-source tool, and send us the signed file. The signature proves the report came from you and hasn't been changed. The tool is [agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish) and runs with one `npx` command, nothing to install.
+
+Not ready to sign yet? During the pilot you can send an unsigned CSV through the channel we agree when you join. We'll mark those reports "unsigned".
 
 ## What we commit to
 
@@ -50,6 +52,6 @@ Each line carries your own reference, the agent (registry id, wallet or DID), th
 
 ## Get started
 
-Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/#contact) and choose "Partnership". We'll set up your furnisher id, register your signing key, and send you the tool.
+Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/#contact) and choose "Partnership". We'll set up your furnisher id and register your signing key.
 
-The full plan, including the event format and the dispute process, is in `docs/bureau-spec.md`.
+The event format, CSV columns and signing rules are in the [tool's README](https://github.com/RunTimeAdmin/agent-bureau-furnish#readme).

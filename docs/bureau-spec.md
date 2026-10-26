@@ -88,7 +88,7 @@ Every field carries `as_of`, `source` and an evidence pointer.
 | Possible matches | Registrations that share a host or link but aren't confirmed. Listed separately, never merged. | Nooscape |
 | Public record | First seen, registry events, ownership changes, share of ratings revoked, evidence level | Nooscape |
 | Payment history | As seller: on-chain payments received (count, volume, distinct payers, last 90 and 365 days). As payer: Levy charges paid and failed. | Sigvara scanner, Levy |
-| Furnished outcomes | Counts by outcome type and window, number of distinct furnishers, furnisher category. Each line links to its sealed packet. | Furnishers via CounterAudit |
+| Furnished outcomes | Counts by outcome type and window, number of distinct furnishers, furnisher category. Each line links to its sealed packet, and unsigned pilot events are labeled. | Furnishers via CounterAudit |
 | Third-party standing | Sigvara score, bond and slashes, labeled with network | Sigvara |
 | Disputes and statements | Open and closed disputes with results, plus the subject's own statement (up to 500 characters) | Bureau |
 | Inquiries | Pulls in the last 90 days, by subscriber category | Bureau |
@@ -111,7 +111,7 @@ Retention (proposed): outcome events leave the file after 24 months. Lines remov
 
 ### What they report: outcome event v0
 
-The format is defined in `tools/furnish/event.ts`, published as JSON Schema at `client/public/schemas/outcome-event-v0.json` (served at https://theagentbureau.xyz/schemas/outcome-event-v0.json once the site is rebuilt), and signed with `pnpm furnish` (see `tools/furnish/README.md`).
+The format and the signing tool live in the public repo [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish) (MIT). Furnishers run it with `npx github:RunTimeAdmin/agent-bureau-furnish`, nothing to clone. Its generated JSON Schema is copied to `client/public/schemas/outcome-event-v0.json` here, so the site serves it at https://theagentbureau.xyz/schemas/outcome-event-v0.json; copy it again whenever the package's schema changes.
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -120,16 +120,17 @@ The format is defined in `tools/furnish/event.ts`, published as JSON Schema at `
 | `event_id` | yes | The furnisher's own reference, unique per furnisher. Disputes and corrections point at it. |
 | `subject_ref` | yes | One of: `{chain, registry, id}`, `{wallet}`, `{did}` |
 | `outcome` | yes | `paid`, `payment_failed`, `delivered`, `not_delivered`, `disputed`, `refunded`, `access_revoked`, `policy_violation` |
-| `occurred_at` | yes | ISO 8601, UTC |
+| `occurred_at` | yes | ISO 8601, UTC, with seconds |
 | `amount` | payment outcomes | `{value, asset, chain}` |
 | `evidence` | negative outcomes | Transaction hash, CounterAudit packet id, or a reference to a log excerpt the furnisher keeps for 24 months |
-| `signature` | yes | `ed25519:` plus base64url. Signed over `agent-bureau/outcome-event/v0\n` followed by the event without `signature` in RFC 8785 canonical JSON, with the furnisher's registered key |
+| `signature` | yes, except pilot fallback | `ed25519:` plus base64url. Signed over `agent-bureau/outcome-event/v0\n` followed by the event without `signature` in RFC 8785 canonical JSON, with the furnisher's registered key |
 
 ### Rules
 
 - Every event lands in CounterAudit before it can reach a file.
 - Negative outcomes (`payment_failed`, `not_delivered`, `access_revoked`, `policy_violation`) without evidence are held, not shown.
 - A furnisher reports every outcome of a type for the agents it reports on, good and bad. Reporting only negatives gets the furnisher dropped. Credit bureaus require complete reporting for the same reason.
+- **Pilot fallback, unsigned CSV.** During the 90-day pilot only, a furnisher that hasn't set up signing can send an unsigned CSV through a channel agreed at onboarding, either email from its registered contact with DKIM passing or a private upload link issued to it. The Bureau runs `furnish check` on the file and seals it in CounterAudit together with the channel details. Files label those events "unsigned". After the pilot, signatures are required.
 
 ### Terms (hypotheses to test, not final)
 
@@ -212,7 +213,10 @@ Only arm's-length parties count. Our own projects, and anyone we pay, don't.
 5. **Known blind spots.** Sigvara's scanner can't see Circle Gateway-batched x402 settlement, and Levy charges show the SubscriptionManager as payer (AgentClear F3). Both go under "Not on file" until fixed.
 6. **Legal review.** Who, and when. Proposed: before the first paying subscriber.
 7. **The website.** Should theagentbureau.xyz switch from the services pitch to this? Proposed: yes. The furnisher one-pager (`docs/furnisher-one-pager.md`) now exists and becomes the main page.
-8. **Getting the signing tool to furnishers.** `pnpm furnish` lives in this private repo, so outside businesses can't run it from here. Options: (a) publish `tools/furnish` as a small public package or repo, (b) accept unsigned CSV over an authenticated channel during the pilot and mark those events "unsigned", (c) both, so signing is the norm and unsigned is the fallback. Proposed: (c). Decide before the first furnisher conversation.
+
+## Resolved issues
+
+- **Getting the signing tool to furnishers** (decided 2026-10-26). The tool started in this private repo, where outside businesses couldn't run it. Options were (a) publish it, (b) accept unsigned CSV during the pilot, or (c) both. Chose (c): the tool is public at [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish), and unsigned CSV is the pilot fallback described under Furnishers, Rules.
 
 ## Alternatives considered
 
@@ -223,6 +227,8 @@ Only arm's-length parties count. Our own projects, and anyone we pay, don't.
 
 ## Related documents
 
+- Outcome event format and signing tool: https://github.com/RunTimeAdmin/agent-bureau-furnish
+- Furnisher one-pager: `docs/furnisher-one-pager.md`
 - AgentClear build spec v0.3: `RunTimeAdmin/agentclear`, `SPEC.md`
 - Sigvara white paper and reputation model: `RunTimeAdmin/Sigvara`, `docs/whitepaper.md` and `docs/reputation-model.md`
 - Nooscape API: https://nooscape.si/api/v1/openapi.json
