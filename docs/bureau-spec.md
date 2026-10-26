@@ -111,15 +111,19 @@ Retention (proposed): outcome events leave the file after 24 months. Lines remov
 
 ### What they report: outcome event v0
 
+The format is defined in `tools/furnish/event.ts`, published as JSON Schema at `client/public/schemas/outcome-event-v0.json` (served at https://theagentbureau.xyz/schemas/outcome-event-v0.json once the site is rebuilt), and signed with `pnpm furnish` (see `tools/furnish/README.md`).
+
 | Field | Required | Notes |
 | --- | --- | --- |
-| `furnisher_id` | yes | Issued when the furnisher is vetted |
+| `schema_version` | yes | `"0"` |
+| `furnisher_id` | yes | Issued when the furnisher is vetted: `fur_` plus 6 to 32 lowercase letters or digits |
+| `event_id` | yes | The furnisher's own reference, unique per furnisher. Disputes and corrections point at it. |
 | `subject_ref` | yes | One of: `{chain, registry, id}`, `{wallet}`, `{did}` |
 | `outcome` | yes | `paid`, `payment_failed`, `delivered`, `not_delivered`, `disputed`, `refunded`, `access_revoked`, `policy_violation` |
 | `occurred_at` | yes | ISO 8601, UTC |
 | `amount` | payment outcomes | `{value, asset, chain}` |
 | `evidence` | negative outcomes | Transaction hash, CounterAudit packet id, or a reference to a log excerpt the furnisher keeps for 24 months |
-| `signature` | yes | Ed25519 over the canonical JSON, with the furnisher's registered key |
+| `signature` | yes | `ed25519:` plus base64url. Signed over `agent-bureau/outcome-event/v0\n` followed by the event without `signature` in RFC 8785 canonical JSON, with the furnisher's registered key |
 
 ### Rules
 
@@ -207,7 +211,8 @@ Only arm's-length parties count. Our own projects, and anyone we pay, don't.
 4. **Testnet scores.** Sigvara runs on Arc testnet with no external audit, and mainnet is planned for Q1 2027 behind one (AgentClear Phase 0, decision 3). Proposed: show the score, labeled with its network.
 5. **Known blind spots.** Sigvara's scanner can't see Circle Gateway-batched x402 settlement, and Levy charges show the SubscriptionManager as payer (AgentClear F3). Both go under "Not on file" until fixed.
 6. **Legal review.** Who, and when. Proposed: before the first paying subscriber.
-7. **The website.** Should theagentbureau.xyz switch from the services pitch to this? Proposed: yes, once the furnisher one-pager exists, which becomes the main page.
+7. **The website.** Should theagentbureau.xyz switch from the services pitch to this? Proposed: yes. The furnisher one-pager (`docs/furnisher-one-pager.md`) now exists and becomes the main page.
+8. **Getting the signing tool to furnishers.** `pnpm furnish` lives in this private repo, so outside businesses can't run it from here. Options: (a) publish `tools/furnish` as a small public package or repo, (b) accept unsigned CSV over an authenticated channel during the pilot and mark those events "unsigned", (c) both, so signing is the norm and unsigned is the fallback. Proposed: (c). Decide before the first furnisher conversation.
 
 ## Alternatives considered
 
