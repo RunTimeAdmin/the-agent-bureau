@@ -35,9 +35,9 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
             <p>
               The site uses managed hosting and database infrastructure.
               Operational logs and anti-spam controls may process connection
-              information. Operator sign-in uses Manus account authentication
-              and application access controls. Inquiries are not published as
-              public listings or testimonials.
+              information. Only the Bureau team can sign in to the operator
+              inbox, which is protected by a password and a signed session.
+              Inquiries are not published as public listings or testimonials.
             </p>
             <h2>Your questions</h2>
             <p>

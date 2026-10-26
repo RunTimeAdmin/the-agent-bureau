@@ -6,6 +6,7 @@ import { Router } from "wouter";
 import { trpc } from "./lib/trpc";
 import Home from "./pages/Home";
 import Information from "./pages/Information";
+import NotFound from "./pages/NotFound";
 export function renderPage(pathname: string): {
   body: string;
   title: string;
@@ -69,7 +70,7 @@ export function renderPage(pathname: string): {
       noindex: true,
     };
   return {
-    body: '<main class="section info-page"><h1>Page not found.</h1><p>This assignment has no address.</p><a href="/">Return to The Agent Bureau</a></main>',
+    body: wrap(<NotFound />),
     title: "Page Not Found | The Agent Bureau",
     description: "This page could not be found. Return to The Agent Bureau.",
     status: 404,

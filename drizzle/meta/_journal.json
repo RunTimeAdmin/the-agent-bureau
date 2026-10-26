@@ -15,6 +15,13 @@
       "when": 1793041718507,
       "tag": "0001_fair_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1793044420042,
+      "tag": "0002_drop_users",
+      "breakpoints": true
     }
   ]
 }

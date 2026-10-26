@@ -23,11 +23,11 @@ import {
 } from "./routers";
 
 function createContext(
-  user: TrpcContext["user"] = null,
+  isOperator = false,
   ip = "198.51.100.10"
 ): TrpcContext {
   return {
-    user,
+    isOperator,
     req: { ip, headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
@@ -96,32 +96,23 @@ describe("inquiry rate limiting", () => {
 });
 
 describe("admin inquiry procedures", () => {
-  it("deny unauthenticated and non-admin inbox access", async () => {
-    const unauthenticated = appRouter.createCaller(createContext());
-    await expect(unauthenticated.inquiries.list()).rejects.toMatchObject({
-      code: "FORBIDDEN",
-    });
-
-    const user = appRouter.createCaller(
-      createContext({
-        id: 1,
-        openId: "regular-user",
-        name: "Regular User",
-        email: "user@example.com",
-        loginMethod: "manus",
-        role: "user",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastSignedIn: new Date(),
-      })
-    );
-    await expect(user.inquiries.list()).rejects.toMatchObject({
+  it("deny inbox access without an operator session", async () => {
+    const visitor = appRouter.createCaller(createContext());
+    await expect(visitor.inquiries.list()).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
     await expect(
-      user.inquiries.setStatus({ id: 1, status: "reviewed" })
+      visitor.inquiries.setStatus({ id: 1, status: "reviewed" })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(listInquiries).not.toHaveBeenCalled();
     expect(updateInquiryStatus).not.toHaveBeenCalled();
+  });
+
+  it("allow inbox access with an operator session", async () => {
+    listInquiries.mockResolvedValue([]);
+    const operator = appRouter.createCaller(createContext(true));
+    await expect(operator.inquiries.list()).resolves.toEqual([]);
+    await operator.inquiries.setStatus({ id: 1, status: "reviewed" });
+    expect(updateInquiryStatus).toHaveBeenCalledWith(1, "reviewed");
   });
 });

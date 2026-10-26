@@ -342,15 +342,16 @@ img {
   width: 100%;
   object-fit: cover;
   object-position: 65% center;
-  opacity: 0.58;
+  opacity: 0.92;
 }
 .hero-shade {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     180deg,
-    #101a1230 0%,
-    #0e181130 40%,
+    #101a1200 0%,
+    #0e181110 50%,
+    #101a12d0 78%,
     #101a12f0 100%
   );
 }
@@ -1510,6 +1511,16 @@ img {
 .inbox-toolbar p {
   font-size: 12px;
   color: #9bb08d;
+}
+.inbox-actions {
+  display: flex;
+  gap: 22px;
+}
+.operator-sign-in {
+  max-width: 380px;
+}
+.operator-sign-in .button {
+  align-self: flex-start;
 }
 .access-card {
   border: 1px solid var(--border);

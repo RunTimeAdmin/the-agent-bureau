@@ -1,8 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
 import { createInquiry, listInquiries, updateInquiryStatus } from "./db";
+import { createRateLimiter } from "./rateLimit";
+import {
+  checkOperatorPassword,
+  createOperatorSession,
+  isOperatorLoginConfigured,
+} from "./_core/auth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
@@ -38,11 +44,14 @@ export const inquiryInputSchema = z.object({
 
 const inquiryStatusSchema = z.enum(inquiryStatuses);
 
-type RateLimitEntry = { windowStartedAt: number; count: number };
-const inquiryRateLimit = new Map<string, RateLimitEntry>();
-const INQUIRY_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const INQUIRY_RATE_LIMIT_MAX = 5;
-const INQUIRY_RATE_LIMIT_MAX_KEYS = 10_000;
+const inquiryRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
+const loginRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+});
 
 function getRequestIp(req: {
   ip?: string;
@@ -54,33 +63,13 @@ function getRequestIp(req: {
 }
 
 export function consumeInquiryRateLimit(ip: string, now = Date.now()): boolean {
-  const key = ip.trim() || "unknown";
-  const current = inquiryRateLimit.get(key);
-  if (
-    !current ||
-    now - current.windowStartedAt >= INQUIRY_RATE_LIMIT_WINDOW_MS
-  ) {
-    inquiryRateLimit.delete(key);
-    inquiryRateLimit.set(key, { windowStartedAt: now, count: 1 });
-  } else if (current.count < INQUIRY_RATE_LIMIT_MAX) {
-    current.count += 1;
-    inquiryRateLimit.delete(key);
-    inquiryRateLimit.set(key, current);
-  } else {
-    return false;
-  }
-
-  while (inquiryRateLimit.size > INQUIRY_RATE_LIMIT_MAX_KEYS) {
-    const oldestKey = inquiryRateLimit.keys().next().value;
-    if (oldestKey === undefined) break;
-    inquiryRateLimit.delete(oldestKey);
-  }
-  return true;
+  return inquiryRateLimit.consume(ip, now);
 }
 
 /** Reset only for isolated unit tests; production code never calls this. */
 export function resetInquiryRateLimiter(): void {
-  inquiryRateLimit.clear();
+  inquiryRateLimit.reset();
+  loginRateLimit.reset();
 }
 
 export function generateInquiryReference(): string {
@@ -91,7 +80,37 @@ export function generateInquiryReference(): string {
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(({ ctx }) => ({
+      isOperator: ctx.isOperator,
+      loginConfigured: isOperatorLoginConfigured(),
+    })),
+    login: publicProcedure
+      .input(z.object({ password: z.string().min(1).max(256) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isOperatorLoginConfigured()) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Operator sign-in is not configured on this server.",
+          });
+        }
+        if (!loginRateLimit.consume(getRequestIp(ctx.req))) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "Too many sign-in attempts. Please try again later.",
+          });
+        }
+        if (!checkOperatorPassword(input.password)) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "That password is not correct.",
+          });
+        }
+        ctx.res.cookie(COOKIE_NAME, await createOperatorSession(), {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: SESSION_TTL_MS,
+        });
+        return { success: true } as const;
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
