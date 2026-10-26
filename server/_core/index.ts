@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { runMigrations } from "../db";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -30,6 +32,25 @@ async function startServer() {
     await setupVite(app, server);
   } else {
     serveStatic(app);
+  }
+
+  // Production runs from dist/, where the build copies drizzle/.
+  const migrationsFolder =
+    process.env.NODE_ENV === "development"
+      ? path.resolve(import.meta.dirname, "../..", "drizzle")
+      : path.resolve(import.meta.dirname, "drizzle");
+  try {
+    if (await runMigrations(migrationsFolder)) {
+      console.log("Database migrations are up to date");
+    }
+  } catch (error) {
+    // Keep serving the public pages; inquiries fail until the schema is fixed.
+    const cause = error instanceof Error ? error.cause : undefined;
+    console.error(
+      "[Database] Migration failed:",
+      error instanceof Error ? error.message : error,
+      cause instanceof Error ? `(cause: ${cause.message})` : ""
+    );
   }
 
   const port = Number(process.env.PORT || "3000");

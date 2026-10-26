@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { migrate } from "drizzle-orm/mysql2/migrator";
 import { InsertInquiry, inquiries } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -15,6 +16,15 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+// Applies pending drizzle/ migrations so hosts without shell access still get
+// the schema. Applied migrations are recorded and skipped on later runs.
+export async function runMigrations(migrationsFolder: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  await migrate(db, { migrationsFolder });
+  return true;
 }
 
 export async function createInquiry(inquiry: InsertInquiry): Promise<void> {

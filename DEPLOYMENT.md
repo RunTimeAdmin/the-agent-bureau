@@ -20,13 +20,13 @@ corepack prepare pnpm@10.18.0 --activate
 pnpm install --frozen-lockfile
 ```
 
-Set `DATABASE_URL` to your own database connection string. On a new, empty database, run:
+Set `DATABASE_URL` to your own database connection string. The server applies pending migrations from `drizzle/` each time it starts, so hosts without shell access get the schema automatically; applied migrations are skipped. If a migration fails, the server logs `[Database] Migration failed` and keeps serving the public pages. You can also apply them by hand with:
 
 ```sh
 pnpm db:migrate
 ```
 
-This creates the `inquiries` table. (Migration `0000` creates a legacy `users` table and `0002` drops it again, so a fresh database ends with `inquiries` only.) Do not run migrations against an unrelated database without reviewing them first.
+On a fresh database this creates the `inquiries` table. (Migration `0000` creates a legacy `users` table and `0002` drops it again, so a fresh database ends with `inquiries` only.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
 
 Rebuild after changing source files or the public origin:
 
