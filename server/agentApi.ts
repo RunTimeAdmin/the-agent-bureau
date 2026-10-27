@@ -3,7 +3,7 @@ import express, { type Request, type Response } from "express";
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { z, ZodError } from "zod";
-import { CASE_001 } from "@shared/case001";
+import { CASES, findCase, LATEST_CASE, type PublicCase } from "@shared/cases";
 import { shareText } from "@shared/share";
 import type { Agent } from "../drizzle/schema";
 import {
@@ -15,6 +15,7 @@ import {
 import {
   accuseInGame,
   askInGame,
+  caseIdSchema,
   DAILY_QUESTION_LIMIT,
   getGame,
   playIdSchema,
@@ -75,15 +76,16 @@ export function resetAgentRateLimiter(): void {
   registerRateLimit.reset();
 }
 
-function publicCase() {
+function publicCase(entry: PublicCase) {
   return {
-    id: CASE_001.id,
-    title: CASE_001.title,
-    brief: CASE_001.brief,
-    intercept: CASE_001.intercept,
-    orders: CASE_001.orders,
-    questionLimit: CASE_001.questionLimit,
-    suspects: CASE_001.suspects.map(suspect => ({
+    id: entry.id,
+    title: entry.title,
+    teaser: entry.teaser,
+    brief: entry.brief,
+    intercept: entry.intercept,
+    orders: entry.orders,
+    questionLimit: entry.questionLimit,
+    suspects: entry.suspects.map(suspect => ({
       id: suspect.id,
       codename: suspect.codename,
       name: suspect.name,
@@ -94,28 +96,44 @@ function publicCase() {
   };
 }
 
-const RULES = [
-  `You have ${CASE_001.questionLimit} questions to spend across all five suspects.`,
-  "Each suspect remembers only the questions you have asked them.",
-  "Suspects are fictional characters played by an AI model. The mole lies; the others hide their own secrets.",
-  "You get one accusation. The first one ends the game.",
-];
+function rules(entry: PublicCase) {
+  return [
+    `You have ${entry.questionLimit} questions to spend across all ${entry.suspects.length} suspects.`,
+    "Each suspect remembers only the questions you have asked them.",
+    "Suspects are fictional characters played by an AI model. The mole lies; the others hide their own secrets.",
+    "You get one accusation. The first one ends the game.",
+  ];
+}
+
+// Without a case id, agents get the newest case.
+function chosenCase(raw: unknown): PublicCase {
+  if (raw === undefined || raw === null || raw === "") return LATEST_CASE;
+  const entry = findCase(caseIdSchema.parse(raw));
+  if (!entry) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: `There is no case ${String(raw)}. GET /api/agent/v1/cases lists them.`,
+    });
+  }
+  return entry;
+}
 
 function gameBody(gameId: string, state: GameState, agent: Agent) {
+  const entry = findCase(state.caseId)!;
   return {
     gameId,
-    caseId: CASE_001.id,
+    caseId: state.caseId,
     questionsUsed: state.questionsUsed,
-    questionsLeft: Math.max(0, CASE_001.questionLimit - state.questionsUsed),
+    questionsLeft: Math.max(0, entry.questionLimit - state.questionsUsed),
     turns: state.turns,
     verdict: state.verdict && {
       ...state.verdict,
       share: {
         text: shareText({
-          caseId: CASE_001.id,
+          caseId: state.caseId,
           solved: state.verdict.solved,
           used: state.questionsUsed,
-          limit: CASE_001.questionLimit,
+          limit: entry.questionLimit,
           url: `${siteUrl()}/agents`,
           agent,
         }),
@@ -227,8 +245,9 @@ export function createAgentApi() {
       example: `${siteUrl()}/agent-example.py`,
       endpoints: {
         register: "POST /api/agent/v1/agents {name, builder}",
-        case: "GET /api/agent/v1/case",
-        start: "POST /api/agent/v1/games",
+        cases: "GET /api/agent/v1/cases",
+        case: "GET /api/agent/v1/case?caseId=002",
+        start: "POST /api/agent/v1/games {caseId?}",
         game: "GET /api/agent/v1/games/{gameId}",
         ask: "POST /api/agent/v1/games/{gameId}/ask {suspect, question}",
         accuse: "POST /api/agent/v1/games/{gameId}/accuse {suspect}",
@@ -238,9 +257,25 @@ export function createAgentApi() {
     });
   });
 
-  api.get("/case", (_req, res) => {
-    res.json({ case: publicCase(), rules: RULES });
+  api.get("/cases", (_req, res) => {
+    res.json({
+      latest: LATEST_CASE.id,
+      cases: CASES.map(entry => ({
+        id: entry.id,
+        title: entry.title,
+        teaser: entry.teaser,
+        questionLimit: entry.questionLimit,
+      })),
+    });
   });
+
+  api.get(
+    "/case",
+    handle(async (req, res) => {
+      const entry = chosenCase(req.query.caseId);
+      res.json({ case: publicCase(entry), rules: rules(entry) });
+    })
+  );
 
   api.post(
     "/agents",
@@ -291,13 +326,14 @@ export function createAgentApi() {
           message: `This agent has started ${AGENT_LIMITS.gamesPerDay} cases today. Try again after midnight UTC.`,
         });
       }
-      const gameId = await startGame({ agentId: agent.id });
+      const entry = chosenCase((req.body ?? {}).caseId);
+      const gameId = await startGame({ agentId: agent.id }, entry.id);
       res.status(201).json({
         gameId,
-        case: publicCase(),
-        rules: RULES,
+        case: publicCase(entry),
+        rules: rules(entry),
         questionsUsed: 0,
-        questionsLeft: CASE_001.questionLimit,
+        questionsLeft: entry.questionLimit,
       });
     })
   );
@@ -326,7 +362,7 @@ export function createAgentApi() {
           message: `This agent has asked ${AGENT_LIMITS.questionsPerDay} questions today. Try again after midnight UTC.`,
         });
       }
-      const { answer, questionsUsed } = await askInGame(
+      const { answer, questionsUsed, questionsLeft } = await askInGame(
         gameId,
         { agentId: agent.id },
         input.suspect,
@@ -336,7 +372,7 @@ export function createAgentApi() {
         suspect: input.suspect,
         answer,
         questionsUsed,
-        questionsLeft: Math.max(0, CASE_001.questionLimit - questionsUsed),
+        questionsLeft,
       });
     })
   );

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
+import { casePath, CASES } from "@shared/cases";
 const metadata: Record<
   string,
   { title: string; description: string; noindex?: boolean }
@@ -29,11 +30,6 @@ const metadata: Record<
     description:
       "What the BUREAU game and the Agent Bureau pilot offer, what Bureau files are and are not, and the limits on how they can be used.",
   },
-  "/play": {
-    title: "BUREAU | Case 001: The Lisbon Leak",
-    description:
-      "Five officers, one mole, 12 questions. Interrogate AI suspects, catch the contradiction and name the mole.",
-  },
   "/inbox": {
     title: "Private Operator Inbox | The Agent Bureau",
     description:
@@ -41,6 +37,14 @@ const metadata: Record<
     noindex: true,
   },
 };
+// Each case page gets its own title, matching the prerendered HTML.
+for (const entry of CASES) {
+  metadata[casePath(entry.id)] = {
+    title: `BUREAU | Case ${entry.id}: ${entry.title}`,
+    description: `Five officers, one mole, ${entry.questionLimit} questions. ${entry.teaser}`,
+  };
+}
+
 export default function PageMetadata() {
   const [path] = useLocation();
   useEffect(() => {

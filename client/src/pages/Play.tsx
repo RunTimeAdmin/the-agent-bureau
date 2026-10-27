@@ -1,77 +1,81 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
-import { CASE_001, type SuspectId } from "@shared/case001";
+import {
+  casePath,
+  CASES,
+  codenameOf,
+  findCase,
+  type PublicCase,
+} from "@shared/cases";
 import { shareText } from "@shared/share";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
+import NotFound from "./NotFound";
 
-const STORAGE_KEY = `bureau-play-${CASE_001.id}`;
-const LIMIT = CASE_001.questionLimit;
+const storageKey = (caseId: string) => `bureau-play-${caseId}`;
 
 // Storage can be blocked (private windows, strict settings). The game still
 // works without it; the player just can't resume after a reload.
-function readStoredPlay(): string | null {
+function readStoredPlay(caseId: string): string | null {
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    return window.localStorage.getItem(storageKey(caseId));
   } catch {
     return null;
   }
 }
 
-function storePlay(playId: string | null) {
+function storePlay(caseId: string, playId: string | null) {
   try {
-    if (playId) window.localStorage.setItem(STORAGE_KEY, playId);
-    else window.localStorage.removeItem(STORAGE_KEY);
+    if (playId) window.localStorage.setItem(storageKey(caseId), playId);
+    else window.localStorage.removeItem(storageKey(caseId));
   } catch {
     // Resume is a convenience; ignore.
   }
 }
 
-function codename(id: SuspectId) {
-  return CASE_001.suspects.find(suspect => suspect.id === id)!.codename;
-}
-
-function Meter({ used }: { used: number }) {
+function Meter({ used, limit }: { used: number; limit: number }) {
   return (
     <div
       className="play-meter"
       role="img"
-      aria-label={`${LIMIT - used} of ${LIMIT} questions left`}
+      aria-label={`${limit - used} of ${limit} questions left`}
     >
-      {Array.from({ length: LIMIT }, (_, index) => (
+      {Array.from({ length: limit }, (_, index) => (
         <i key={index} className={index < used ? "is-used" : ""} />
       ))}
-      <span>{LIMIT - used} left</span>
+      <span>{limit - used} left</span>
     </div>
   );
 }
 
-function Intercept() {
+export function Intercept({ theCase }: { theCase: PublicCase }) {
   return (
     <blockquote className="play-intercept">
-      <span>Intercepted 23:41</span>“{CASE_001.intercept}”
+      <span>Intercepted {theCase.interceptTime}</span>“{theCase.intercept}”
     </blockquote>
   );
 }
 
 function Brief({
+  theCase,
   onStart,
   starting,
   error,
 }: {
+  theCase: PublicCase;
   onStart: () => void;
   starting: boolean;
   error: string | null;
 }) {
   return (
     <section className="play-brief">
-      <span className="play-eyebrow">Case {CASE_001.id} / Eyes only</span>
-      <h1>{CASE_001.title}</h1>
-      {CASE_001.brief.map(paragraph => (
+      <span className="play-eyebrow">Case {theCase.id} / Eyes only</span>
+      <h1>{theCase.title}</h1>
+      {theCase.brief.map(paragraph => (
         <p key={paragraph}>{paragraph}</p>
       ))}
-      <Intercept />
-      <p className="play-orders">{CASE_001.orders}</p>
+      <Intercept theCase={theCase} />
+      <p className="play-orders">{theCase.orders}</p>
       <button
         className="play-button"
         onClick={onStart}
@@ -94,26 +98,28 @@ function Brief({
   );
 }
 
-type Turn = { suspect: SuspectId; question: string; answer: string };
+type Turn = { suspect: string; question: string; answer: string };
 
 function Investigation({
+  theCase,
   playId,
   used,
   turns,
   onAccused,
 }: {
+  theCase: PublicCase;
   playId: string;
   used: number;
   turns: Turn[];
   onAccused: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [selected, setSelected] = useState<SuspectId>("kestrel");
+  const [selected, setSelected] = useState(theCase.suspects[0].id);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
   const [accusing, setAccusing] = useState(false);
-  const [choice, setChoice] = useState<SuspectId | null>(null);
+  const [choice, setChoice] = useState<string | null>(null);
   const transcript = useRef<HTMLOListElement>(null);
   const ask = trpc.play.ask.useMutation();
   const accuse = trpc.play.accuse.useMutation({
@@ -123,9 +129,9 @@ function Investigation({
     },
   });
 
-  const suspect = CASE_001.suspects.find(entry => entry.id === selected)!;
+  const suspect = theCase.suspects.find(entry => entry.id === selected)!;
   const thread = turns.filter(turn => turn.suspect === selected);
-  const outOfQuestions = used >= LIMIT;
+  const outOfQuestions = used >= theCase.questionLimit;
 
   // Scroll the transcript box, not the page, to the newest exchange.
   useEffect(() => {
@@ -157,15 +163,15 @@ function Investigation({
     <>
       <details className="play-briefing">
         <summary>Briefing and intercept</summary>
-        {CASE_001.brief.map(paragraph => (
+        {theCase.brief.map(paragraph => (
           <p key={paragraph}>{paragraph}</p>
         ))}
-        <Intercept />
+        <Intercept theCase={theCase} />
       </details>
 
       <div className="play-board">
         <nav className="play-suspects" aria-label="Suspects">
-          {CASE_001.suspects.map(entry => {
+          {theCase.suspects.map(entry => {
             const asked = turns.filter(
               turn => turn.suspect === entry.id
             ).length;
@@ -274,7 +280,7 @@ function Investigation({
             <h2>Who is the mole?</h2>
             <p>You get one accusation. It ends the case.</p>
             <div className="play-choices" role="radiogroup">
-              {CASE_001.suspects.map(entry => (
+              {theCase.suspects.map(entry => (
                 <button
                   key={entry.id}
                   type="button"
@@ -295,7 +301,9 @@ function Investigation({
                   choice && accuse.mutate({ playId, suspect: choice })
                 }
               >
-                {choice ? `Accuse ${codename(choice)}` : "Pick a suspect"}
+                {choice
+                  ? `Accuse ${codenameOf(theCase, choice)}`
+                  : "Pick a suspect"}
               </button>
               <button
                 className="play-link"
@@ -330,25 +338,28 @@ function Investigation({
 }
 
 function Verdict({
+  theCase,
   used,
   verdict,
 }: {
+  theCase: PublicCase;
   used: number;
   verdict: {
-    accused: SuspectId;
+    accused: string;
     solved: boolean;
-    mole: SuspectId;
+    mole: string;
     solution: string[];
   };
 }) {
   const [copied, setCopied] = useState(false);
   const text = shareText({
-    caseId: CASE_001.id,
+    caseId: theCase.id,
     solved: verdict.solved,
     used,
-    limit: LIMIT,
-    url: `${window.location.origin}/play`,
+    limit: theCase.questionLimit,
+    url: `${window.location.origin}${casePath(theCase.id)}`,
   });
+  const next = CASES.find(entry => entry.id !== theCase.id);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
@@ -364,13 +375,13 @@ function Verdict({
   return (
     <section className={`play-verdict ${verdict.solved ? "is-solved" : ""}`}>
       <span className="play-eyebrow">
-        Case {CASE_001.id} / {verdict.solved ? "Closed" : "Unsolved"}
+        Case {theCase.id} / {verdict.solved ? "Closed" : "Unsolved"}
       </span>
       <h1 ref={heading} tabIndex={-1}>
         {verdict.solved ? "Mole caught." : "The mole got away."}
       </h1>
       <p className="play-lead">
-        You accused {codename(verdict.accused)} after {used}{" "}
+        You accused {codenameOf(theCase, verdict.accused)} after {used}{" "}
         {used === 1 ? "question" : "questions"}.
       </p>
       <ul className="play-solution">
@@ -384,14 +395,30 @@ function Verdict({
           {copied ? "Copied" : "Copy your result"}
         </button>
       </div>
-      <p className="play-fine">Case 002 is being written. Come back for it.</p>
+      {next && (
+        <p className="play-fine">
+          Try another:{" "}
+          <Link href={casePath(next.id)}>
+            Case {next.id}, {next.title}
+          </Link>
+        </p>
+      )}
     </section>
   );
 }
 
-export default function Play() {
+export default function Play({ caseId = "001" }: { caseId?: string }) {
+  const theCase = findCase(caseId);
+  return theCase ? (
+    <CaseGame key={theCase.id} theCase={theCase} />
+  ) : (
+    <NotFound />
+  );
+}
+
+function CaseGame({ theCase }: { theCase: PublicCase }) {
   const [playId, setPlayId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : readStoredPlay()
+    typeof window === "undefined" ? null : readStoredPlay(theCase.id)
   );
   const [startError, setStartError] = useState<string | null>(null);
   const game = trpc.play.get.useQuery(
@@ -400,19 +427,21 @@ export default function Play() {
   );
   const start = trpc.play.start.useMutation({
     onSuccess: ({ playId: id }) => {
-      storePlay(id);
+      storePlay(theCase.id, id);
       setPlayId(id);
     },
     onError: error => setStartError(error.message),
   });
 
-  // A stored game the server no longer knows: forget it and show the brief.
+  // A stored game the server no longer knows, or one from another case:
+  // forget it and show the brief.
   useEffect(() => {
-    if (game.error?.data?.code === "NOT_FOUND") {
-      storePlay(null);
+    const otherCase = game.data && game.data.caseId !== theCase.id;
+    if (game.error?.data?.code === "NOT_FOUND" || otherCase) {
+      storePlay(theCase.id, null);
       setPlayId(null);
     }
-  }, [game.error]);
+  }, [game.error, game.data, theCase.id]);
 
   const state = game.data;
   const used = state?.questionsUsed ?? 0;
@@ -421,9 +450,10 @@ export default function Play() {
   if (!playId) {
     body = (
       <Brief
+        theCase={theCase}
         onStart={() => {
           setStartError(null);
-          start.mutate();
+          start.mutate({ caseId: theCase.id });
         }}
         starting={start.isPending}
         error={startError}
@@ -436,10 +466,11 @@ export default function Play() {
       </p>
     );
   } else if (state.verdict) {
-    body = <Verdict used={used} verdict={state.verdict} />;
+    body = <Verdict theCase={theCase} used={used} verdict={state.verdict} />;
   } else {
     body = (
       <Investigation
+        theCase={theCase}
         playId={playId}
         used={used}
         turns={state.turns}
@@ -452,9 +483,11 @@ export default function Play() {
     <div className="game">
       <GameHeader>
         <span className="play-case">
-          Case {CASE_001.id} · {CASE_001.title}
+          Case {theCase.id} · {theCase.title}
         </span>
-        {state && !state.verdict && <Meter used={used} />}
+        {state && !state.verdict && (
+          <Meter used={used} limit={theCase.questionLimit} />
+        )}
       </GameHeader>
       <main className="play-main">{body}</main>
       <GameFooter />

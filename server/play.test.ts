@@ -75,6 +75,15 @@ describe("play.start", () => {
     expect(db.createPlay).toHaveBeenCalledWith(playId, "001", null);
   });
 
+  it("starts the case the browser asks for", async () => {
+    const caller = appRouter.createCaller(createContext());
+    const { playId } = await caller.play.start({ caseId: "002" });
+    expect(db.createPlay).toHaveBeenCalledWith(playId, "002", null);
+    await expect(caller.play.start({ caseId: "999" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
   it("allows five new games per address per day", async () => {
     const caller = appRouter.createCaller(createContext("203.0.113.9"));
     for (let game = 0; game < 5; game += 1) await caller.play.start();
@@ -212,6 +221,24 @@ describe("play.ask", () => {
     expect(db.refundQuestion).not.toHaveBeenCalled();
   });
 
+  it("asks a Case 002 suspect with that case's brief", async () => {
+    db.getPlay.mockResolvedValue(openPlay({ caseId: "002" }));
+    db.claimQuestion.mockResolvedValue(true);
+    db.listPlayQuestions.mockResolvedValue([]);
+    askSuspect.mockResolvedValue("I was at the opera.");
+    const caller = appRouter.createCaller(createContext());
+    await caller.play.ask({
+      playId: PLAY_ID,
+      suspect: "ibis",
+      question: "Where were you?",
+    });
+    expect(askSuspect.mock.calls[0][0]).toContain("You are IBIS");
+
+    await expect(
+      caller.play.ask({ playId: PLAY_ID, suspect: "vane", question: "Hello?" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("stops at the question limit without calling the model", async () => {
     db.getPlay.mockResolvedValue(openPlay({ questionsUsed: 12 }));
     db.claimQuestion.mockResolvedValue(false);
@@ -315,13 +342,16 @@ describe("play.scoreboard", () => {
     ]);
     const caller = appRouter.createCaller(createContext());
     const board = await caller.play.scoreboard();
-    expect(db.listFinishedPlays).toHaveBeenCalledWith("001");
+    expect(db.listFinishedPlays).toHaveBeenCalledWith("002");
     expect(board.humans).toEqual({
       finished: 1,
       solved: 1,
       averageQuestionsWhenSolved: 7,
     });
     expect(board.leaderboard).toEqual([]);
+
+    await caller.play.scoreboard({ caseId: "001" });
+    expect(db.listFinishedPlays).toHaveBeenLastCalledWith("001");
   });
 });
 

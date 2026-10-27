@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { CASE_001 } from "@shared/case001";
+import { casePath, CASES, LATEST_CASE, type PublicCase } from "@shared/cases";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 
 // A made-up exchange that shows the core move of the game without giving
@@ -31,6 +31,44 @@ function TrainingFile() {
   );
 }
 
+const [featured, ...older] = [...CASES].reverse();
+const nextCaseId = String(CASES.length + 1).padStart(3, "0");
+
+function CaseCard({
+  theCase,
+  featured = false,
+}: {
+  theCase: PublicCase;
+  featured?: boolean;
+}) {
+  return (
+    <article className={`home-case is-open ${featured ? "is-featured" : ""}`}>
+      <header className="home-case-head">
+        <span>Case {theCase.id}</span>
+        <em>{featured ? "Newest" : "Open"}</em>
+      </header>
+      <h3>{theCase.title}</h3>
+      <p>{featured ? theCase.brief[0] : theCase.teaser}</p>
+      {featured && (
+        <blockquote className="play-intercept">
+          <span>Intercepted {theCase.interceptTime}</span>“{theCase.intercept}”
+        </blockquote>
+      )}
+      <ul className="home-case-suspects" aria-label="Suspects">
+        {theCase.suspects.map(suspect => (
+          <li key={suspect.id}>{suspect.codename}</li>
+        ))}
+      </ul>
+      <Link
+        href={casePath(theCase.id)}
+        className={featured ? "play-button" : "play-button play-button-ghost"}
+      >
+        Open Case {theCase.id}
+      </Link>
+    </article>
+  );
+}
+
 export default function Home() {
   return (
     <div className="game">
@@ -39,8 +77,8 @@ export default function Home() {
           <a href="#how">How it works</a>
           <a href="#cases">Cases</a>
           <Link href="/agents">Agents</Link>
-          <Link href="/play" className="home-nav-cta">
-            Play Case {CASE_001.id}
+          <Link href={casePath(LATEST_CASE.id)} className="home-nav-cta">
+            Play Case {LATEST_CASE.id}
           </Link>
         </nav>
       </GameHeader>
@@ -60,8 +98,8 @@ export default function Home() {
               out.
             </p>
             <div className="home-actions">
-              <Link href="/play" className="play-button">
-                Open Case {CASE_001.id}
+              <Link href={casePath(LATEST_CASE.id)} className="play-button">
+                Open Case {LATEST_CASE.id}
               </Link>
               <a href="#how" className="home-link">
                 How a case works
@@ -85,9 +123,9 @@ export default function Home() {
             <li>
               <h3>Question the suspects</h3>
               <p>
-                You have {CASE_001.questionLimit} questions to spend across all
-                five. Innocent suspects hide their own embarrassing secrets. The
-                mole lies about the one thing that matters.
+                You have {LATEST_CASE.questionLimit} questions to spend across
+                all five. Innocent suspects hide their own embarrassing secrets.
+                The mole lies about the one thing that matters.
               </p>
             </li>
             <li>
@@ -133,8 +171,8 @@ export default function Home() {
           <div>
             <p>
               The suspects are AI agents. Can yours catch theirs? Point your own
-              agent at Case {CASE_001.id} through a small HTTP API, and see how
-              it does against the people who played it in the browser.
+              agent at any case through a small HTTP API, and see how it does
+              against the people who played it in the browser.
             </p>
             <div className="home-actions">
               <Link href="/agents" className="play-button">
@@ -147,32 +185,19 @@ export default function Home() {
         <section className="home-section" id="cases">
           <h2>Cases</h2>
           <div className="home-cases">
-            <article className="home-case is-open">
-              <header className="home-case-head">
-                <span>Case {CASE_001.id}</span>
-                <em>Open</em>
-              </header>
-              <h3>{CASE_001.title}</h3>
-              <p>{CASE_001.brief[0]}</p>
-              <blockquote className="play-intercept">
-                <span>Intercepted 23:41</span>“{CASE_001.intercept}”
-              </blockquote>
-              <ul className="home-case-suspects" aria-label="Suspects">
-                {CASE_001.suspects.map(suspect => (
-                  <li key={suspect.id}>{suspect.codename}</li>
-                ))}
-              </ul>
-              <Link href="/play" className="play-button">
-                Open Case {CASE_001.id}
-              </Link>
-            </article>
-            <article className="home-case is-coming">
-              <header className="home-case-head">
-                <span>Case 002</span>
-                <em>Being written</em>
-              </header>
-              <p>A new place, a new crew, and a different kind of lie.</p>
-            </article>
+            <CaseCard theCase={featured} featured />
+            <div className="home-cases-side">
+              {older.map(entry => (
+                <CaseCard key={entry.id} theCase={entry} />
+              ))}
+              <article className="home-case is-coming">
+                <header className="home-case-head">
+                  <span>Case {nextCaseId}</span>
+                  <em>Being written</em>
+                </header>
+                <p>Another place, another crew, another kind of lie.</p>
+              </article>
+            </div>
           </div>
         </section>
 

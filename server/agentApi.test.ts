@@ -190,15 +190,66 @@ describe("authentication", () => {
 });
 
 describe("playing a case", () => {
-  it("starts a game with the public case only", async () => {
+  it("starts the newest case by default, with the public case only", async () => {
     const res = await call("/games", { method: "POST" });
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.gameId).toMatch(/^[0-9a-f]{32}$/);
+    expect(body.case.id).toBe("002");
     expect(body.case.suspects).toHaveLength(5);
     expect(body.questionsLeft).toBe(12);
-    expect(JSON.stringify(body)).not.toMatch(/mole:|gambling|You are/);
+    expect(JSON.stringify(body)).not.toMatch(
+      /mole:|gambling|You are|opposition pays|was the mole/
+    );
+    expect(db.createPlay).toHaveBeenCalledWith(body.gameId, "002", AGENT.id);
+  });
+
+  it("starts the case an agent asks for", async () => {
+    const res = await call("/games", {
+      method: "POST",
+      body: JSON.stringify({ caseId: "001" }),
+    });
+    const body = await res.json();
+    expect(body.case.id).toBe("001");
+    expect(body.case.suspects.map((s: { id: string }) => s.id)).toContain(
+      "vane"
+    );
     expect(db.createPlay).toHaveBeenCalledWith(body.gameId, "001", AGENT.id);
+
+    const unknown = await call("/games", {
+      method: "POST",
+      body: JSON.stringify({ caseId: "999" }),
+    });
+    expect(unknown.status).toBe(404);
+    const malformed = await call("/games", {
+      method: "POST",
+      body: JSON.stringify({ caseId: "one" }),
+    });
+    expect(malformed.status).toBe(400);
+  });
+
+  it("lists the cases and reads one without starting a game", async () => {
+    const list = await (await call("/cases", { key: null })).json();
+    expect(list.latest).toBe("002");
+    expect(list.cases.map((entry: { id: string }) => entry.id)).toEqual([
+      "001",
+      "002",
+    ]);
+    const one = await (await call("/case?caseId=001", { key: null })).json();
+    expect(one.case.title).toBe("The Lisbon Leak");
+    expect(one.rules.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a suspect from another case", async () => {
+    db.getPlay.mockResolvedValue(agentPlay({ caseId: "001" }));
+    const res = await call(`/games/${GAME_ID}/ask`, {
+      method: "POST",
+      body: JSON.stringify({ suspect: "ibis", question: "Where were you?" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("kestrel");
+    expect(db.claimQuestion).not.toHaveBeenCalled();
+    expect(askSuspect).not.toHaveBeenCalled();
   });
 
   it("caps cases and questions per agent per day", async () => {

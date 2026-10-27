@@ -3569,3 +3569,35 @@ img {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.home-cases-side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.home-case.is-open:not(.is-featured) {
+  border-color: var(--play-line);
+  box-shadow: none;
+}
+.agents-cases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 24px;
+}
+.agents-cases button {
+  padding: 8px 14px;
+  border: 1px solid var(--play-line);
+  border-radius: 6px;
+  background: var(--play-panel);
+  font-weight: 700;
+  font-size: 14px;
+}
+.agents-cases button span {
+  margin-left: 6px;
+  font-weight: 500;
+  color: var(--play-dim);
+}
+.agents-cases button[aria-selected="true"] {
+  border-color: var(--play-neon);
+  color: var(--play-neon);
+}

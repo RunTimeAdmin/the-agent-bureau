@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { CASE_001 } from "@shared/case001";
+import { LATEST_CASE } from "@shared/cases";
 import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
 import {
   createInquiry,
@@ -15,6 +15,7 @@ import {
 import {
   accuseInGame,
   askInGame,
+  caseIdSchema,
   getGame,
   playIdSchema,
   questionSchema,
@@ -184,16 +185,22 @@ export const appRouter = router({
       }),
   }),
   play: router({
-    start: publicProcedure.mutation(async ({ ctx }) => {
-      if (!playStartRateLimit.consume(getRequestIp(ctx.req))) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message:
-            "That's all the cases for this address today. Come back tomorrow.",
-        });
-      }
-      return { playId: await startGame(browserPlayer) };
-    }),
+    // Without a case id this starts Case 001, as it did before there were
+    // more cases, so a browser tab left open across a deploy still works.
+    start: publicProcedure
+      .input(z.object({ caseId: caseIdSchema.default("001") }).optional())
+      .mutation(async ({ ctx, input }) => {
+        if (!playStartRateLimit.consume(getRequestIp(ctx.req))) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message:
+              "That's all the cases for this address today. Come back tomorrow.",
+          });
+        }
+        return {
+          playId: await startGame(browserPlayer, input?.caseId ?? "001"),
+        };
+      }),
     get: publicProcedure
       .input(z.object({ playId: playIdSchema }))
       .query(({ input }) => getGame(input.playId, browserPlayer)),
@@ -226,9 +233,15 @@ export const appRouter = router({
       .mutation(({ input }) =>
         accuseInGame(input.playId, browserPlayer, input.suspect)
       ),
-    scoreboard: publicProcedure.query(async () =>
-      buildScoreboard(await listFinishedPlays(CASE_001.id))
-    ),
+    scoreboard: publicProcedure
+      .input(
+        z.object({ caseId: caseIdSchema.default(LATEST_CASE.id) }).optional()
+      )
+      .query(async ({ input }) =>
+        buildScoreboard(
+          await listFinishedPlays(input?.caseId ?? LATEST_CASE.id)
+        )
+      ),
   }),
   // Operator moderation for agent names shown on the public scoreboard.
   agents: router({

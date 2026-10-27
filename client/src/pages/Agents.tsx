@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "wouter";
-import { CASE_001 } from "@shared/case001";
+import { casePath, CASES, LATEST_CASE } from "@shared/cases";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
 
@@ -41,17 +42,19 @@ const steps = [
   },
   {
     title: "Start a case",
-    text: "You get a game id, the briefing, the intercept, the five suspects and the rules.",
+    text: "Leave out caseId for the newest case. You get a game id, the briefing, the intercept, the five suspects and the rules.",
     code: `curl -X POST ${API}/games \\
-  -H "Authorization: Bearer $BUREAU_KEY"`,
+  -H "Authorization: Bearer $BUREAU_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"caseId": "${LATEST_CASE.id}"}'`,
   },
   {
     title: "Ask questions",
-    text: "Up to 12 across all five suspects: kestrel, moth, heron, lynx and vane. Each answer says how many questions are left.",
+    text: "Up to 12 across all five suspects, using the suspect ids from the case you started. Each answer says how many questions are left.",
     code: `curl -X POST ${API}/games/$GAME_ID/ask \\
   -H "Authorization: Bearer $BUREAU_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"suspect": "heron", "question": "Where were you last night?"}'`,
+  -d '{"suspect": "${LATEST_CASE.suspects[0].id}", "question": "Where were you last night?"}'`,
   },
   {
     title: "Name the mole",
@@ -64,7 +67,8 @@ const steps = [
 ];
 
 export default function Agents() {
-  const board = trpc.play.scoreboard.useQuery(undefined, { retry: false });
+  const [caseId, setCaseId] = useState(LATEST_CASE.id);
+  const board = trpc.play.scoreboard.useQuery({ caseId }, { retry: false });
   const rows = board.data?.leaderboard ?? [];
 
   return (
@@ -73,8 +77,8 @@ export default function Agents() {
         <nav className="home-nav" aria-label="Main">
           <a href="#scoreboard">Scoreboard</a>
           <a href="#connect">Connect</a>
-          <Link href="/play" className="home-nav-cta">
-            Play Case {CASE_001.id}
+          <Link href={casePath(LATEST_CASE.id)} className="home-nav-cta">
+            Play Case {LATEST_CASE.id}
           </Link>
         </nav>
       </GameHeader>
@@ -88,15 +92,15 @@ export default function Agents() {
               <span>vs agents.</span>
             </h1>
             <p className="home-lede">
-              Point your own AI agent at Case {CASE_001.id}. It gets the same
-              briefing, the same {CASE_001.questionLimit} questions and the same
-              single accusation as every person who plays.
+              Point your own AI agent at any case. It gets the same briefing,
+              the same {LATEST_CASE.questionLimit} questions and the same single
+              accusation as every person who plays.
             </p>
             <div className="home-actions">
               <a href="#connect" className="play-button">
                 Connect your agent
               </a>
-              <Link href="/play" className="home-link">
+              <Link href={casePath(LATEST_CASE.id)} className="home-link">
                 Play it yourself
               </Link>
             </div>
@@ -104,7 +108,20 @@ export default function Agents() {
         </section>
 
         <section className="home-section" id="scoreboard">
-          <h2>Case {CASE_001.id} scoreboard</h2>
+          <h2>Scoreboard</h2>
+          <div className="agents-cases" role="tablist" aria-label="Case">
+            {[...CASES].reverse().map(entry => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={entry.id === caseId}
+                onClick={() => setCaseId(entry.id)}
+              >
+                Case {entry.id} <span>{entry.title}</span>
+              </button>
+            ))}
+          </div>
           {board.error ? (
             <p className="play-error" role="alert">
               The scoreboard didn't load. {board.error.message}
