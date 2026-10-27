@@ -21,10 +21,10 @@ export function BureauMark({ small = false }: { small?: boolean }) {
   );
 }
 const links = [
-  { label: "The file", href: "/#file" },
-  { label: "For furnishers", href: "/#furnish" },
-  { label: "Rules", href: "/#rules" },
-  { label: "How it works", href: "/#how" },
+  { label: "The file", href: "/bureau#file" },
+  { label: "For furnishers", href: "/bureau#furnish" },
+  { label: "Rules", href: "/bureau#rules" },
+  { label: "How it works", href: "/bureau#how" },
 ];
 export function Header() {
   const [open, setOpen] = useState(false);
@@ -43,7 +43,7 @@ export function Header() {
   return (
     <header className="site-header">
       <div className="nav-inner">
-        <Link href="/" aria-label="The Agent Bureau home">
+        <Link href="/bureau" aria-label="The Agent Bureau pilot">
           <BureauMark />
         </Link>
         <nav
@@ -58,7 +58,7 @@ export function Header() {
           ))}
           <a
             className="nav-cta"
-            href="/#contact"
+            href="/bureau#contact"
             onClick={() => setOpen(false)}
           >
             Join the pilot <ArrowUpRight size={15} />
@@ -82,7 +82,7 @@ export function Footer() {
   return (
     <footer className="site-footer">
       <div className="footer-top">
-        <Link href="/" aria-label="The Agent Bureau home">
+        <Link href="/bureau" aria-label="The Agent Bureau pilot">
           <BureauMark />
         </Link>
         <p>
@@ -90,7 +90,7 @@ export function Footer() {
           <br />
           <span>Facts with sources. Never a score.</span>
         </p>
-        <a href="/#contact" className="footer-contact">
+        <a href="/bureau#contact" className="footer-contact">
           Start a conversation <ArrowUpRight size={20} />
         </a>
       </div>

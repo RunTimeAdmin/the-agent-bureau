@@ -74,6 +74,7 @@ export function serveStatic(app: Express) {
 
   const pages: Record<string, string> = {
     "/": "index.html",
+    "/bureau": "bureau.html",
     "/privacy": "privacy.html",
     "/terms": "terms.html",
     "/inbox": "inbox.html",

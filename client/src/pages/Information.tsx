@@ -114,7 +114,7 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
             </p>
           </>
         )}
-        <a className="button button-primary" href="/#contact">
+        <a className="button button-primary" href="/bureau#contact">
           Contact the bureau
         </a>
       </main>

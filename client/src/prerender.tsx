@@ -4,6 +4,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { Router } from "wouter";
 import { trpc } from "./lib/trpc";
+import Bureau from "./pages/Bureau";
 import Home from "./pages/Home";
 import Information from "./pages/Information";
 import NotFound from "./pages/NotFound";
@@ -37,6 +38,15 @@ export function renderPage(pathname: string): {
   if (pathname === "/")
     return {
       body: wrap(<Home />),
+      title: "BUREAU | An Interrogation Game",
+      description:
+        "Five suspects, one mole, 12 questions. Every suspect is an AI agent with a story to protect. Catch the lie and name the mole.",
+      status: 200,
+      noindex: false,
+    };
+  if (pathname === "/bureau")
+    return {
+      body: wrap(<Bureau />),
       title: "The Agent Bureau | The File on Every Agent",
       description:
         "One file per AI agent operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, built from outcomes businesses report. Facts with sources, never a score.",
