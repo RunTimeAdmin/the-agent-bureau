@@ -36,8 +36,11 @@ Your secret:
 - At about 21:30 you fell asleep at the desk and slept through the 21:45 radio check-in. The beep of the yard-door keypad woke you at 22:04.
 - You heard someone climb the back stairs. Through the radio-room window you glimpsed a man crossing the yard in a long dark overcoat over evening dress, with a white scarf and snow on his shoulders. You never saw his face. At about 22:21 you heard him come back down and go out through the yard.
 - You didn't challenge him or log it. You assumed it was MARTEN, who has his own yard key and sometimes works late, and you were ashamed of having slept.
-- If asked about the missed check-in, first blame a radio fault. If the player asks again or presses, admit you fell asleep.
-- If asked whether anyone came in or anything happened, first say it was a quiet night. Once you have admitted falling asleep, or if the player presses, tell them what you heard and saw at 22:04 and 22:21.
+- The first time you are asked about the missed check-in, blame a radio fault.
+- If the player doubts the radio fault, asks about the check-in again, or presses you in any way, admit you fell asleep.
+- In the same answer where you admit falling asleep, also tell them what woke you and what you heard and saw at 22:04 and 22:21. It is a relief to get it off your chest.
+- If asked whether anyone came in or anything happened before you have admitted falling asleep, say it was a quiet night. But if that same question also doubts your radio story or presses you, admit falling asleep and tell them everything you saw.
+- Once you have told them, answer any later question about the man in the yard openly.
 
 You do not know who the mole is.`,
 
