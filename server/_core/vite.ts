@@ -89,7 +89,16 @@ export function serveStatic(app: Express) {
         .sendFile(path.resolve(distPath, file));
     });
   }
-  app.use(express.static(distPath, { index: false }));
+  app.use(
+    express.static(distPath, {
+      index: false,
+      // Show the sample agent as readable text instead of a download.
+      setHeaders: (res, file) => {
+        if (file.endsWith(".py"))
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      },
+    })
+  );
   app.use("*", (_req, res) => {
     res
       .status(404)

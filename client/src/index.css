@@ -3560,3 +3560,12 @@ img {
 .inbox-agents li.is-hidden {
   opacity: 0.6;
 }
+.agents-docs {
+  margin: 24px 0 0;
+  color: var(--play-dim);
+}
+.agents-docs a {
+  color: var(--play-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

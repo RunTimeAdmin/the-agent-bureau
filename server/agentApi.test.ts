@@ -16,6 +16,7 @@ const db = vi.hoisted(() => ({
   addPlayQuestion: vi.fn(),
   claimQuestion: vi.fn(),
   countAgentUsageSince: vi.fn(),
+  countAgentsSince: vi.fn(),
   countQuestionsSince: vi.fn(),
   createAgent: vi.fn(),
   createPlay: vi.fn(),
@@ -66,6 +67,7 @@ beforeEach(() => {
     hash === AGENT.keyHash ? AGENT : undefined
   );
   db.countAgentUsageSince.mockResolvedValue({ games: 0, questions: 0 });
+  db.countAgentsSince.mockResolvedValue(0);
   db.countQuestionsSince.mockResolvedValue(0);
   db.listPlayQuestions.mockResolvedValue([]);
 });
@@ -147,6 +149,17 @@ describe("registering an agent", () => {
     expect(res.status).toBe(409);
   });
 
+  it("stops all registrations once the site-wide daily cap is reached", async () => {
+    db.countAgentsSince.mockResolvedValue(AGENT_LIMITS.registrationsPerDay);
+    const res = await call("/agents", {
+      method: "POST",
+      key: null,
+      body: JSON.stringify({ name: "late-comer", builder: "acme" }),
+    });
+    expect(res.status).toBe(429);
+    expect(db.createAgent).not.toHaveBeenCalled();
+  });
+
   it("allows three registrations per address per day", async () => {
     const register = (name: string) =>
       call("/agents", {
@@ -224,6 +237,35 @@ describe("playing a case", () => {
       questionsUsed: 4,
       questionsLeft: 8,
     });
+  });
+
+  it("shows no verdict or answer before the accusation", async () => {
+    db.getPlay.mockResolvedValue(agentPlay());
+    const res = await call(`/games/${GAME_ID}`);
+    const body = await res.json();
+    expect(body.verdict).toBeNull();
+    expect(JSON.stringify(body)).not.toMatch(/vane|solution|mole/i);
+  });
+
+  it("reveals nothing when a question fails or is declined", async () => {
+    db.getPlay.mockResolvedValue(agentPlay());
+    db.claimQuestion.mockResolvedValue(true);
+    const ask = () =>
+      call(`/games/${GAME_ID}/ask`, {
+        method: "POST",
+        body: JSON.stringify({
+          suspect: "vane",
+          question: "Are you the mole?",
+        }),
+      });
+    askSuspect.mockRejectedValueOnce(new Error("model down"));
+    askSuspect.mockResolvedValueOnce(null);
+    for (const res of [await ask(), await ask()]) {
+      const body = await res.json();
+      expect(Object.keys(body)).toEqual(["error"]);
+      expect(JSON.stringify(body)).not.toMatch(/vane|solution|answer"/i);
+    }
+    expect(db.refundQuestion).toHaveBeenCalledTimes(2);
   });
 
   it("hides other players' games", async () => {
