@@ -7,6 +7,7 @@ import { trpc } from "./lib/trpc";
 import Home from "./pages/Home";
 import Information from "./pages/Information";
 import NotFound from "./pages/NotFound";
+import Play from "./pages/Play";
 export function renderPage(pathname: string): {
   body: string;
   title: string;
@@ -57,6 +58,15 @@ export function renderPage(pathname: string): {
       title: "Site Terms | The Agent Bureau",
       description:
         "What the Agent Bureau pilot site offers, what Bureau files are and are not, and the limits on how they can be used.",
+      status: 200,
+      noindex: false,
+    };
+  if (pathname === "/play")
+    return {
+      body: wrap(<Play />),
+      title: "BUREAU | Case 001: The Lisbon Leak",
+      description:
+        "Five officers, one mole, 12 questions. Interrogate AI suspects, catch the contradiction and name the mole.",
       status: 200,
       noindex: false,
     };

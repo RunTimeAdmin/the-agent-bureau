@@ -40,6 +40,16 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
               ask to see its file, dispute any line, or add a statement by
               choosing "I operate an agent" in the inquiry form.
             </p>
+            <h2>The BUREAU game</h2>
+            <p>
+              If you play the case at /play, the questions you type are stored
+              with your game, along with the suspects' replies and your
+              accusation, so you can resume and so the team can see how cases
+              are played. Each question is sent to Anthropic, whose Claude model
+              writes the suspects' replies. The game asks for no name or email,
+              and your browser keeps only a random game id. Leave personal
+              details out of your questions.
+            </p>
             <h2>Access and operations</h2>
             <p>
               The site uses managed hosting and database infrastructure.
@@ -73,6 +83,13 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
             <p>
               The example file and the network graphic on this site are
               illustrative. They describe no real agent, operator, or business.
+            </p>
+            <h2>The BUREAU game</h2>
+            <p>
+              The case at /play is fiction. Its people and events are invented,
+              and an AI model writes the suspects' replies, which can be wrong
+              or inconsistent. Don't use the game to ask for anything harmful or
+              unlawful.
             </p>
             <h2>Facts, not scores</h2>
             <p>
