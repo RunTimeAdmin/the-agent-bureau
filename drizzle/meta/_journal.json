@@ -29,6 +29,13 @@
       "when": 1793057154842,
       "tag": "0003_inquiry_topics",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1793060913255,
+      "tag": "0004_play_tables",
+      "breakpoints": true
     }
   ]
 }

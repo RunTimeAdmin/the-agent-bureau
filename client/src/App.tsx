@@ -9,6 +9,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 const Information = lazy(() => import("./pages/Information"));
 const Inbox = lazy(() => import("./pages/Inbox"));
+const Play = lazy(() => import("./pages/Play"));
 export default function App() {
   return (
     <ErrorBoundary>
@@ -30,6 +31,7 @@ export default function App() {
               </Route>
               <Route path="/terms">{() => <Information kind="terms" />}</Route>
               <Route path="/inbox" component={Inbox} />
+              <Route path="/play" component={Play} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>

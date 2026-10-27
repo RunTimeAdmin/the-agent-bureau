@@ -19,6 +19,11 @@ const metadata: Record<
     description:
       "What the Agent Bureau pilot site offers, what Bureau files are and are not, and the limits on how they can be used.",
   },
+  "/play": {
+    title: "BUREAU | Case 001: The Lisbon Leak",
+    description:
+      "Five officers, one mole, 12 questions. Interrogate AI suspects, catch the contradiction and name the mole.",
+  },
   "/inbox": {
     title: "Private Operator Inbox | The Agent Bureau",
     description:
