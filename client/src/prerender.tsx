@@ -58,7 +58,7 @@ export function renderPage(pathname: string): {
       body: wrap(<Information kind="privacy" />),
       title: "Privacy Notice | The Agent Bureau",
       description:
-        "How The Agent Bureau handles website inquiries, operator access, Bureau files, and privacy questions during the pilot.",
+        "How The Agent Bureau handles game questions, website inquiries, operator access, Bureau files, and privacy questions during the pilot.",
       status: 200,
       noindex: false,
     };
@@ -67,7 +67,7 @@ export function renderPage(pathname: string): {
       body: wrap(<Information kind="terms" />),
       title: "Site Terms | The Agent Bureau",
       description:
-        "What the Agent Bureau pilot site offers, what Bureau files are and are not, and the limits on how they can be used.",
+        "What the BUREAU game and the Agent Bureau pilot offer, what Bureau files are and are not, and the limits on how they can be used.",
       status: 200,
       noindex: false,
     };
@@ -97,7 +97,11 @@ export function renderPage(pathname: string): {
     noindex: true,
   };
 }
-export function renderDocument(template: string, pathname: string) {
+export function renderDocument(
+  template: string,
+  pathname: string,
+  origin = "https://theagentbureau.xyz"
+) {
   const rendered = renderPage(pathname);
   const escape = (value: string) =>
     value
@@ -105,28 +109,34 @@ export function renderDocument(template: string, pathname: string) {
       .replaceAll('"', "&quot;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
+  // The game pages share as BUREAU with a wide card. Every other page shares
+  // as The Agent Bureau, so a game link never previews as a Bureau file.
+  const game = pathname === "/" || pathname === "/play";
+  const image = `${origin}${game ? "/og-game.png" : "/bureau-mark.png"}`;
+  const tags: [attr: "name" | "property", key: string, value: string][] = [
+    ["name", "description", rendered.description],
+    ["property", "og:site_name", game ? "BUREAU" : "The Agent Bureau"],
+    ["property", "og:title", rendered.title],
+    ["property", "og:description", rendered.description],
+    ["property", "og:image", image],
+    ["name", "twitter:card", game ? "summary_large_image" : "summary"],
+    ["name", "twitter:title", rendered.title],
+    ["name", "twitter:description", rendered.description],
+    ["name", "twitter:image", image],
+  ];
+  if (game)
+    tags.push(
+      ["name", "keywords", "interrogation game, detective game, AI game"],
+      ["name", "theme-color", "#08111f"]
+    );
   let html = template
     .replace('<div id="root"></div>', `<div id="root">${rendered.body}</div>`)
-    .replace(/<title>.*?<\/title>/, `<title>${escape(rendered.title)}</title>`)
-    .replace(
-      /<meta name="description" content="[^"]*"\s*\/?\s*>/,
-      `<meta name="description" content="${escape(rendered.description)}" />`
-    )
-    .replace(
-      /<meta property="og:title" content="[^"]*"\s*\/?\s*>/,
-      `<meta property="og:title" content="${escape(rendered.title)}" />`
-    )
-    .replace(
-      /<meta property="og:description" content="[^"]*"\s*\/?\s*>/,
-      `<meta property="og:description" content="${escape(rendered.description)}" />`
-    )
-    .replace(
-      /<meta name="twitter:title" content="[^"]*"\s*\/?\s*>/,
-      `<meta name="twitter:title" content="${escape(rendered.title)}" />`
-    )
-    .replace(
-      /<meta name="twitter:description" content="[^"]*"\s*\/?\s*>/,
-      `<meta name="twitter:description" content="${escape(rendered.description)}" />`
+    .replace(/<title>.*?<\/title>/, `<title>${escape(rendered.title)}</title>`);
+  // The template's meta tags span several lines, so match any whitespace.
+  for (const [attr, key, value] of tags)
+    html = html.replace(
+      new RegExp(`<meta\\s+${attr}="${key}"\\s+content="[^"]*"\\s*/?>`),
+      `<meta ${attr}="${key}" content="${escape(value)}" />`
     );
   if (rendered.noindex)
     html = html.replace(

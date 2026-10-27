@@ -87,7 +87,7 @@ function Brief({
         disabled={starting}
         type="button"
       >
-        {starting ? "Opening the file…" : "Open the case"}
+        {starting ? "Opening the case…" : "Open the case"}
       </button>
       {error && (
         <p className="play-error" role="alert">
@@ -213,7 +213,7 @@ function Investigation({
               <dd>{suspect.role}</dd>
               <dt>Last night</dt>
               <dd>{suspect.lastNight}</dd>
-              <dt>On file</dt>
+              <dt>Flagged</dt>
               <dd className="play-flag">{suspect.onFile}</dd>
             </dl>
           </header>
@@ -435,7 +435,7 @@ export default function Play() {
   } else if (!state) {
     body = (
       <p className="play-loading" role="status">
-        {game.error ? game.error.message : "Opening the case file…"}
+        {game.error ? game.error.message : "Opening the case…"}
       </p>
     );
   } else if (state.verdict) {

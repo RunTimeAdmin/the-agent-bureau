@@ -17,12 +17,12 @@ const metadata: Record<
   "/privacy": {
     title: "Privacy Notice | The Agent Bureau",
     description:
-      "How The Agent Bureau handles website inquiries, operator access, Bureau files, and privacy questions during the pilot.",
+      "How The Agent Bureau handles game questions, website inquiries, operator access, Bureau files, and privacy questions during the pilot.",
   },
   "/terms": {
     title: "Site Terms | The Agent Bureau",
     description:
-      "What the Agent Bureau pilot site offers, what Bureau files are and are not, and the limits on how they can be used.",
+      "What the BUREAU game and the Agent Bureau pilot offer, what Bureau files are and are not, and the limits on how they can be used.",
   },
   "/play": {
     title: "BUREAU | Case 001: The Lisbon Leak",

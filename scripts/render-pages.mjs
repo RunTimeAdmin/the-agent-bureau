@@ -6,8 +6,7 @@ if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.
 const escape = value => value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const template = await readFile(new URL('../dist/public/index.html', import.meta.url), 'utf8');
 for (const [pathname, filename] of [['/','index.html'],['/bureau','bureau.html'],['/privacy','privacy.html'],['/terms','terms.html'],['/inbox','inbox.html'],['/play','play.html'],['/404','404.html']]) {
-  let {html} = renderDocument(template, pathname);
-  html = html.replace(/(<meta (?:property="og:image"|name="twitter:image") content=")[^"]*"/g, `$1${escape(origin)}/bureau-mark.png"`);
+  let {html} = renderDocument(template, pathname, origin);
   if (['/','/bureau','/privacy','/terms','/play'].includes(pathname)) html=html.replace('</head>',`<link rel="canonical" href="${escape(origin+pathname)}" /><meta property="og:url" content="${escape(origin+pathname)}" /></head>`);
   await writeFile(new URL(`../dist/public/${filename}`, import.meta.url), html);
   console.log(`Prerendered ${pathname}`);

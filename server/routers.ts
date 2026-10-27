@@ -126,7 +126,7 @@ async function loadPlay(playId: string): Promise<Play> {
   if (!play || play.caseId !== CASE_001.id) {
     throw new TRPCError({
       code: "NOT_FOUND",
-      message: "That case file could not be found.",
+      message: "That game could not be found.",
     });
   }
   return play;
