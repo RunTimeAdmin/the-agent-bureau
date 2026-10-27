@@ -8,6 +8,12 @@ const MODEL = "claude-haiku-5-5";
 // answer; the brief already asks for under 80 words.
 const MAX_REPLY_TOKENS = 200;
 
+// A short reply should return quickly or not at all. The SDK default is 10
+// minutes with two retries, which lets one in-flight ask sit uncounted for a
+// long time; a tight timeout and one retry keep the request bounded.
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 1;
+
 let client: Anthropic | null = null;
 
 export type Exchange = { question: string; answer: string };
@@ -18,7 +24,10 @@ export async function askSuspect(
   history: Exchange[],
   question: string
 ): Promise<string | null> {
-  client ??= new Anthropic();
+  client ??= new Anthropic({
+    timeout: REQUEST_TIMEOUT_MS,
+    maxRetries: MAX_RETRIES,
+  });
   const messages: Anthropic.MessageParam[] = history.flatMap(turn => [
     { role: "user" as const, content: turn.question },
     { role: "assistant" as const, content: turn.answer },

@@ -1,7 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
-import superjson from "superjson";
+import { trpcTransformer } from "@shared/transformer";
 import { Router } from "wouter";
 import { casePath, CASES, findCase } from "@shared/cases";
 import { trpc } from "./lib/trpc";
@@ -40,7 +40,7 @@ export function renderPage(pathname: string): {
     links: [
       httpBatchLink({
         url: "http://render.invalid/api/trpc",
-        transformer: superjson,
+        transformer: trpcTransformer,
       }),
     ],
   });

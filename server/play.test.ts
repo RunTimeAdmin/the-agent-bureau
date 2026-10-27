@@ -4,14 +4,16 @@ import type { TrpcContext } from "./_core/context";
 const db = vi.hoisted(() => ({
   addPlayQuestion: vi.fn(),
   claimQuestion: vi.fn(),
-  countQuestionsSince: vi.fn(),
   createPlay: vi.fn(),
   finishPlay: vi.fn(),
   listAgents: vi.fn(),
   listFinishedPlays: vi.fn(),
   getPlay: vi.fn(),
   listPlayQuestions: vi.fn(),
+  readDaily: vi.fn(),
   refundQuestion: vi.fn(),
+  releaseDaily: vi.fn(),
+  reserveDaily: vi.fn(),
   setAgentHidden: vi.fn(),
 }));
 const { askSuspect } = vi.hoisted(() => ({ askSuspect: vi.fn() }));
@@ -58,7 +60,8 @@ const turns = [
 ];
 
 beforeEach(() => {
-  db.countQuestionsSince.mockResolvedValue(0);
+  db.readDaily.mockResolvedValue(0);
+  db.reserveDaily.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -98,7 +101,11 @@ describe("play.start", () => {
 describe("daily question limit", () => {
   it("closes the Bureau for everyone once today's total is reached", async () => {
     vi.useFakeTimers({ now: new Date("2026-10-27T15:30:00Z") });
-    db.countQuestionsSince.mockResolvedValue(DAILY_QUESTION_LIMIT.humans);
+    // The day's humans budget is full: starting reads it, asking fails to
+    // reserve a unit.
+    db.readDaily.mockResolvedValue(DAILY_QUESTION_LIMIT.humans);
+    db.reserveDaily.mockResolvedValue(false);
+    db.getPlay.mockResolvedValue(openPlay());
     const caller = appRouter.createCaller(createContext());
     const closed = {
       code: "TOO_MANY_REQUESTS",
@@ -110,9 +117,11 @@ describe("daily question limit", () => {
       caller.play.ask({ playId: PLAY_ID, suspect: "vane", question: "Where?" })
     ).rejects.toMatchObject(closed);
 
-    expect(db.countQuestionsSince).toHaveBeenCalledWith(
-      new Date("2026-10-27T00:00:00Z"),
-      false
+    expect(db.readDaily).toHaveBeenCalledWith("2026-10-27", "humans");
+    expect(db.reserveDaily).toHaveBeenCalledWith(
+      "2026-10-27",
+      "humans",
+      DAILY_QUESTION_LIMIT.humans
     );
     expect(db.createPlay).not.toHaveBeenCalled();
     expect(db.claimQuestion).not.toHaveBeenCalled();
@@ -272,6 +281,35 @@ describe("play.ask", () => {
 
     expect(db.refundQuestion).toHaveBeenCalledTimes(2);
     expect(db.addPlayQuestion).not.toHaveBeenCalled();
+  });
+
+  it("keeps the daily budget reserved when a call is declined", async () => {
+    // A declined answer still cost a paid call, so the daily unit stays spent;
+    // only the player's own per-game question is refunded.
+    db.getPlay.mockResolvedValue(openPlay());
+    db.claimQuestion.mockResolvedValue(true);
+    db.listPlayQuestions.mockResolvedValue([]);
+    askSuspect.mockResolvedValue(null);
+    const caller = appRouter.createCaller(createContext());
+    await expect(
+      caller.play.ask({ playId: PLAY_ID, suspect: "moth", question: "Why?" })
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT" });
+    expect(db.reserveDaily).toHaveBeenCalled();
+    expect(db.refundQuestion).toHaveBeenCalledWith(PLAY_ID);
+    expect(db.releaseDaily).not.toHaveBeenCalled();
+  });
+
+  it("checks ownership before touching the daily budget", async () => {
+    // An ask for a game that cannot be found does no budget work, so it cannot
+    // drive the shared counter on an unowned or unknown id.
+    db.getPlay.mockResolvedValue(undefined);
+    const caller = appRouter.createCaller(createContext());
+    await expect(
+      caller.play.ask({ playId: PLAY_ID, suspect: "moth", question: "Why?" })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(db.reserveDaily).not.toHaveBeenCalled();
+    expect(db.claimQuestion).not.toHaveBeenCalled();
+    expect(askSuspect).not.toHaveBeenCalled();
   });
 
   it("rejects empty and overlong questions", async () => {

@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
 import { runMigrations } from "../db";
 import { appRouter } from "../routers";
@@ -28,6 +29,8 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      // Cap batched calls so one request cannot fan out into many queries.
+      maxBatchSize: MAX_TRPC_BATCH,
     })
   );
   // development mode uses Vite, production mode uses static files

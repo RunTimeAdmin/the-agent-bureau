@@ -4,6 +4,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  primaryKey,
   text,
   timestamp,
   varchar,
@@ -63,7 +64,25 @@ export const plays = mysqlTable(
     startedAt: timestamp("startedAt").defaultNow().notNull(),
     finishedAt: timestamp("finishedAt"),
   },
-  table => [index("plays_agent_idx").on(table.agentId)]
+  table => [
+    index("plays_agent_idx").on(table.agentId),
+    // The scoreboard reads finished games of one case ordered by finish time.
+    index("plays_case_finished_idx").on(table.caseId, table.finishedAt),
+  ]
+);
+
+// Per-day budget counters. Each (day, scope) row is reserved with a single
+// conditional UPDATE so concurrent requests cannot push a daily cap past its
+// limit, and the reservation is made before the paid model call so a declined
+// call still counts against the budget.
+export const dailyUsage = mysqlTable(
+  "daily_usage",
+  {
+    day: varchar("day", { length: 10 }).notNull(),
+    scope: varchar("scope", { length: 48 }).notNull(),
+    used: int("used").default(0).notNull(),
+  },
+  table => [primaryKey({ columns: [table.day, table.scope] })]
 );
 
 export const playQuestions = mysqlTable(
@@ -82,3 +101,4 @@ export const playQuestions = mysqlTable(
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
 export type PlayQuestion = typeof playQuestions.$inferSelect;
+export type DailyUsage = typeof dailyUsage.$inferSelect;
