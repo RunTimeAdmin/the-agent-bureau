@@ -13,9 +13,11 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
+import { createPool } from "mysql2";
 import {
   InsertInquiry,
   agents,
+  dailyUsage,
   inquiries,
   playQuestions,
   plays,
@@ -27,7 +29,15 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const pool = createPool(process.env.DATABASE_URL);
+      // Pin every pooled connection to UTC. Daily windows and registration
+      // counts compare a UTC value with DEFAULT(now()) TIMESTAMP columns, which
+      // MySQL reads in the session time zone; without this the day could start
+      // hours off on a host whose zone is not UTC.
+      pool.on("connection", connection => {
+        connection.query("SET time_zone = '+00:00'");
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -144,40 +154,59 @@ export async function refundQuestion(playId: string): Promise<void> {
     .where(and(eq(plays.id, playId), gt(plays.questionsUsed, 0)));
 }
 
-// Humans and agents draw on separate daily budgets, so agents can't use up
-// the questions meant for people playing in the browser.
-export async function countQuestionsSince(
-  since: Date,
-  byAgents: boolean
-): Promise<number> {
+// Reserves one unit of a daily budget in a single conditional UPDATE, so
+// parallel requests cannot push a cap past its limit. The counter is advanced
+// before the paid model call and is not given back when a call is declined, so
+// the budget reflects calls attempted, not only answers stored. Returns false
+// when the day's limit is already reached.
+export async function reserveDaily(
+  day: string,
+  scope: string,
+  limit: number
+): Promise<boolean> {
   const db = await requireDb();
-  const [row] = await db
-    .select({ total: count() })
-    .from(playQuestions)
-    .innerJoin(plays, eq(plays.id, playQuestions.playId))
+  // Make sure the row exists without disturbing an existing count.
+  await db
+    .insert(dailyUsage)
+    .values({ day, scope, used: 0 })
+    .onDuplicateKeyUpdate({ set: { day: sql`${dailyUsage.day}` } });
+  const [result] = await db
+    .update(dailyUsage)
+    .set({ used: sql`${dailyUsage.used} + 1` })
     .where(
       and(
-        gte(playQuestions.createdAt, since),
-        byAgents ? isNotNull(plays.agentId) : isNull(plays.agentId)
+        eq(dailyUsage.day, day),
+        eq(dailyUsage.scope, scope),
+        lt(dailyUsage.used, limit)
       )
     );
-  return row?.total ?? 0;
+  return result.affectedRows === 1;
 }
 
-export async function countAgentUsageSince(agentId: number, since: Date) {
+// Hands a reserved unit back, used only when no model call was made (the game
+// was already out of questions). A declined or failed call keeps its unit.
+export async function releaseDaily(day: string, scope: string): Promise<void> {
   const db = await requireDb();
-  const [games] = await db
-    .select({ total: count() })
-    .from(plays)
-    .where(and(eq(plays.agentId, agentId), gte(plays.startedAt, since)));
-  const [questions] = await db
-    .select({ total: count() })
-    .from(playQuestions)
-    .innerJoin(plays, eq(plays.id, playQuestions.playId))
+  await db
+    .update(dailyUsage)
+    .set({ used: sql`${dailyUsage.used} - 1` })
     .where(
-      and(eq(plays.agentId, agentId), gte(playQuestions.createdAt, since))
+      and(
+        eq(dailyUsage.day, day),
+        eq(dailyUsage.scope, scope),
+        gt(dailyUsage.used, 0)
+      )
     );
-  return { games: games?.total ?? 0, questions: questions?.total ?? 0 };
+}
+
+// Reads a daily counter without reserving, for the "is the Bureau open" gate.
+export async function readDaily(day: string, scope: string): Promise<number> {
+  const db = await requireDb();
+  const [row] = await db
+    .select({ used: dailyUsage.used })
+    .from(dailyUsage)
+    .where(and(eq(dailyUsage.day, day), eq(dailyUsage.scope, scope)));
+  return row?.used ?? 0;
 }
 
 export async function countAgentsSince(since: Date): Promise<number> {

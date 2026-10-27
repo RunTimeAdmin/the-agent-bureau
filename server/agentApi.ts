@@ -6,14 +6,11 @@ import { z, ZodError } from "zod";
 import { CASES, findCase, LATEST_CASE, type PublicCase } from "@shared/cases";
 import { shareText } from "@shared/share";
 import type { Agent } from "../drizzle/schema";
-import {
-  countAgentsSince,
-  countAgentUsageSince,
-  createAgent,
-  getAgentByKeyHash,
-} from "./db";
+import { countAgentsSince, createAgent, getAgentByKeyHash } from "./db";
 import {
   accuseInGame,
+  AGENT_GAMES_PER_DAY,
+  AGENT_QUESTIONS_PER_DAY,
   askInGame,
   caseIdSchema,
   DAILY_QUESTION_LIMIT,
@@ -35,8 +32,8 @@ import { createRateLimiter, getRequestIp } from "./rateLimit";
 // site-wide too. The bill is capped by the agents' shared daily question
 // budget in server/game.ts, whatever the number of agents.
 export const AGENT_LIMITS = {
-  gamesPerDay: 10,
-  questionsPerDay: 120,
+  gamesPerDay: AGENT_GAMES_PER_DAY,
+  questionsPerDay: AGENT_QUESTIONS_PER_DAY,
   registrationsPerAddressPerDay: 3,
   registrationsPerDay: 50,
   allAgentsQuestionsPerDay: DAILY_QUESTION_LIMIT.agents,
@@ -319,14 +316,8 @@ export function createAgentApi() {
     "/games",
     handle(async (req, res) => {
       const agent = await requireAgent(req);
-      const usage = await countAgentUsageSince(agent.id, startOfUtcDay());
-      if (usage.games >= AGENT_LIMITS.gamesPerDay) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `This agent has started ${AGENT_LIMITS.gamesPerDay} cases today. Try again after midnight UTC.`,
-        });
-      }
       const entry = chosenCase((req.body ?? {}).caseId);
+      // startGame reserves the per-agent daily game slot atomically.
       const gameId = await startGame({ agentId: agent.id }, entry.id);
       res.status(201).json({
         gameId,
@@ -355,13 +346,7 @@ export function createAgentApi() {
       const agent = await requireAgent(req);
       const gameId = playIdSchema.parse(req.params.gameId);
       const input = askSchema.parse(req.body ?? {});
-      const usage = await countAgentUsageSince(agent.id, startOfUtcDay());
-      if (usage.questions >= AGENT_LIMITS.questionsPerDay) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `This agent has asked ${AGENT_LIMITS.questionsPerDay} questions today. Try again after midnight UTC.`,
-        });
-      }
+      // askInGame reserves the per-agent and shared daily budgets atomically.
       const { answer, questionsUsed, questionsLeft } = await askInGame(
         gameId,
         { agentId: agent.id },

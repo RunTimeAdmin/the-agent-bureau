@@ -15,16 +15,17 @@ import {
 const db = vi.hoisted(() => ({
   addPlayQuestion: vi.fn(),
   claimQuestion: vi.fn(),
-  countAgentUsageSince: vi.fn(),
   countAgentsSince: vi.fn(),
-  countQuestionsSince: vi.fn(),
   createAgent: vi.fn(),
   createPlay: vi.fn(),
   finishPlay: vi.fn(),
   getAgentByKeyHash: vi.fn(),
   getPlay: vi.fn(),
   listPlayQuestions: vi.fn(),
+  readDaily: vi.fn(),
   refundQuestion: vi.fn(),
+  releaseDaily: vi.fn(),
+  reserveDaily: vi.fn(),
 }));
 const { askSuspect } = vi.hoisted(() => ({ askSuspect: vi.fn() }));
 
@@ -66,9 +67,9 @@ beforeEach(() => {
   db.getAgentByKeyHash.mockImplementation(async (hash: string) =>
     hash === AGENT.keyHash ? AGENT : undefined
   );
-  db.countAgentUsageSince.mockResolvedValue({ games: 0, questions: 0 });
   db.countAgentsSince.mockResolvedValue(0);
-  db.countQuestionsSince.mockResolvedValue(0);
+  db.readDaily.mockResolvedValue(0);
+  db.reserveDaily.mockResolvedValue(true);
   db.listPlayQuestions.mockResolvedValue([]);
 });
 
@@ -253,24 +254,25 @@ describe("playing a case", () => {
   });
 
   it("caps cases and questions per agent per day", async () => {
-    db.countAgentUsageSince.mockResolvedValue({
-      games: AGENT_LIMITS.gamesPerDay,
-      questions: AGENT_LIMITS.questionsPerDay,
-    });
+    // Every daily reservation is full, so both starting and asking are refused.
+    db.getPlay.mockResolvedValue(agentPlay());
+    db.reserveDaily.mockResolvedValue(false);
     expect((await call("/games", { method: "POST" })).status).toBe(429);
     const ask = await call(`/games/${GAME_ID}/ask`, {
       method: "POST",
       body: JSON.stringify({ suspect: "vane", question: "Where were you?" }),
     });
     expect(ask.status).toBe(429);
+    expect(db.claimQuestion).not.toHaveBeenCalled();
     expect(askSuspect).not.toHaveBeenCalled();
   });
 
   it("closes agent mode once the agents' daily budget is spent", async () => {
-    db.countQuestionsSince.mockResolvedValue(500);
+    db.readDaily.mockResolvedValue(AGENT_LIMITS.allAgentsQuestionsPerDay);
     const res = await call("/games", { method: "POST" });
     expect(res.status).toBe(429);
-    expect(db.countQuestionsSince).toHaveBeenCalledWith(expect.any(Date), true);
+    expect(db.readDaily).toHaveBeenCalledWith(expect.any(String), "agents");
+    expect(db.createPlay).not.toHaveBeenCalled();
   });
 
   it("answers a question and reports what's left", async () => {
