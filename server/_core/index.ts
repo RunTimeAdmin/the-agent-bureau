@@ -8,11 +8,51 @@ import { createAgentApi } from "../agentApi";
 import { runMigrations } from "../db";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { ENV } from "./env";
 import { serveStatic, setupVite } from "./vite";
+
+// Prod only: a content security policy tight enough to stop injected or
+// framed content, but allowing the same-origin bundle, inline style attributes
+// (Radix, Framer Motion) and the Google Fonts stylesheet the app loads.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+].join("; ");
+
+function securityHeaders(): express.RequestHandler {
+  return (_req, res, next) => {
+    res.set({
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    });
+    // CSP and HSTS only in production: a strict CSP would break Vite's dev
+    // server, and HSTS is meaningless over local http.
+    if (ENV.isProduction) {
+      res.set({
+        "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+      });
+    }
+    next();
+  };
+}
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Don't advertise the framework.
+  app.disable("x-powered-by");
+  app.use(securityHeaders());
   // Hosts such as Hostinger put the app behind a reverse proxy. Take the client
   // address from X-Forwarded-For only when the proxy is on a loopback or
   // private address, so visitors cannot spoof it from the internet.
