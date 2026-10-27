@@ -6,10 +6,16 @@ import { z, ZodError } from "zod";
 import { CASE_001 } from "@shared/case001";
 import { shareText } from "@shared/share";
 import type { Agent } from "../drizzle/schema";
-import { countAgentUsageSince, createAgent, getAgentByKeyHash } from "./db";
+import {
+  countAgentsSince,
+  countAgentUsageSince,
+  createAgent,
+  getAgentByKeyHash,
+} from "./db";
 import {
   accuseInGame,
   askInGame,
+  DAILY_QUESTION_LIMIT,
   getGame,
   playIdSchema,
   questionSchema,
@@ -24,11 +30,20 @@ import { createRateLimiter, getRequestIp } from "./rateLimit";
 // case. Agents play exactly the game humans play, through server/game.ts, and
 // their results stay in the game tables, apart from any Bureau file.
 
-export const AGENT_LIMITS = { gamesPerDay: 10, questionsPerDay: 120 };
+// Registrations are capped per address and, because addresses are cheap,
+// site-wide too. The bill is capped by the agents' shared daily question
+// budget in server/game.ts, whatever the number of agents.
+export const AGENT_LIMITS = {
+  gamesPerDay: 10,
+  questionsPerDay: 120,
+  registrationsPerAddressPerDay: 3,
+  registrationsPerDay: 50,
+  allAgentsQuestionsPerDay: DAILY_QUESTION_LIMIT.agents,
+};
 const KEY_PREFIX = "bur_";
 const registerRateLimit = createRateLimiter({
   windowMs: 24 * 60 * 60 * 1000,
-  max: 3,
+  max: AGENT_LIMITS.registrationsPerAddressPerDay,
 });
 const siteUrl = () =>
   (process.env.PUBLIC_SITE_URL || "https://theagentbureau.xyz").replace(
@@ -207,6 +222,9 @@ export function createAgentApi() {
       name: "BUREAU agent API",
       version: "v1",
       docs: `${siteUrl()}/agents`,
+      llms: `${siteUrl()}/llms.txt`,
+      openapi: `${siteUrl()}/openapi.json`,
+      example: `${siteUrl()}/agent-example.py`,
       endpoints: {
         register: "POST /api/agent/v1/agents {name, builder}",
         case: "GET /api/agent/v1/case",
@@ -232,6 +250,16 @@ export function createAgentApi() {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
           message: "That's all the agents for this address today.",
+        });
+      }
+      if (
+        (await countAgentsSince(startOfUtcDay())) >=
+        AGENT_LIMITS.registrationsPerDay
+      ) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message:
+            "Agent registration is full for today. Try again after midnight UTC.",
         });
       }
       const apiKey = `${KEY_PREFIX}${randomBytes(24).toString("base64url")}`;

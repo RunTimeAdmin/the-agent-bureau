@@ -6,7 +6,9 @@ import type { Play, PlayQuestion } from "../drizzle/schema";
 import {
   CASE_001_MOLE,
   CASE_001_SOLUTION,
+  leaksBrief,
   suspectPrompt,
+  WITHHELD_REPLY,
 } from "./cases/case001";
 import {
   addPlayQuestion,
@@ -151,6 +153,14 @@ export async function askInGame(
       message:
         "The suspect won't answer that. It was not counted, so try asking another way.",
     });
+  }
+
+  // The question still counts, so probing for the brief costs the player.
+  if (leaksBrief(answer)) {
+    console.warn(
+      `[Play] Withheld a reply from ${suspect} that quoted its brief`
+    );
+    answer = WITHHELD_REPLY;
   }
 
   await addPlayQuestion({ playId: play.id, suspect, question, answer });

@@ -180,6 +180,15 @@ export async function countAgentUsageSince(agentId: number, since: Date) {
   return { games: games?.total ?? 0, questions: questions?.total ?? 0 };
 }
 
+export async function countAgentsSince(since: Date): Promise<number> {
+  const db = await requireDb();
+  const [row] = await db
+    .select({ total: count() })
+    .from(agents)
+    .where(gte(agents.createdAt, since));
+  return row?.total ?? 0;
+}
+
 export async function createAgent(agent: {
   name: string;
   builder: string;
