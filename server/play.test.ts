@@ -7,9 +7,12 @@ const db = vi.hoisted(() => ({
   countQuestionsSince: vi.fn(),
   createPlay: vi.fn(),
   finishPlay: vi.fn(),
+  listAgents: vi.fn(),
+  listFinishedPlays: vi.fn(),
   getPlay: vi.fn(),
   listPlayQuestions: vi.fn(),
   refundQuestion: vi.fn(),
+  setAgentHidden: vi.fn(),
 }));
 const { askSuspect } = vi.hoisted(() => ({ askSuspect: vi.fn() }));
 
@@ -22,17 +25,14 @@ vi.mock("./interrogate", () => ({
 
 import { suspectIds } from "@shared/case001";
 import { CASE_001_MOLE, suspectPrompt } from "./cases/case001";
-import {
-  appRouter,
-  DAILY_QUESTION_LIMIT,
-  resetInquiryRateLimiter,
-} from "./routers";
+import { DAILY_QUESTION_LIMIT } from "./game";
+import { appRouter, resetInquiryRateLimiter } from "./routers";
 
 const PLAY_ID = "0123456789abcdef0123456789abcdef";
 
-function createContext(ip = "198.51.100.20"): TrpcContext {
+function createContext(ip = "198.51.100.20", isOperator = false): TrpcContext {
   return {
-    isOperator: false,
+    isOperator,
     req: { ip, headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
@@ -42,6 +42,7 @@ function openPlay(overrides = {}) {
   return {
     id: PLAY_ID,
     caseId: "001",
+    agentId: null,
     questionsUsed: 2,
     accused: null,
     solved: null,
@@ -71,7 +72,7 @@ describe("play.start", () => {
     const caller = appRouter.createCaller(createContext());
     const { playId } = await caller.play.start();
     expect(playId).toMatch(/^[0-9a-f]{32}$/);
-    expect(db.createPlay).toHaveBeenCalledWith(playId, "001");
+    expect(db.createPlay).toHaveBeenCalledWith(playId, "001", null);
   });
 
   it("allows five new games per address per day", async () => {
@@ -88,7 +89,7 @@ describe("play.start", () => {
 describe("daily question limit", () => {
   it("closes the Bureau for everyone once today's total is reached", async () => {
     vi.useFakeTimers({ now: new Date("2026-10-27T15:30:00Z") });
-    db.countQuestionsSince.mockResolvedValue(DAILY_QUESTION_LIMIT);
+    db.countQuestionsSince.mockResolvedValue(DAILY_QUESTION_LIMIT.humans);
     const caller = appRouter.createCaller(createContext());
     const closed = {
       code: "TOO_MANY_REQUESTS",
@@ -101,7 +102,8 @@ describe("daily question limit", () => {
     ).rejects.toMatchObject(closed);
 
     expect(db.countQuestionsSince).toHaveBeenCalledWith(
-      new Date("2026-10-27T00:00:00Z")
+      new Date("2026-10-27T00:00:00Z"),
+      false
     );
     expect(db.createPlay).not.toHaveBeenCalled();
     expect(db.claimQuestion).not.toHaveBeenCalled();
@@ -141,6 +143,14 @@ describe("play.get", () => {
       caller.play.get({ playId: "../../etc/passwd" })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.getPlay).not.toHaveBeenCalled();
+  });
+
+  it("never opens an agent's game in the browser game", async () => {
+    db.getPlay.mockResolvedValue(openPlay({ agentId: 7 }));
+    const caller = appRouter.createCaller(createContext());
+    await expect(caller.play.get({ playId: PLAY_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 
   it("reports a missing game as not found", async () => {
@@ -268,5 +278,47 @@ describe("suspect prompts", () => {
         suspect === CASE_001_MOLE
       );
     }
+  });
+});
+
+describe("play.scoreboard", () => {
+  it("builds humans vs agents from finished games only", async () => {
+    db.listFinishedPlays.mockResolvedValue([
+      {
+        agentId: null,
+        agentName: null,
+        agentBuilder: null,
+        solved: true,
+        questionsUsed: 7,
+        finishedAt: new Date(),
+      },
+    ]);
+    const caller = appRouter.createCaller(createContext());
+    const board = await caller.play.scoreboard();
+    expect(db.listFinishedPlays).toHaveBeenCalledWith("001");
+    expect(board.humans).toEqual({
+      finished: 1,
+      solved: 1,
+      averageQuestionsWhenSolved: 7,
+    });
+    expect(board.leaderboard).toEqual([]);
+  });
+});
+
+describe("agent moderation", () => {
+  it("is for operators only", async () => {
+    const visitor = appRouter.createCaller(createContext());
+    await expect(visitor.agents.list()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      visitor.agents.setHidden({ id: 1, hidden: true })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const operator = appRouter.createCaller(createContext(undefined, true));
+    db.listAgents.mockResolvedValue([]);
+    await expect(operator.agents.list()).resolves.toEqual([]);
+    await operator.agents.setHidden({ id: 3, hidden: true });
+    expect(db.setAgentHidden).toHaveBeenCalledWith(3, true);
   });
 });

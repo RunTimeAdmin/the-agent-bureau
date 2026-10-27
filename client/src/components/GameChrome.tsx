@@ -22,7 +22,7 @@ export function GameFooter() {
       <nav aria-label="Site">
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
-        <Link href="/bureau">The Agent Bureau</Link>
+        <Link href="/bureau">Real agents need a file too</Link>
       </nav>
     </footer>
   );

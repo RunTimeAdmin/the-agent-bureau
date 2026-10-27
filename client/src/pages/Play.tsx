@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { CASE_001, type SuspectId } from "@shared/case001";
+import { shareText } from "@shared/share";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
 
@@ -28,16 +29,6 @@ function storePlay(playId: string | null) {
 
 function codename(id: SuspectId) {
   return CASE_001.suspects.find(suspect => suspect.id === id)!.codename;
-}
-
-function shareText(solved: boolean, used: number, origin: string) {
-  const squares =
-    (solved ? "🟩" : "🟥").repeat(used) +
-    "⬛".repeat(Math.max(0, LIMIT - used));
-  const line = solved
-    ? `Mole caught in ${used} ${used === 1 ? "question" : "questions"}`
-    : `The mole got away (${used} ${used === 1 ? "question" : "questions"})`;
-  return `BUREAU · Case ${CASE_001.id}\n${line}\n${squares}\n${origin}/play`;
 }
 
 function Meter({ used }: { used: number }) {
@@ -351,7 +342,13 @@ function Verdict({
   };
 }) {
   const [copied, setCopied] = useState(false);
-  const text = shareText(verdict.solved, used, window.location.origin);
+  const text = shareText({
+    caseId: CASE_001.id,
+    solved: verdict.solved,
+    used,
+    limit: LIMIT,
+    url: `${window.location.origin}/play`,
+  });
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 

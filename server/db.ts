@@ -6,6 +6,7 @@ import {
   eq,
   gt,
   gte,
+  isNotNull,
   isNull,
   lt,
   sql,
@@ -14,6 +15,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import {
   InsertInquiry,
+  agents,
   inquiries,
   playQuestions,
   plays,
@@ -90,9 +92,13 @@ async function requireDb() {
   return db;
 }
 
-export async function createPlay(id: string, caseId: string): Promise<void> {
+export async function createPlay(
+  id: string,
+  caseId: string,
+  agentId: number | null = null
+): Promise<void> {
   const db = await requireDb();
-  await db.insert(plays).values({ id, caseId });
+  await db.insert(plays).values({ id, caseId, agentId });
 }
 
 export async function getPlay(id: string) {
@@ -138,13 +144,106 @@ export async function refundQuestion(playId: string): Promise<void> {
     .where(and(eq(plays.id, playId), gt(plays.questionsUsed, 0)));
 }
 
-export async function countQuestionsSince(since: Date): Promise<number> {
+// Humans and agents draw on separate daily budgets, so agents can't use up
+// the questions meant for people playing in the browser.
+export async function countQuestionsSince(
+  since: Date,
+  byAgents: boolean
+): Promise<number> {
   const db = await requireDb();
   const [row] = await db
     .select({ total: count() })
     .from(playQuestions)
-    .where(gte(playQuestions.createdAt, since));
+    .innerJoin(plays, eq(plays.id, playQuestions.playId))
+    .where(
+      and(
+        gte(playQuestions.createdAt, since),
+        byAgents ? isNotNull(plays.agentId) : isNull(plays.agentId)
+      )
+    );
   return row?.total ?? 0;
+}
+
+export async function countAgentUsageSince(agentId: number, since: Date) {
+  const db = await requireDb();
+  const [games] = await db
+    .select({ total: count() })
+    .from(plays)
+    .where(and(eq(plays.agentId, agentId), gte(plays.startedAt, since)));
+  const [questions] = await db
+    .select({ total: count() })
+    .from(playQuestions)
+    .innerJoin(plays, eq(plays.id, playQuestions.playId))
+    .where(
+      and(eq(plays.agentId, agentId), gte(playQuestions.createdAt, since))
+    );
+  return { games: games?.total ?? 0, questions: questions?.total ?? 0 };
+}
+
+export async function createAgent(agent: {
+  name: string;
+  builder: string;
+  keyHash: string;
+}): Promise<number> {
+  const db = await requireDb();
+  const [result] = await db.insert(agents).values(agent);
+  return result.insertId;
+}
+
+export async function getAgentByKeyHash(keyHash: string) {
+  const db = await requireDb();
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.keyHash, keyHash));
+  return agent;
+}
+
+export async function listAgents() {
+  const db = await requireDb();
+  return db
+    .select({
+      id: agents.id,
+      name: agents.name,
+      builder: agents.builder,
+      hidden: agents.hidden,
+      createdAt: agents.createdAt,
+      games: count(plays.id),
+    })
+    .from(agents)
+    .leftJoin(plays, eq(plays.agentId, agents.id))
+    .groupBy(agents.id)
+    .orderBy(desc(agents.createdAt));
+}
+
+export async function setAgentHidden(id: number, hidden: boolean) {
+  const db = await requireDb();
+  await db.update(agents).set({ hidden }).where(eq(agents.id, id));
+}
+
+// Finished games for the scoreboard. Agent games from hidden agents are left
+// out; human games carry no identity at all.
+export async function listFinishedPlays(caseId: string) {
+  const db = await requireDb();
+  return db
+    .select({
+      agentId: plays.agentId,
+      agentName: agents.name,
+      agentBuilder: agents.builder,
+      solved: plays.solved,
+      questionsUsed: plays.questionsUsed,
+      finishedAt: plays.finishedAt,
+    })
+    .from(plays)
+    .leftJoin(agents, eq(agents.id, plays.agentId))
+    .where(
+      and(
+        eq(plays.caseId, caseId),
+        isNotNull(plays.finishedAt),
+        sql`(${plays.agentId} is null or ${agents.hidden} = false)`
+      )
+    )
+    .orderBy(asc(plays.finishedAt));
 }
 
 export async function addPlayQuestion(row: {

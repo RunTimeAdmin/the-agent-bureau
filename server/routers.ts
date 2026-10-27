@@ -1,30 +1,29 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { CASE_001, suspectIds, type SuspectId } from "@shared/case001";
+import { CASE_001 } from "@shared/case001";
 import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
-import type { Play, PlayQuestion } from "../drizzle/schema";
 import {
-  CASE_001_MOLE,
-  CASE_001_SOLUTION,
-  suspectPrompt,
-} from "./cases/case001";
-import {
-  addPlayQuestion,
-  claimQuestion,
-  countQuestionsSince,
   createInquiry,
-  createPlay,
   deleteInquiry,
-  finishPlay,
-  getPlay,
+  listAgents,
+  listFinishedPlays,
   listInquiries,
-  listPlayQuestions,
-  refundQuestion,
+  setAgentHidden,
   updateInquiryStatus,
 } from "./db";
-import { askSuspect, isOutOfCredit } from "./interrogate";
-import { createRateLimiter } from "./rateLimit";
+import {
+  accuseInGame,
+  askInGame,
+  getGame,
+  playIdSchema,
+  questionSchema,
+  startGame,
+  suspectSchema,
+  type Player,
+} from "./game";
+import { buildScoreboard } from "./scoreboard";
+import { createRateLimiter, getRequestIp } from "./rateLimit";
 import {
   checkOperatorPassword,
   createOperatorSession,
@@ -74,22 +73,11 @@ const loginRateLimit = createRateLimiter({
   max: 10,
 });
 // Every question is a paid model call. Per-address limits stop one visitor
-// from draining the day; the daily total caps the bill however many
-// addresses there are.
+// from draining the day; server/game.ts caps the daily total.
 const DAY_MS = 24 * 60 * 60 * 1000;
 const playStartRateLimit = createRateLimiter({ windowMs: DAY_MS, max: 5 });
 const playAskRateLimit = createRateLimiter({ windowMs: DAY_MS, max: 60 });
-export const DAILY_QUESTION_LIMIT = 1500;
-const CLOSED_FOR_TODAY = "The Bureau is closed for today. Come back tomorrow.";
-
-function getRequestIp(req: {
-  ip?: string;
-  socket?: { remoteAddress?: string };
-}): string {
-  // Express req.ip honors X-Forwarded-For only from the private-network proxies
-  // trusted in server/_core/index.ts. Never read the raw header here.
-  return req.ip?.trim() || req.socket?.remoteAddress?.trim() || "unknown";
-}
+const browserPlayer: Player = { agentId: null };
 
 export function consumeInquiryRateLimit(ip: string, now = Date.now()): boolean {
   return inquiryRateLimit.consume(ip, now);
@@ -106,50 +94,6 @@ export function resetInquiryRateLimiter(): void {
 export function generateInquiryReference(): string {
   const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
   return `INQ-${date}-${randomBytes(6).toString("hex").toUpperCase()}`;
-}
-
-const playIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
-
-async function assertBureauOpen(now = new Date()): Promise<void> {
-  const midnightUtc = new Date(now);
-  midnightUtc.setUTCHours(0, 0, 0, 0);
-  if ((await countQuestionsSince(midnightUtc)) >= DAILY_QUESTION_LIMIT) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: CLOSED_FOR_TODAY,
-    });
-  }
-}
-
-async function loadPlay(playId: string): Promise<Play> {
-  const play = await getPlay(playId);
-  if (!play || play.caseId !== CASE_001.id) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "That game could not be found.",
-    });
-  }
-  return play;
-}
-
-// The answer only leaves the server once the player has made their accusation.
-function playState(play: Play, questions: PlayQuestion[]) {
-  return {
-    questionsUsed: play.questionsUsed,
-    turns: questions.map(turn => ({
-      suspect: turn.suspect as SuspectId,
-      question: turn.question,
-      answer: turn.answer,
-    })),
-    verdict: play.finishedAt
-      ? {
-          accused: play.accused as SuspectId,
-          solved: play.solved === true,
-          mole: CASE_001_MOLE,
-          solution: CASE_001_SOLUTION,
-        }
-      : null,
-  };
 }
 
 export const appRouter = router({
@@ -248,27 +192,17 @@ export const appRouter = router({
             "That's all the cases for this address today. Come back tomorrow.",
         });
       }
-      await assertBureauOpen();
-      const playId = randomBytes(16).toString("hex");
-      await createPlay(playId, CASE_001.id);
-      return { playId };
+      return { playId: await startGame(browserPlayer) };
     }),
     get: publicProcedure
       .input(z.object({ playId: playIdSchema }))
-      .query(async ({ input }) => {
-        const play = await loadPlay(input.playId);
-        return playState(play, await listPlayQuestions(play.id));
-      }),
+      .query(({ input }) => getGame(input.playId, browserPlayer)),
     ask: publicProcedure
       .input(
         z.object({
           playId: playIdSchema,
-          suspect: z.enum(suspectIds),
-          question: z
-            .string()
-            .trim()
-            .min(3, "Ask a full question")
-            .max(280, "Keep questions to 280 characters"),
+          suspect: suspectSchema,
+          question: questionSchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -279,66 +213,31 @@ export const appRouter = router({
               "That's all the questions for this address today. Come back tomorrow.",
           });
         }
-        await assertBureauOpen();
-        const play = await loadPlay(input.playId);
-        if (!(await claimQuestion(play.id, CASE_001.questionLimit))) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: play.finishedAt
-              ? "This case is closed."
-              : "You are out of questions. Name the mole.",
-          });
-        }
-
-        let answer: string | null;
-        try {
-          const history = (await listPlayQuestions(play.id)).filter(
-            turn => turn.suspect === input.suspect
-          );
-          answer = await askSuspect(
-            suspectPrompt(input.suspect),
-            history,
-            input.question
-          );
-        } catch (error) {
-          await refundQuestion(play.id);
-          console.error("[Play] Interrogation failed:", error);
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: isOutOfCredit(error)
-              ? CLOSED_FOR_TODAY
-              : "The line went dead. That question was not counted.",
-          });
-        }
-        if (!answer) {
-          await refundQuestion(play.id);
-          throw new TRPCError({
-            code: "UNPROCESSABLE_CONTENT",
-            message:
-              "The suspect won't answer that. It was not counted, so try asking another way.",
-          });
-        }
-
-        await addPlayQuestion({
-          playId: play.id,
-          suspect: input.suspect,
-          question: input.question,
-          answer,
-        });
+        const { answer } = await askInGame(
+          input.playId,
+          browserPlayer,
+          input.suspect,
+          input.question
+        );
         return { answer };
       }),
     accuse: publicProcedure
-      .input(z.object({ playId: playIdSchema, suspect: z.enum(suspectIds) }))
+      .input(z.object({ playId: playIdSchema, suspect: suspectSchema }))
+      .mutation(({ input }) =>
+        accuseInGame(input.playId, browserPlayer, input.suspect)
+      ),
+    scoreboard: publicProcedure.query(async () =>
+      buildScoreboard(await listFinishedPlays(CASE_001.id))
+    ),
+  }),
+  // Operator moderation for agent names shown on the public scoreboard.
+  agents: router({
+    list: adminProcedure.query(() => listAgents()),
+    setHidden: adminProcedure
+      .input(z.object({ id: z.number().int().positive(), hidden: z.boolean() }))
       .mutation(async ({ input }) => {
-        const play = await loadPlay(input.playId);
-        // A second accusation changes nothing: the first one stands.
-        await finishPlay(
-          play.id,
-          input.suspect,
-          input.suspect === CASE_001_MOLE
-        );
-        const closed = await loadPlay(play.id);
-        return playState(closed, await listPlayQuestions(play.id));
+        await setAgentHidden(input.id, input.hidden);
+        return { success: true } as const;
       }),
   }),
 });
