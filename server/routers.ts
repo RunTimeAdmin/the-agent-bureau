@@ -12,6 +12,7 @@ import {
 import {
   addPlayQuestion,
   claimQuestion,
+  countQuestionsSince,
   createInquiry,
   createPlay,
   deleteInquiry,
@@ -22,7 +23,7 @@ import {
   refundQuestion,
   updateInquiryStatus,
 } from "./db";
-import { askSuspect } from "./interrogate";
+import { askSuspect, isOutOfCredit } from "./interrogate";
 import { createRateLimiter } from "./rateLimit";
 import {
   checkOperatorPassword,
@@ -72,15 +73,14 @@ const loginRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
 });
-// Every question is a paid model call, so these cap what one address can spend.
-const playStartRateLimit = createRateLimiter({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-});
-const playAskRateLimit = createRateLimiter({
-  windowMs: 60 * 60 * 1000,
-  max: 60,
-});
+// Every question is a paid model call. Per-address limits stop one visitor
+// from draining the day; the daily total caps the bill however many
+// addresses there are.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const playStartRateLimit = createRateLimiter({ windowMs: DAY_MS, max: 5 });
+const playAskRateLimit = createRateLimiter({ windowMs: DAY_MS, max: 60 });
+export const DAILY_QUESTION_LIMIT = 1500;
+const CLOSED_FOR_TODAY = "The Bureau is closed for today. Come back tomorrow.";
 
 function getRequestIp(req: {
   ip?: string;
@@ -109,6 +109,17 @@ export function generateInquiryReference(): string {
 }
 
 const playIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
+
+async function assertBureauOpen(now = new Date()): Promise<void> {
+  const midnightUtc = new Date(now);
+  midnightUtc.setUTCHours(0, 0, 0, 0);
+  if ((await countQuestionsSince(midnightUtc)) >= DAILY_QUESTION_LIMIT) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: CLOSED_FOR_TODAY,
+    });
+  }
+}
 
 async function loadPlay(playId: string): Promise<Play> {
   const play = await getPlay(playId);
@@ -233,9 +244,11 @@ export const appRouter = router({
       if (!playStartRateLimit.consume(getRequestIp(ctx.req))) {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
-          message: "Too many new cases from this address. Try again later.",
+          message:
+            "That's all the cases for this address today. Come back tomorrow.",
         });
       }
+      await assertBureauOpen();
       const playId = randomBytes(16).toString("hex");
       await createPlay(playId, CASE_001.id);
       return { playId };
@@ -262,9 +275,11 @@ export const appRouter = router({
         if (!playAskRateLimit.consume(getRequestIp(ctx.req))) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
-            message: "Too many questions from this address. Try again later.",
+            message:
+              "That's all the questions for this address today. Come back tomorrow.",
           });
         }
+        await assertBureauOpen();
         const play = await loadPlay(input.playId);
         if (!(await claimQuestion(play.id, CASE_001.questionLimit))) {
           throw new TRPCError({
@@ -290,7 +305,9 @@ export const appRouter = router({
           console.error("[Play] Interrogation failed:", error);
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "The line went dead. That question was not counted.",
+            message: isOutOfCredit(error)
+              ? CLOSED_FOR_TODAY
+              : "The line went dead. That question was not counted.",
           });
         }
         if (!answer) {

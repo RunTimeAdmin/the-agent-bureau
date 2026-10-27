@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  isNull,
+  lt,
+  sql,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import {
@@ -125,6 +136,15 @@ export async function refundQuestion(playId: string): Promise<void> {
     .update(plays)
     .set({ questionsUsed: sql`${plays.questionsUsed} - 1` })
     .where(and(eq(plays.id, playId), gt(plays.questionsUsed, 0)));
+}
+
+export async function countQuestionsSince(since: Date): Promise<number> {
+  const db = await requireDb();
+  const [row] = await db
+    .select({ total: count() })
+    .from(playQuestions)
+    .where(gte(playQuestions.createdAt, since));
+  return row?.total ?? 0;
 }
 
 export async function addPlayQuestion(row: {
