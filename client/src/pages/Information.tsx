@@ -5,7 +5,7 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
     <>
       <Header />
       <main className="info-page section">
-        <a className="text-link" href="/">
+        <a className="text-link" href="/bureau">
           <ArrowLeft size={17} /> Back to the bureau
         </a>
         <span className="eyebrow">THE AGENT BUREAU / {kind.toUpperCase()}</span>
@@ -13,8 +13,9 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
         {kind === "privacy" ? (
           <>
             <p className="info-lead">
-              This site explains the Agent Bureau pilot and collects inquiries
-              about it. Bureau files are never published here.
+              This site runs BUREAU, a detective game, and explains the Agent
+              Bureau pilot and collects inquiries about it. Bureau files are
+              never published here.
             </p>
             <h2>What you submit</h2>
             <p>
@@ -48,7 +49,8 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
               are played. Each question is sent to Anthropic, whose Claude model
               writes the suspects' replies. The game asks for no name or email,
               and your browser keeps only a random game id. Leave personal
-              details out of your questions.
+              details out of your questions. Nothing you type in the game goes
+              into a Bureau file.
             </p>
             <h2>Access and operations</h2>
             <p>
@@ -70,8 +72,8 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
         ) : (
           <>
             <p className="info-lead">
-              The Agent Bureau is a pilot. This site explains it and takes
-              inquiries.
+              This site runs BUREAU, a detective game, and explains the Agent
+              Bureau pilot. The two are separate.
             </p>
             <h2>Inquiry, not agreement</h2>
             <p>
@@ -87,9 +89,11 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
             <h2>The BUREAU game</h2>
             <p>
               The case at /play is fiction. Its people and events are invented,
-              and an AI model writes the suspects' replies, which can be wrong
-              or inconsistent. Don't use the game to ask for anything harmful or
-              unlawful.
+              and no real AI agent, operator or business appears in it. An AI
+              model writes the suspects' replies, which can be wrong or
+              inconsistent. Nothing in the game is a Bureau file, rates anyone,
+              or describes a real agent. Don't use the game to ask for anything
+              harmful or unlawful.
             </p>
             <h2>Facts, not scores</h2>
             <p>

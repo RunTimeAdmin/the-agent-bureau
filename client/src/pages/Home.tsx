@@ -8,7 +8,7 @@ function TrainingFile() {
   return (
     <figure className="home-file" aria-labelledby="training-caption">
       <figcaption id="training-caption">
-        <span>Training file</span>Two answers that can't both be true
+        <span>Training exercise</span>Two answers that can't both be true
       </figcaption>
       <div className="home-exchange">
         <p className="play-q">ROOK, where were you at nine last night?</p>
@@ -74,11 +74,11 @@ export default function Home() {
           <h2>How a case works</h2>
           <ol className="home-steps">
             <li>
-              <h3>Read the file</h3>
+              <h3>Read the dossiers</h3>
               <p>
                 Each case opens with a briefing, an intercepted message and a
-                file on every suspect. Something on every file looks bad. Most
-                of it is innocent.
+                dossier on every suspect. Every dossier has something that looks
+                bad. Most of it is innocent.
               </p>
             </li>
             <li>
@@ -128,7 +128,7 @@ export default function Home() {
         </section>
 
         <section className="home-section" id="cases">
-          <h2>Case files</h2>
+          <h2>Cases</h2>
           <div className="home-cases">
             <article className="home-case is-open">
               <header className="home-case-head">
@@ -156,6 +156,24 @@ export default function Home() {
               </header>
               <p>A new place, a new crew, and a different kind of lie.</p>
             </article>
+          </div>
+        </section>
+
+        <section className="home-section home-split">
+          <h2>From The Agent Bureau</h2>
+          <div>
+            <p>
+              BUREAU is fiction. Its suspects are invented characters played by
+              Claude, an AI model. No real agent, person or business appears in
+              a case, and nothing you type in the game goes into a Bureau file.
+            </p>
+            <p>
+              The Agent Bureau's real work is separate: factual files on AI
+              agent operators, built from outcomes businesses report.{" "}
+              <Link href="/bureau" className="home-link">
+                Visit The Agent Bureau
+              </Link>
+            </p>
           </div>
         </section>
       </main>
