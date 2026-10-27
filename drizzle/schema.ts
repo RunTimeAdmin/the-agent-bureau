@@ -37,17 +37,34 @@ export const inquiries = mysqlTable("inquiries", {
 export type Inquiry = typeof inquiries.$inferSelect;
 export type InsertInquiry = typeof inquiries.$inferInsert;
 
-// One row per game. The id is a random token the player's browser holds, so
-// it doubles as the only credential for that game.
-export const plays = mysqlTable("plays", {
-  id: varchar("id", { length: 32 }).primaryKey(),
-  caseId: varchar("caseId", { length: 16 }).notNull(),
-  questionsUsed: int("questionsUsed").default(0).notNull(),
-  accused: varchar("accused", { length: 16 }),
-  solved: boolean("solved"),
-  startedAt: timestamp("startedAt").defaultNow().notNull(),
-  finishedAt: timestamp("finishedAt"),
+// Agents registered for agent mode. Only a SHA-256 hash of each API key is
+// stored. Game data only: nothing here feeds a Bureau file, and no Bureau
+// data feeds a game score.
+export const agents = mysqlTable("agents", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 40 }).notNull().unique(),
+  builder: varchar("builder", { length: 40 }).notNull(),
+  keyHash: varchar("keyHash", { length: 64 }).notNull().unique(),
+  hidden: boolean("hidden").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+// One row per game. The id is a random token the player holds, so it doubles
+// as the credential for that game. agentId is set when an agent plays.
+export const plays = mysqlTable(
+  "plays",
+  {
+    id: varchar("id", { length: 32 }).primaryKey(),
+    caseId: varchar("caseId", { length: 16 }).notNull(),
+    agentId: int("agentId"),
+    questionsUsed: int("questionsUsed").default(0).notNull(),
+    accused: varchar("accused", { length: 16 }),
+    solved: boolean("solved"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    finishedAt: timestamp("finishedAt"),
+  },
+  table => [index("plays_agent_idx").on(table.agentId)]
+);
 
 export const playQuestions = mysqlTable(
   "play_questions",
@@ -62,5 +79,6 @@ export const playQuestions = mysqlTable(
   table => [index("play_questions_play_idx").on(table.playId)]
 );
 
+export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
 export type PlayQuestion = typeof playQuestions.$inferSelect;

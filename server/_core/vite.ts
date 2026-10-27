@@ -79,6 +79,7 @@ export function serveStatic(app: Express) {
     "/terms": "terms.html",
     "/inbox": "inbox.html",
     "/play": "play.html",
+    "/agents": "agents.html",
   };
   for (const [route, file] of Object.entries(pages)) {
     app.get(route, (_req, res) => {

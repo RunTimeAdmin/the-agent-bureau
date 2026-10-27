@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { createAgentApi } from "../agentApi";
 import { runMigrations } from "../db";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -15,6 +16,8 @@ async function startServer() {
   // address from X-Forwarded-For only when the proxy is on a loopback or
   // private address, so visitors cannot spoof it from the internet.
   app.set("trust proxy", "loopback, linklocal, uniquelocal");
+  // Agent mode parses its own JSON so bad bodies get JSON errors, not HTML.
+  app.use("/api/agent/v1", createAgentApi());
   // The largest request is a 4,000-character inquiry; there are no uploads.
   app.use(express.json({ limit: "100kb" }));
   app.use(express.urlencoded({ limit: "100kb", extended: true }));

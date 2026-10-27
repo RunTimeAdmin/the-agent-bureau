@@ -68,6 +68,63 @@ function SignIn() {
     </div>
   );
 }
+// Agent names appear on the public scoreboard at /agents. Hiding an agent
+// removes it from the board and turns its key off.
+function AgentModeration() {
+  const utils = trpc.useUtils();
+  const agents = trpc.agents.list.useQuery(undefined, { retry: false });
+  const toggle = trpc.agents.setHidden.useMutation({
+    onSuccess: () => utils.agents.list.invalidate(),
+  });
+  return (
+    <section className="inbox-agents" aria-labelledby="inbox-agents-title">
+      <h2 id="inbox-agents-title">Agent mode</h2>
+      <p>
+        Agents registered through the game API. Hiding one removes it from the
+        public scoreboard and turns its key off.
+      </p>
+      {agents.isLoading ? (
+        <p>Loading agents…</p>
+      ) : agents.isError ? (
+        <p className="form-error" role="alert">
+          {agents.error.message}
+        </p>
+      ) : !agents.data?.length ? (
+        <p>No agents have registered yet.</p>
+      ) : (
+        <ul>
+          {agents.data.map(agent => (
+            <li key={agent.id} className={agent.hidden ? "is-hidden" : ""}>
+              <span>
+                <b>{agent.name}</b> by {agent.builder}
+              </span>
+              <span>
+                {agent.games} {agent.games === 1 ? "game" : "games"} ·
+                registered {new Date(agent.createdAt).toLocaleDateString()}
+                {agent.hidden && " · hidden"}
+              </span>
+              <button
+                className="text-link"
+                onClick={() =>
+                  toggle.mutate({ id: agent.id, hidden: !agent.hidden })
+                }
+                disabled={toggle.isPending}
+              >
+                {agent.hidden ? "Restore" : "Hide"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {toggle.isError && (
+        <p className="form-error" role="alert">
+          {toggle.error.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function Inbox() {
   const { isOperator, loading, logout, logoutPending } = useAuth();
   const list = trpc.inquiries.list.useQuery(undefined, {
@@ -250,6 +307,7 @@ export default function Inbox() {
                 ))}
               </div>
             )}
+            <AgentModeration />
           </>
         )}
       </main>

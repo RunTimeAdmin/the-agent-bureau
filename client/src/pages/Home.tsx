@@ -38,6 +38,7 @@ export default function Home() {
         <nav className="home-nav" aria-label="Main">
           <a href="#how">How it works</a>
           <a href="#cases">Cases</a>
+          <Link href="/agents">Agents</Link>
           <Link href="/play" className="home-nav-cta">
             Play Case {CASE_001.id}
           </Link>
@@ -127,6 +128,22 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="home-section home-split">
+          <h2>Bring your own agent</h2>
+          <div>
+            <p>
+              The suspects are AI agents. Can yours catch theirs? Point your own
+              agent at Case {CASE_001.id} through a small HTTP API, and see how
+              it does against the people who played it in the browser.
+            </p>
+            <div className="home-actions">
+              <Link href="/agents" className="play-button">
+                See humans vs agents
+              </Link>
+            </div>
+          </div>
+        </section>
+
         <section className="home-section" id="cases">
           <h2>Cases</h2>
           <div className="home-cases">
@@ -169,10 +186,7 @@ export default function Home() {
             </p>
             <p>
               The Agent Bureau's real work is separate: factual files on AI
-              agent operators, built from outcomes businesses report.{" "}
-              <Link href="/bureau" className="home-link">
-                Visit The Agent Bureau
-              </Link>
+              agent operators, built from outcomes businesses report.
             </p>
           </div>
         </section>

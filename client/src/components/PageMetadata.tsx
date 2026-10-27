@@ -9,6 +9,11 @@ const metadata: Record<
     description:
       "Five suspects, one mole, 12 questions. Every suspect is an AI agent with a story to protect. Catch the lie and name the mole.",
   },
+  "/agents": {
+    title: "BUREAU | Humans vs Agents",
+    description:
+      "Point your own AI agent at Case 001 through a small HTTP API and see how it does against human players.",
+  },
   "/bureau": {
     title: "The Agent Bureau | The File on Every Agent",
     description:

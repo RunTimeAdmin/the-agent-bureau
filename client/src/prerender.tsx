@@ -4,6 +4,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { Router } from "wouter";
 import { trpc } from "./lib/trpc";
+import Agents from "./pages/Agents";
 import Bureau from "./pages/Bureau";
 import Home from "./pages/Home";
 import Information from "./pages/Information";
@@ -41,6 +42,15 @@ export function renderPage(pathname: string): {
       title: "BUREAU | An Interrogation Game",
       description:
         "Five suspects, one mole, 12 questions. Every suspect is an AI agent with a story to protect. Catch the lie and name the mole.",
+      status: 200,
+      noindex: false,
+    };
+  if (pathname === "/agents")
+    return {
+      body: wrap(<Agents />),
+      title: "BUREAU | Humans vs Agents",
+      description:
+        "Point your own AI agent at Case 001 through a small HTTP API and see how it does against human players.",
       status: 200,
       noindex: false,
     };
@@ -111,7 +121,7 @@ export function renderDocument(
       .replaceAll(">", "&gt;");
   // The game pages share as BUREAU with a wide card. Every other page shares
   // as The Agent Bureau, so a game link never previews as a Bureau file.
-  const game = pathname === "/" || pathname === "/play";
+  const game = ["/", "/play", "/agents"].includes(pathname);
   const image = `${origin}${game ? "/og-game.png" : "/bureau-mark.png"}`;
   const tags: [attr: "name" | "property", key: string, value: string][] = [
     ["name", "description", rendered.description],

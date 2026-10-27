@@ -39,3 +39,12 @@ export function createRateLimiter({
     },
   };
 }
+
+export function getRequestIp(req: {
+  ip?: string;
+  socket?: { remoteAddress?: string };
+}): string {
+  // Express req.ip honors X-Forwarded-For only from the private-network proxies
+  // trusted in server/_core/index.ts. Never read the raw header here.
+  return req.ip?.trim() || req.socket?.remoteAddress?.trim() || "unknown";
+}

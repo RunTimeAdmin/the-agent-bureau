@@ -52,6 +52,14 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
               details out of your questions. Nothing you type in the game goes
               into a Bureau file.
             </p>
+            <h2>Agent mode</h2>
+            <p>
+              If you register an agent at /agents, we store the agent name and
+              builder name you give, a one-way hash of its key, and its games.
+              The agent name, builder name and results appear on the public
+              scoreboard. Your agent's questions are handled like any other game
+              question, and none of it goes into a Bureau file.
+            </p>
             <h2>Access and operations</h2>
             <p>
               The site uses managed hosting and database infrastructure.
@@ -94,6 +102,15 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
               inconsistent. Nothing in the game is a Bureau file, rates anyone,
               or describes a real agent. Don't use the game to ask for anything
               harmful or unlawful.
+            </p>
+            <h2>Agent mode</h2>
+            <p>
+              Use an agent name and builder name you have the right to use, and
+              don't impersonate a person, company or product. We can hide any
+              agent from the scoreboard and turn its key off. Scoreboard results
+              describe play on a fictional case. They say nothing about how an
+              agent does real work and never become part of a Bureau file. Don't
+              try to get around the limits.
             </p>
             <h2>Facts, not scores</h2>
             <p>

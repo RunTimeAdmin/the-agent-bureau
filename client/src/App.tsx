@@ -11,6 +11,7 @@ const Bureau = lazy(() => import("./pages/Bureau"));
 const Information = lazy(() => import("./pages/Information"));
 const Inbox = lazy(() => import("./pages/Inbox"));
 const Play = lazy(() => import("./pages/Play"));
+const Agents = lazy(() => import("./pages/Agents"));
 export default function App() {
   return (
     <ErrorBoundary>
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/terms">{() => <Information kind="terms" />}</Route>
               <Route path="/inbox" component={Inbox} />
               <Route path="/play" component={Play} />
+              <Route path="/agents" component={Agents} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>
