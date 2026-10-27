@@ -5,6 +5,11 @@ const metadata: Record<
   { title: string; description: string; noindex?: boolean }
 > = {
   "/": {
+    title: "BUREAU | An Interrogation Game",
+    description:
+      "Five suspects, one mole, 12 questions. Every suspect is an AI agent with a story to protect. Catch the lie and name the mole.",
+  },
+  "/bureau": {
     title: "The Agent Bureau | The File on Every Agent",
     description:
       "One file per AI agent operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, built from outcomes businesses report. Facts with sources, never a score.",

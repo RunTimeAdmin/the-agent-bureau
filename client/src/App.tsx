@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import PageMetadata from "./components/PageMetadata";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+const Bureau = lazy(() => import("./pages/Bureau"));
 const Information = lazy(() => import("./pages/Information"));
 const Inbox = lazy(() => import("./pages/Inbox"));
 const Play = lazy(() => import("./pages/Play"));
@@ -26,6 +27,7 @@ export default function App() {
           >
             <Switch>
               <Route path="/" component={Home} />
+              <Route path="/bureau" component={Bureau} />
               <Route path="/privacy">
                 {() => <Information kind="privacy" />}
               </Route>

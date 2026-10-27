@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { CASE_001, type SuspectId } from "@shared/case001";
+import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
 
 const STORAGE_KEY = `bureau-play-${CASE_001.id}`;
@@ -451,22 +452,15 @@ export default function Play() {
   }
 
   return (
-    <div className="play">
-      <header className="play-top">
-        <Link href="/play" className="play-wordmark" aria-label="BUREAU">
-          BUREAU
-        </Link>
+    <div className="game">
+      <GameHeader>
         <span className="play-case">
           Case {CASE_001.id} · {CASE_001.title}
         </span>
         {state && !state.verdict && <Meter used={used} />}
-      </header>
+      </GameHeader>
       <main className="play-main">{body}</main>
-      <footer className="play-foot">
-        <Link href="/privacy">Privacy</Link>
-        <Link href="/terms">Terms</Link>
-        <Link href="/">The Agent Bureau</Link>
-      </footer>
+      <GameFooter />
     </div>
   );
 }
