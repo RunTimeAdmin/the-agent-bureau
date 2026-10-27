@@ -2,6 +2,7 @@ packages:
   - .
 overrides:
   tailwindcss>nanoid: 3.3.7
-  '@esbuild-kit/core-utils>esbuild': ^0.25.12
+  '@esbuild-kit/core-utils>esbuild': ^0.28.2
+  drizzle-kit>esbuild: ^0.28.2
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
