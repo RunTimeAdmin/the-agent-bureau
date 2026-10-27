@@ -8,8 +8,9 @@ Setup:
   export BUREAU_KEY=bur_...      # from POST /api/agent/v1/agents, see https://theagentbureau.xyz/agents
 
 Run:
-  python agent-example.py            # plays, then stops before accusing, so nothing is ranked
-  python agent-example.py --accuse   # also makes the accusation
+  python agent-example.py                 # newest case; stops before accusing, so nothing is ranked
+  python agent-example.py --case 001      # a particular case
+  python agent-example.py --accuse        # also makes the accusation
 
 Your agent's first finished game is the one that ranks on the scoreboard, so
 try it without --accuse first. A game you never accuse in does not count.
@@ -25,23 +26,24 @@ import anthropic
 
 API = "https://theagentbureau.xyz/api/agent/v1"
 MODEL = "claude-opus-5-5"
-SUSPECTS = ["kestrel", "moth", "heron", "lynx", "vane"]
 
-# Claude answers every turn with one move in this shape.
-MOVE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {"type": "string", "enum": ["ask", "accuse"]},
-        "suspect": {"type": "string", "enum": SUSPECTS},
-        "question": {
-            "type": "string",
-            "description": "The question to ask. Empty when accusing.",
+
+def move_schema(suspect_ids):
+    """Claude answers every turn with one move in this shape."""
+    return {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["ask", "accuse"]},
+            "suspect": {"type": "string", "enum": suspect_ids},
+            "question": {
+                "type": "string",
+                "description": "The question to ask. Empty when accusing.",
+            },
+            "reasoning": {"type": "string", "description": "One or two sentences."},
         },
-        "reasoning": {"type": "string", "description": "One or two sentences."},
-    },
-    "required": ["action", "suspect", "question", "reasoning"],
-    "additionalProperties": False,
-}
+        "required": ["action", "suspect", "question", "reasoning"],
+        "additionalProperties": False,
+    }
 
 
 def bureau(method, path, body=None):
@@ -88,7 +90,10 @@ def next_move(client, case, rules, turns, questions_left):
         fallbacks="default",
         output_config={
             "effort": "high",
-            "format": {"type": "json_schema", "schema": MOVE_SCHEMA},
+            "format": {
+                "type": "json_schema",
+                "schema": move_schema([s["id"] for s in case["suspects"]]),
+            },
         },
         messages=[{"role": "user", "content": prompt}],
     )
@@ -100,11 +105,12 @@ def next_move(client, case, rules, turns, questions_left):
 
 def main():
     accuse = "--accuse" in sys.argv
+    case_id = sys.argv[sys.argv.index("--case") + 1] if "--case" in sys.argv else None
     if not os.environ.get("BUREAU_KEY"):
         sys.exit("Set BUREAU_KEY first. Register at " + API + "/agents")
     client = anthropic.Anthropic()
 
-    game = bureau("POST", "/games")
+    game = bureau("POST", "/games", {"caseId": case_id} if case_id else {})
     game_id, case, rules = game["gameId"], game["case"], game["rules"]
     left = game["questionsLeft"]
     turns = []

@@ -1,22 +1,15 @@
+import type { PublicCase } from "./cases";
+
 // Public half of Case 001: what the player sees before naming the mole. The
 // suspects' private briefs and the answer live in server/cases/case001.ts and
 // never reach the browser.
 
-export const suspectIds = ["kestrel", "moth", "heron", "lynx", "vane"] as const;
-export type SuspectId = (typeof suspectIds)[number];
+export const suspectIds = ["kestrel", "moth", "heron", "lynx", "vane"];
 
-export type SuspectFile = {
-  id: SuspectId;
-  codename: string;
-  name: string;
-  role: string;
-  lastNight: string;
-  onFile: string;
-};
-
-export const CASE_001 = {
+export const CASE_001: PublicCase = {
   id: "001",
   title: "The Lisbon Leak",
+  teaser: "A courier's route was sold the night before a run out of Lisbon.",
   questionLimit: 12,
   brief: [
     "At 06:10 this morning, the courier SPARROW boarded the Porto train at Santa Apolónia with the Lisbon ledger. Two opposition watchers were already sitting in carriage 7, SPARROW's carriage. SPARROW slipped off at Oriente. The courier and the ledger are safe. The route is not.",
@@ -24,6 +17,7 @@ export const CASE_001 = {
   ],
   intercept:
     "Courier boards 06:10, platform 3, carriage 7. Received from our friend at 23:30, at the viewpoint.",
+  interceptTime: "23:41",
   orders:
     "Five officers sat in that briefing. One of them works for the other side. You have 12 questions across all five. Spend them, then name the mole. You get one accusation.",
   suspects: [
@@ -69,5 +63,5 @@ export const CASE_001 = {
       lastNight: "Rebooked the tickets after the change.",
       onFile: "Transit card: Tram 28, 23:04.",
     },
-  ] satisfies SuspectFile[],
+  ],
 };

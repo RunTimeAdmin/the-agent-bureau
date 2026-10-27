@@ -1,15 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { CASE_001, suspectIds, type SuspectId } from "@shared/case001";
+import { findCase, LATEST_CASE, type PublicCase } from "@shared/cases";
 import type { Play, PlayQuestion } from "../drizzle/schema";
-import {
-  CASE_001_MOLE,
-  CASE_001_SOLUTION,
-  leaksBrief,
-  suspectPrompt,
-  WITHHELD_REPLY,
-} from "./cases/case001";
+import { privateCase, WITHHELD_REPLY } from "./cases";
+import type { PrivateCase } from "./cases/common";
 import {
   addPlayQuestion,
   claimQuestion,
@@ -34,7 +29,15 @@ export const CLOSED_FOR_TODAY =
   "The Bureau is closed for today. Come back tomorrow.";
 
 export const playIdSchema = z.string().regex(/^[0-9a-f]{32}$/);
-export const suspectSchema = z.enum(suspectIds);
+export const caseIdSchema = z
+  .string()
+  .regex(/^\d{3}$/, "Use a case id like 002");
+// Each case has its own suspects, so ids are checked against the game's case.
+export const suspectSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z]{2,16}$/, "Use a suspect id from the case");
 export const questionSchema = z
   .string()
   .trim()
@@ -63,34 +66,60 @@ async function assertBureauOpen(player: Player): Promise<void> {
   }
 }
 
+type CaseHalves = { publicCase: PublicCase; secret: PrivateCase };
+
+function caseHalves(caseId: string): CaseHalves | undefined {
+  const publicCase = findCase(caseId);
+  const secret = privateCase(caseId);
+  return publicCase && secret ? { publicCase, secret } : undefined;
+}
+
+function assertSuspect(publicCase: PublicCase, suspect: string): void {
+  if (!publicCase.suspects.some(entry => entry.id === suspect)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `There is no suspect "${suspect}" in Case ${publicCase.id}. Use one of: ${publicCase.suspects.map(entry => entry.id).join(", ")}.`,
+    });
+  }
+}
+
 // A game is visible only to whoever started it: browser games through the
 // browser API, and each agent's games through that agent's key.
-async function loadPlay(playId: string, player: Player): Promise<Play> {
+async function loadPlay(
+  playId: string,
+  player: Player
+): Promise<CaseHalves & { play: Play }> {
   const play = await getPlay(playId);
-  if (!play || play.caseId !== CASE_001.id || play.agentId !== player.agentId) {
+  const halves = play && caseHalves(play.caseId);
+  if (!play || !halves || play.agentId !== player.agentId) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "That game could not be found.",
     });
   }
-  return play;
+  return { play, ...halves };
 }
 
 // The answer only leaves the server once the player has made their accusation.
-export function gameState(play: Play, questions: PlayQuestion[]) {
+export function gameState(
+  play: Play,
+  questions: PlayQuestion[],
+  secret: PrivateCase
+) {
   return {
+    caseId: play.caseId,
     questionsUsed: play.questionsUsed,
     turns: questions.map(turn => ({
-      suspect: turn.suspect as SuspectId,
+      suspect: turn.suspect,
       question: turn.question,
       answer: turn.answer,
     })),
     verdict: play.finishedAt
       ? {
-          accused: play.accused as SuspectId,
+          accused: play.accused ?? "",
           solved: play.solved === true,
-          mole: CASE_001_MOLE,
-          solution: CASE_001_SOLUTION,
+          mole: secret.mole,
+          solution: secret.solution,
         }
       : null,
   };
@@ -98,10 +127,19 @@ export function gameState(play: Play, questions: PlayQuestion[]) {
 
 export type GameState = ReturnType<typeof gameState>;
 
-export async function startGame(player: Player): Promise<string> {
+export async function startGame(
+  player: Player,
+  caseId: string = LATEST_CASE.id
+): Promise<string> {
+  if (!caseHalves(caseId)) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: `There is no case ${caseId}.`,
+    });
+  }
   await assertBureauOpen(player);
   const playId = randomBytes(16).toString("hex");
-  await createPlay(playId, CASE_001.id, player.agentId);
+  await createPlay(playId, caseId, player.agentId);
   return playId;
 }
 
@@ -109,19 +147,20 @@ export async function getGame(
   playId: string,
   player: Player
 ): Promise<GameState> {
-  const play = await loadPlay(playId, player);
-  return gameState(play, await listPlayQuestions(play.id));
+  const { play, secret } = await loadPlay(playId, player);
+  return gameState(play, await listPlayQuestions(play.id), secret);
 }
 
 export async function askInGame(
   playId: string,
   player: Player,
-  suspect: SuspectId,
+  suspect: string,
   question: string
-): Promise<{ answer: string; questionsUsed: number }> {
+): Promise<{ answer: string; questionsUsed: number; questionsLeft: number }> {
   await assertBureauOpen(player);
-  const play = await loadPlay(playId, player);
-  if (!(await claimQuestion(play.id, CASE_001.questionLimit))) {
+  const { play, publicCase, secret } = await loadPlay(playId, player);
+  assertSuspect(publicCase, suspect);
+  if (!(await claimQuestion(play.id, publicCase.questionLimit))) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: play.finishedAt
@@ -135,7 +174,7 @@ export async function askInGame(
     const history = (await listPlayQuestions(play.id)).filter(
       turn => turn.suspect === suspect
     );
-    answer = await askSuspect(suspectPrompt(suspect), history, question);
+    answer = await askSuspect(secret.suspectPrompt(suspect), history, question);
   } catch (error) {
     await refundQuestion(play.id);
     console.error("[Play] Interrogation failed:", error);
@@ -156,7 +195,7 @@ export async function askInGame(
   }
 
   // The question still counts, so probing for the brief costs the player.
-  if (leaksBrief(answer)) {
+  if (secret.leaksBrief(answer)) {
     console.warn(
       `[Play] Withheld a reply from ${suspect} that quoted its brief`
     );
@@ -164,16 +203,22 @@ export async function askInGame(
   }
 
   await addPlayQuestion({ playId: play.id, suspect, question, answer });
-  return { answer, questionsUsed: play.questionsUsed + 1 };
+  const questionsUsed = play.questionsUsed + 1;
+  return {
+    answer,
+    questionsUsed,
+    questionsLeft: Math.max(0, publicCase.questionLimit - questionsUsed),
+  };
 }
 
 export async function accuseInGame(
   playId: string,
   player: Player,
-  suspect: SuspectId
+  suspect: string
 ): Promise<GameState> {
-  const play = await loadPlay(playId, player);
+  const { play, publicCase, secret } = await loadPlay(playId, player);
+  assertSuspect(publicCase, suspect);
   // A second accusation changes nothing: the first one stands.
-  await finishPlay(play.id, suspect, suspect === CASE_001_MOLE);
+  await finishPlay(play.id, suspect, suspect === secret.mole);
   return getGame(play.id, player);
 }

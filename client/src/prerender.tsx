@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { Router } from "wouter";
+import { casePath, CASES, findCase } from "@shared/cases";
 import { trpc } from "./lib/trpc";
 import Agents from "./pages/Agents";
 import Bureau from "./pages/Bureau";
@@ -10,6 +11,21 @@ import Home from "./pages/Home";
 import Information from "./pages/Information";
 import NotFound from "./pages/NotFound";
 import Play from "./pages/Play";
+export function caseTitle(caseId: string): string {
+  return `BUREAU | Case ${caseId}: ${findCase(caseId)!.title}`;
+}
+
+export function caseDescription(caseId: string): string {
+  const entry = findCase(caseId)!;
+  return `Five officers, one mole, ${entry.questionLimit} questions. ${entry.teaser}`;
+}
+
+/** Every case page and the file it is prerendered to. */
+export const CASE_PAGES = CASES.map(entry => ({
+  path: casePath(entry.id),
+  file: entry.id === "001" ? "play.html" : `play-${entry.id}.html`,
+}));
+
 export function renderPage(pathname: string): {
   body: string;
   title: string;
@@ -81,12 +97,13 @@ export function renderPage(pathname: string): {
       status: 200,
       noindex: false,
     };
-  if (pathname === "/play")
+  const playing = /^\/play(?:\/(\d{3}))?$/.exec(pathname);
+  const theCase = playing && findCase(playing[1] ?? "001");
+  if (theCase && pathname === casePath(theCase.id))
     return {
-      body: wrap(<Play />),
-      title: "BUREAU | Case 001: The Lisbon Leak",
-      description:
-        "Five officers, one mole, 12 questions. Interrogate AI suspects, catch the contradiction and name the mole.",
+      body: wrap(<Play caseId={theCase.id} />),
+      title: caseTitle(theCase.id),
+      description: caseDescription(theCase.id),
       status: 200,
       noindex: false,
     };
@@ -121,7 +138,8 @@ export function renderDocument(
       .replaceAll(">", "&gt;");
   // The game pages share as BUREAU with a wide card. Every other page shares
   // as The Agent Bureau, so a game link never previews as a Bureau file.
-  const game = ["/", "/play", "/agents"].includes(pathname);
+  const game =
+    ["/", "/agents"].includes(pathname) || pathname.startsWith("/play");
   const image = `${origin}${game ? "/og-game.png" : "/bureau-mark.png"}`;
   const tags: [attr: "name" | "property", key: string, value: string][] = [
     ["name", "description", rendered.description],

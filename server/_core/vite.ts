@@ -89,6 +89,15 @@ export function serveStatic(app: Express) {
         .sendFile(path.resolve(distPath, file));
     });
   }
+  // Later cases are prerendered to play-<id>.html; Case 001 keeps /play.
+  app.get("/play/:caseId", (req, res, next) => {
+    const file = path.resolve(distPath, `play-${req.params.caseId}.html`);
+    if (!/^\d{3}$/.test(req.params.caseId) || !fs.existsSync(file)) {
+      next();
+      return;
+    }
+    res.set("Cache-Control", "no-store").sendFile(file);
+  });
   app.use(
     express.static(distPath, {
       index: false,

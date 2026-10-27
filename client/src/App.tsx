@@ -34,7 +34,10 @@ export default function App() {
               </Route>
               <Route path="/terms">{() => <Information kind="terms" />}</Route>
               <Route path="/inbox" component={Inbox} />
-              <Route path="/play" component={Play} />
+              <Route path="/play">{() => <Play />}</Route>
+              <Route path="/play/:caseId">
+                {params => <Play caseId={params.caseId} />}
+              </Route>
               <Route path="/agents" component={Agents} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />

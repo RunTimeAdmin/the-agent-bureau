@@ -11,19 +11,19 @@ describe("agent docs", () => {
     expect(Object.keys(spec.paths).sort()).toEqual([
       "/agents",
       "/case",
+      "/cases",
       "/games",
       "/games/{gameId}",
       "/games/{gameId}/accuse",
       "/games/{gameId}/ask",
     ]);
     expect(spec.servers[0].url).toBe("https://theagentbureau.xyz/api/agent/v1");
-    expect(spec.components.schemas.SuspectId.enum).toEqual([
-      "kestrel",
-      "moth",
-      "heron",
-      "lynx",
-      "vane",
-    ]);
+    // Suspect ids differ per case, so the spec can't list them.
+    expect(spec.components.schemas.SuspectId.enum).toBeUndefined();
+    expect(
+      spec.paths["/games"].post.requestBody.content["application/json"].schema
+        .properties.caseId
+    ).toBeDefined();
   });
 
   it("points llms.txt at the API, the spec and the sample agent", () => {
@@ -36,5 +36,6 @@ describe("agent docs", () => {
       expect(text).toContain(`https://theagentbureau.xyz${link}`);
     }
     expect(text).toContain("never go into a Bureau file");
+    expect(text).toContain("GET /cases");
   });
 });
