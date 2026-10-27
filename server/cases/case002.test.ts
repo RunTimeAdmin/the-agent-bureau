@@ -36,6 +36,11 @@ describe("Case 002", () => {
   it("gives the clues to the right suspects", () => {
     expect(suspectPrompt("otter")).toContain("the fire alarm went off");
     expect(suspectPrompt("wren")).toContain("evening dress");
+    // Doubting his radio story is enough to get the sighting, in one answer.
+    expect(suspectPrompt("wren")).toContain("doubts the radio fault");
+    expect(suspectPrompt("wren")).toContain(
+      "In the same answer where you admit falling asleep"
+    );
     expect(suspectPrompt("marten")).toContain("which shelf the pads were on");
     expect(suspectPrompt("falcon")).toContain("tickets for Tosca");
     expect(CASE_002_MOLE).toBe("ibis");
