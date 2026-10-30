@@ -52,6 +52,6 @@ Not ready to sign yet? During the pilot you can send an unsigned CSV through the
 
 ## Get started
 
-Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/#contact) and choose "Report agent outcomes". We'll set up your furnisher id and register your signing key.
+Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/#contact) and choose "Report agent outcomes". We'll set up your furnisher id and register your signing key under the key id you choose for it.
 
 The event format, CSV columns and signing rules are in the [tool's README](https://github.com/RunTimeAdmin/agent-bureau-furnish#readme).

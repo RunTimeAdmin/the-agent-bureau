@@ -65,7 +65,7 @@ flowchart LR
   N["Nooscape: registry facts, match hints, claims"] --> B
   S["Sigvara: score, bond, slashes"] --> B
   L["Levy: charges paid and failed"] --> B
-  C["Countersig: off-chain agent identity, furnisher keys"] --> B
+  C["Countersig: off-chain agent identity"] --> B
   B -->|signed files, alerts| SUB["Subscribers"]
   SUBJ["Subjects: agent operators"] -->|claim, dispute, statement| B
 ```
@@ -74,9 +74,9 @@ flowchart LR
 | --- | --- | --- |
 | Nooscape | Registrations, first seen, registry events, ownership changes, share of ratings revoked, evidence level, owner claims, candidate matches (shared wallet, host, link) | Show furnished data on Nooscape, or let a payment or furnished event change a Nooscape record |
 | Sigvara | Current score, bond, slash history, and which network they come from | Compute, adjust or attest to the score |
-| CounterAudit | The system of record for every furnished event, dispute and correction. Packet ids are the evidence pointers on a file. | Store anything outside the sealed chain |
+| CounterAudit | The system of record for every furnished event, dispute and correction. Packet ids are the evidence pointers on a file. It also holds the furnisher signing keys the Bureau registers, and seals only events those keys verify. | Store anything outside the sealed chain |
 | Levy | Subscription charges paid and failed, read from chain | Charge, retry or block anything |
-| Countersig | DIDs and keys for agents with no registry entry, and furnisher signing keys | Issue identities on the Bureau's behalf |
+| Countersig | DIDs and keys for agents with no registry entry | Issue identities on the Bureau's behalf |
 
 ## What a file contains
 
@@ -109,25 +109,27 @@ Retention (proposed): outcome events leave the file after 24 months. Lines remov
 3. **MCP and API operators** that block or rate-limit agents.
 4. **Agent marketplaces** that hire agents for jobs, reporting delivered, late and disputed work.
 
-### What they report: outcome event v0
+### What they report: outcome event v1
 
-The format and the signing tool live in the public repo [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish) (MIT). Furnishers run it with `npx github:RunTimeAdmin/agent-bureau-furnish`, nothing to clone. Its generated JSON Schema is copied to `client/public/schemas/outcome-event-v0.json` here, so the site serves it at https://theagentbureau.xyz/schemas/outcome-event-v0.json; copy it again whenever the package's schema changes.
+The format and the signing tool live in the public repo [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish) (MIT). Furnishers run it with `npx github:RunTimeAdmin/agent-bureau-furnish`, nothing to clone. Its generated JSON Schema is copied to `client/public/schemas/outcome-event-v1.json` here, so the site serves it at https://theagentbureau.xyz/schemas/outcome-event-v1.json; copy it again whenever the package's schema changes. The earlier v0 schema stays at `outcome-event-v0.json` for files signed before v1, but CounterAudit accepts only v1, because without `key_id` a key cannot be rotated or revoked.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `schema_version` | yes | `"0"` |
+| `schema_version` | yes | `"1"` |
 | `furnisher_id` | yes | Issued when the furnisher is vetted: `fur_` plus 6 to 32 lowercase letters or digits |
+| `key_id` | yes | The name the furnisher gave the key that signed the event, registered with its public key: up to 64 letters, digits or `. _ : -` |
 | `event_id` | yes | The furnisher's own reference, unique per furnisher. Disputes and corrections point at it. |
+| `relation` | no | `{type, target_event_id}`: this event `disputes`, `corrects`, `supersedes` or `withdraws` an earlier `event_id` of the same furnisher |
 | `subject_ref` | yes | One of: `{chain, registry, id}`, `{wallet}`, `{did}` |
 | `outcome` | yes | `paid`, `payment_failed`, `delivered`, `not_delivered`, `disputed`, `refunded`, `access_revoked`, `policy_violation` |
 | `occurred_at` | yes | ISO 8601, UTC, with seconds |
 | `amount` | payment outcomes | `{value, asset, chain}` |
 | `evidence` | negative outcomes | Transaction hash, CounterAudit packet id, or a reference to a log excerpt the furnisher keeps for 24 months |
-| `signature` | yes, except pilot fallback | `ed25519:` plus base64url. Signed over `agent-bureau/outcome-event/v0\n` followed by the event without `signature` in RFC 8785 canonical JSON, with the furnisher's registered key |
+| `signature` | yes, except pilot fallback | `ed25519:` plus base64url. Signed over `agent-bureau/outcome-event/v1\n` followed by the event without `signature` in RFC 8785 canonical JSON, with the key registered for that `furnisher_id` and `key_id` |
 
 ### Rules
 
-- Every event lands in CounterAudit before it can reach a file.
+- Every event lands in CounterAudit before it can reach a file. CounterAudit refuses an event whose key is not registered for its furnisher, whose signature does not verify, or that reuses an `event_id` the furnisher already used for a different event. A correction is a new event with a `relation` pointing at the old one.
 - Negative outcomes (`payment_failed`, `not_delivered`, `access_revoked`, `policy_violation`) without evidence are held, not shown.
 - A furnisher reports every outcome of a type for the agents it reports on, good and bad. Reporting only negatives gets the furnisher dropped. Credit bureaus require complete reporting for the same reason.
 - **Pilot fallback, unsigned CSV.** During the 90-day pilot only, a furnisher that hasn't set up signing can send an unsigned CSV through a channel agreed at onboarding, either email from its registered contact with DKIM passing or a private upload link issued to it. The Bureau runs `furnish check` on the file and seals it in CounterAudit together with the channel details. Files label those events "unsigned". After the pilot, signatures are required.
