@@ -87,6 +87,25 @@ describe("runIntake", () => {
     expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
   });
 
+  it("stores the signed proof's packet fields, and fails a line whose ingest response disagrees with them", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({
+      kind: "sealed",
+      status: 201,
+      packet: { ...packet, entry_hash: "f".repeat(64), sequence: 7 },
+    });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    const { io, printed } = fakeIO();
+
+    const code = await runIntake(["--test-data", "events.jsonl"], io);
+
+    expect(code).toBe(1);
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(row).toMatchObject({ entryHash: proof.entry_hash, sequence: proof.sequence, proofOk: false });
+    expect(printed()).toContain("ingest response entry_hash differs from the proof");
+    expect(printed()).toContain("ingest response sequence differs from the proof");
+    expect(printed()).toContain("Proofs: 0 verified, 1 failed");
+  });
+
   it("stores a sealed line as unverified test data with three separate times", async () => {
     ca.ingestSignedEvent.mockResolvedValue({
       kind: "sealed",

@@ -117,8 +117,21 @@ function readEventFields(event: Record<string, unknown>): EventFields | string {
 }
 
 type ProofOutcome =
-  | { ran: true; verification: ProofVerification }
+  | { ran: true; verification: ProofVerification; proof: Record<string, unknown> }
   | { ran: false; reason: string };
+
+// The ingest response is not signed and the proof is. Once the proof verifies, its packet
+// fields are the ones stored, and a response that disagrees with them fails the line.
+function ingestDisagreements(
+  packet: { entry_hash: string; sequence: number | null; created_at: string },
+  proof: Record<string, unknown>
+): string[] {
+  const differs: string[] = [];
+  if (proof.entry_hash !== packet.entry_hash) differs.push("entry_hash");
+  if ((proof.sequence ?? null) !== packet.sequence) differs.push("sequence");
+  if (proof.created_at !== packet.created_at) differs.push("created_at");
+  return differs;
+}
 
 async function checkProof(
   event: Record<string, unknown>,
@@ -143,6 +156,7 @@ async function checkProof(
       orgId,
       packetId,
     }),
+    proof: fetched.proof,
   };
 }
 
@@ -242,26 +256,41 @@ async function intakeLine(
     ENV.counterauditOrgId
   );
   const checkedAt = io.now();
+  const signedProof = proof.ran && proof.verification.ok ? proof.proof : null;
+  const disagreements = signedProof ? ingestDisagreements(packet, signedProof) : [];
+  const proofOk = signedProof !== null && disagreements.length === 0;
   if (!proof.ran) {
     tally.proofNotChecked++;
     parts.push(`proof not checked: ${proof.reason}`);
-  } else if (proof.verification.ok) {
+  } else if (proofOk) {
     tally.proofVerified++;
     parts.push("proof verified");
   } else {
     tally.proofFailed++;
-    const failedChecks = PROOF_CHECKS.filter(
-      name => !proof.verification.checks[name].ok
-    );
+    const failedChecks = [
+      ...PROOF_CHECKS.filter(name => !proof.verification.checks[name].ok),
+      ...disagreements.map(field => `ingest response ${field} differs from the proof`),
+    ];
     parts.push(`proof FAILED (${failedChecks.join(", ")})`);
   }
   const proofColumns = proof.ran
     ? {
-        proofOk: proof.verification.ok,
+        proofOk,
         proofChecks: proof.verification.checks,
         proofCheckedAt: checkedAt,
       }
     : null;
+  const sealedFields = signedProof
+    ? {
+        entryHash: String(signedProof.entry_hash),
+        sequence: typeof signedProof.sequence === "number" ? signedProof.sequence : null,
+        caCreatedAt: new Date(String(signedProof.created_at)),
+      }
+    : {
+        entryHash: packet.entry_hash,
+        sequence: packet.sequence,
+        caCreatedAt: new Date(packet.created_at),
+      };
 
   let stored = false;
   try {
@@ -279,9 +308,7 @@ async function intakeLine(
         signedEvent: event,
         signedEventHash: signedEventHash(event),
         packetId: packet.packet_id,
-        entryHash: packet.entry_hash,
-        sequence: packet.sequence,
-        caCreatedAt: new Date(packet.created_at),
+        ...sealedFields,
         receivedAt,
         receipt: packet.receipt,
         ...(proofColumns ?? { proofOk: false }),
@@ -316,7 +343,7 @@ async function intakeLine(
     );
   }
 
-  const clean = stored && proof.ran && proof.verification.ok;
+  const clean = stored && proofOk;
   return { report: `${ref}: ${parts.join(", ")}`, clean };
 }
 
