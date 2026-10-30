@@ -220,6 +220,39 @@ export async function pingDb(): Promise<boolean> {
   }
 }
 
+// The Bureau tables the app needs to serve games, inquiries and the inbox.
+// daily_usage is from the most recent migration, so its presence doubles as a
+// check that migrations ran to the current version.
+const REQUIRED_TABLES = [
+  "agents",
+  "daily_usage",
+  "inquiries",
+  "play_questions",
+  "plays",
+] as const;
+
+// Confirms the required schema is present, not just that the server answers.
+// Migration failures at boot are caught and logged without stopping the
+// process (see _core/index.ts), so a connection can succeed while the tables
+// are missing; this is what readiness must catch.
+export async function schemaReady(): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    const result = await db.execute(
+      sql`select count(*) as present from information_schema.tables
+          where table_schema = database()
+            and table_name in ('agents', 'daily_usage', 'inquiries', 'play_questions', 'plays')`
+    );
+    const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
+      present?: number | string;
+    }>;
+    return Number(rows?.[0]?.present ?? 0) === REQUIRED_TABLES.length;
+  } catch {
+    return false;
+  }
+}
+
 export async function createAgent(agent: {
   name: string;
   builder: string;

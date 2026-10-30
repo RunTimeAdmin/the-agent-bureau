@@ -5,7 +5,7 @@ import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
-import { pingDb, runMigrations } from "../db";
+import { pingDb, runMigrations, schemaReady } from "../db";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV } from "./env";
@@ -65,11 +65,18 @@ async function startServer() {
   // Liveness: the process is up. Stays ok even without a database, because the
   // public pages are still served then.
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
-  // Readiness: the database answers. Use this, not /api/health, to gate traffic
-  // that needs the database (games, inquiries, the inbox).
+  // Readiness: the database answers and the Bureau schema is present. Use this,
+  // not /api/health, to gate traffic that needs the database (games, inquiries,
+  // the inbox). A boot migration failure leaves the server answering but the
+  // tables missing, so checking the schema, not just connectivity, is what
+  // keeps that case out of rotation.
   app.get("/api/ready", async (_req, res) => {
-    const ready = await pingDb();
-    res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "degraded" });
+    const db = await pingDb();
+    const schema = db ? await schemaReady() : false;
+    const ready = db && schema;
+    res
+      .status(ready ? 200 : 503)
+      .json({ status: ready ? "ready" : "degraded", checks: { db, schema } });
   });
   // tRPC API
   app.use(
