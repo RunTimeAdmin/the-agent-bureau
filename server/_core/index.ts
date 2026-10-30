@@ -5,7 +5,7 @@ import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
-import { runMigrations } from "../db";
+import { pingDb, runMigrations } from "../db";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV } from "./env";
@@ -62,7 +62,15 @@ async function startServer() {
   // The largest request is a 4,000-character inquiry; there are no uploads.
   app.use(express.json({ limit: "100kb" }));
   app.use(express.urlencoded({ limit: "100kb", extended: true }));
+  // Liveness: the process is up. Stays ok even without a database, because the
+  // public pages are still served then.
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+  // Readiness: the database answers. Use this, not /api/health, to gate traffic
+  // that needs the database (games, inquiries, the inbox).
+  app.get("/api/ready", async (_req, res) => {
+    const ready = await pingDb();
+    res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "degraded" });
+  });
   // tRPC API
   app.use(
     "/api/trpc",

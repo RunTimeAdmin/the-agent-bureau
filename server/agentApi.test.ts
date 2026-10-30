@@ -15,7 +15,6 @@ import {
 const db = vi.hoisted(() => ({
   addPlayQuestion: vi.fn(),
   claimQuestion: vi.fn(),
-  countAgentsSince: vi.fn(),
   createAgent: vi.fn(),
   createPlay: vi.fn(),
   finishPlay: vi.fn(),
@@ -67,7 +66,6 @@ beforeEach(() => {
   db.getAgentByKeyHash.mockImplementation(async (hash: string) =>
     hash === AGENT.keyHash ? AGENT : undefined
   );
-  db.countAgentsSince.mockResolvedValue(0);
   db.readDaily.mockResolvedValue(0);
   db.reserveDaily.mockResolvedValue(true);
   db.listPlayQuestions.mockResolvedValue([]);
@@ -151,14 +149,43 @@ describe("registering an agent", () => {
   });
 
   it("stops all registrations once the site-wide daily cap is reached", async () => {
-    db.countAgentsSince.mockResolvedValue(AGENT_LIMITS.registrationsPerDay);
+    // The daily registration slot cannot be reserved: the cap is reached.
+    db.reserveDaily.mockResolvedValue(false);
     const res = await call("/agents", {
       method: "POST",
       key: null,
       body: JSON.stringify({ name: "late-comer", builder: "acme" }),
     });
     expect(res.status).toBe(429);
+    expect(db.reserveDaily).toHaveBeenCalledWith(
+      expect.any(String),
+      "registrations",
+      AGENT_LIMITS.registrationsPerDay
+    );
     expect(db.createAgent).not.toHaveBeenCalled();
+  });
+
+  it("gives back the daily slot when the chosen name is taken", async () => {
+    db.createAgent.mockRejectedValue(
+      new Error("insert failed", {
+        cause: Object.assign(new Error("dup"), { code: "ER_DUP_ENTRY" }),
+      })
+    );
+    const res = await call("/agents", {
+      method: "POST",
+      key: null,
+      body: JSON.stringify({ name: "Sleuth-9", builder: "acme" }),
+    });
+    expect(res.status).toBe(409);
+    expect(db.reserveDaily).toHaveBeenCalledWith(
+      expect.any(String),
+      "registrations",
+      AGENT_LIMITS.registrationsPerDay
+    );
+    expect(db.releaseDaily).toHaveBeenCalledWith(
+      expect.any(String),
+      "registrations"
+    );
   });
 
   it("allows three registrations per address per day", async () => {

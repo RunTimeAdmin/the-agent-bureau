@@ -6,7 +6,12 @@ import { z, ZodError } from "zod";
 import { CASES, findCase, LATEST_CASE, type PublicCase } from "@shared/cases";
 import { shareText } from "@shared/share";
 import type { Agent } from "../drizzle/schema";
-import { countAgentsSince, createAgent, getAgentByKeyHash } from "./db";
+import {
+  createAgent,
+  getAgentByKeyHash,
+  releaseDaily,
+  reserveDaily,
+} from "./db";
 import {
   accuseInGame,
   AGENT_GAMES_PER_DAY,
@@ -18,8 +23,8 @@ import {
   playIdSchema,
   questionSchema,
   startGame,
-  startOfUtcDay,
   suspectSchema,
+  utcDayKey,
   type GameState,
 } from "./game";
 import { createRateLimiter, getRequestIp } from "./rateLimit";
@@ -284,9 +289,15 @@ export function createAgentApi() {
           message: "That's all the agents for this address today.",
         });
       }
+      // Reserve the site-wide daily slot atomically so parallel registrations
+      // cannot all pass the same count and exceed the cap.
+      const day = utcDayKey();
       if (
-        (await countAgentsSince(startOfUtcDay())) >=
-        AGENT_LIMITS.registrationsPerDay
+        !(await reserveDaily(
+          day,
+          "registrations",
+          AGENT_LIMITS.registrationsPerDay
+        ))
       ) {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
@@ -298,6 +309,8 @@ export function createAgentApi() {
       try {
         await createAgent({ ...input, keyHash: hashKey(apiKey) });
       } catch (error) {
+        // A failed insert must not use up the day's registration slot.
+        await releaseDaily(day, "registrations");
         if (!isDuplicateEntry(error)) throw error;
         throw new TRPCError({
           code: "CONFLICT",
