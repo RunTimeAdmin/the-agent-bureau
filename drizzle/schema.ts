@@ -1,12 +1,16 @@
 import {
+  bigint,
   boolean,
+  datetime,
   index,
   int,
+  json,
   mysqlEnum,
   mysqlTable,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 /**
@@ -97,6 +101,92 @@ export const playQuestions = mysqlTable(
   },
   table => [index("play_questions_play_idx").on(table.playId)]
 );
+
+// Outcome event v1 values, as agent-bureau-furnish and CounterAudit define them.
+export const OUTCOMES = [
+  "paid",
+  "refunded",
+  "delivered",
+  "disputed",
+  "payment_failed",
+  "not_delivered",
+  "access_revoked",
+  "policy_violation",
+] as const;
+export const RELATION_TYPES = [
+  "disputes",
+  "corrects",
+  "supersedes",
+  "withdraws",
+] as const;
+// How a line may be shown on a file (Phase 0 decision 4). Nothing sets
+// "verified" yet: that needs the evidence policy, which is not built, so a
+// sealed line with a passing proof is still "unverified".
+export const DISPLAY_STATES = [
+  "unverified",
+  "verified",
+  "disputed",
+  "withdrawn",
+  "superseded",
+] as const;
+
+// One row per furnished outcome event sealed in CounterAudit, the system of
+// record. The signed event is kept whole so its signature can be checked again;
+// the other event columns are copies of its fields for querying. Three times
+// stay apart (Phase 0 decision 7): occurredAt is the furnisher's claim, inside
+// the signed event, and never independently trusted; receivedAt is when the
+// Bureau read the event; caCreatedAt is CounterAudit's seal time. Event ids are
+// unique per furnisher, as in CounterAudit.
+//
+// Times are DATETIME in UTC (getDb pins the session zone), not TIMESTAMP:
+// occurredAt is the furnisher's choice and TIMESTAMP ends in 2038, and MariaDB
+// before 10.10 (or MySQL with explicit_defaults_for_timestamp off) gives the
+// first TIMESTAMP column ON UPDATE CURRENT_TIMESTAMP, which would rewrite the
+// seal time whenever the proof check is refreshed.
+export const outcomeEvents = mysqlTable(
+  "outcome_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    furnisherId: varchar("furnisherId", { length: 36 }).notNull(),
+    eventId: varchar("eventId", { length: 128 }).notNull(),
+    keyId: varchar("keyId", { length: 64 }).notNull(),
+    outcome: mysqlEnum("outcome", OUTCOMES).notNull(),
+    subjectRef: json("subjectRef").$type<Record<string, unknown>>().notNull(),
+    occurredAt: datetime("occurredAt", { fsp: 3 }).notNull(),
+    relationType: mysqlEnum("relationType", RELATION_TYPES),
+    relationTargetEventId: varchar("relationTargetEventId", { length: 128 }),
+    signedEvent: json("signedEvent").$type<Record<string, unknown>>().notNull(),
+    // SHA-256 of the RFC 8785 canonical signed event, signature included.
+    signedEventHash: varchar("signedEventHash", { length: 64 }).notNull(),
+    packetId: varchar("packetId", { length: 36 }).notNull().unique(),
+    entryHash: varchar("entryHash", { length: 64 }).notNull(),
+    sequence: bigint("sequence", { mode: "number" }),
+    caCreatedAt: datetime("caCreatedAt", { fsp: 3 }).notNull(),
+    receivedAt: datetime("receivedAt", { fsp: 3 }).notNull(),
+    // CounterAudit's signed receipt from ingest; null if it sent none.
+    receipt: json("receipt").$type<Record<string, unknown>>(),
+    // The last check of the packet's public proof: whether every check passed,
+    // each check's result, and when it ran. The last two stay null until a
+    // check has run.
+    proofOk: boolean("proofOk").default(false).notNull(),
+    proofChecks: json("proofChecks").$type<Record<string, unknown>>(),
+    proofCheckedAt: datetime("proofCheckedAt", { fsp: 3 }),
+    displayState: mysqlEnum("displayState", DISPLAY_STATES)
+      .default("unverified")
+      .notNull(),
+    // "test" until retention is signed off; intake writes nothing else.
+    dataClass: mysqlEnum("dataClass", ["test", "live"]).notNull(),
+  },
+  table => [
+    uniqueIndex("outcome_events_furnisher_event_uq").on(
+      table.furnisherId,
+      table.eventId
+    ),
+  ]
+);
+
+export type OutcomeEvent = typeof outcomeEvents.$inferSelect;
+export type InsertOutcomeEvent = typeof outcomeEvents.$inferInsert;
 
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;

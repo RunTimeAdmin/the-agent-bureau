@@ -50,6 +50,13 @@
       "when": 1793100033241,
       "tag": "0006_daily_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1793387349979,
+      "tag": "0007_outcome_events",
+      "breakpoints": true
     }
   ]
 }
