@@ -40,7 +40,7 @@ Start the application:
 NODE_ENV=production PORT=3000 pnpm start
 ```
 
-Your host may supply a different `PORT`; the app honors it. Route public HTTPS traffic to the Node process. Use `/api/health` as a liveness check and `/api/ready` (which checks the database) as the readiness check. The production server serves the frontend and API together.
+Your host may supply a different `PORT`; the app honors it. Route public HTTPS traffic to the Node process. Use `/api/health` as a liveness check and `/api/ready` (which checks the database answers and the Bureau tables are present, so a failed boot migration shows as not-ready) as the readiness check; it returns `{ status, checks: { db, schema } }`. The production server serves the frontend and API together.
 
 For a Node.js hosting control panel, use `pnpm install --frozen-lockfile && pnpm build` as the build command, `pnpm start` as the start command, and the environment variables below. If the host only accepts npm, install the pinned pnpm toolchain or use the Dockerfile rather than discarding the lockfile.
 
