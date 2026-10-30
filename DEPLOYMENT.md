@@ -8,7 +8,7 @@ No credentials, customer records, database backup, or `node_modules` are include
 
 ## Requirements
 
-Node.js 22, pnpm 10.18.0, a MySQL-compatible database, HTTPS, and a process or container that stays running. Set environment variables in your hosting control panel. `.env.example` contains placeholders only.
+Node.js 22, pnpm 10.34.9, a MySQL-compatible database, HTTPS, and a process or container that stays running. Set environment variables in your hosting control panel. `.env.example` contains placeholders only.
 
 ## Standard Node.js setup
 
@@ -16,7 +16,7 @@ Use the directory containing `package.json` as the application root. Run:
 
 ```sh
 corepack enable
-corepack prepare pnpm@10.18.0 --activate
+corepack prepare pnpm@10.34.9 --activate
 pnpm install --frozen-lockfile
 ```
 
@@ -40,7 +40,7 @@ Start the application:
 NODE_ENV=production PORT=3000 pnpm start
 ```
 
-Your host may supply a different `PORT`; the app honors it. Route public HTTPS traffic to the Node process and use `/api/health` as the health check. The production server serves the frontend and API together.
+Your host may supply a different `PORT`; the app honors it. Route public HTTPS traffic to the Node process. Use `/api/health` as a liveness check and `/api/ready` (which checks the database) as the readiness check. The production server serves the frontend and API together.
 
 For a Node.js hosting control panel, use `pnpm install --frozen-lockfile && pnpm build` as the build command, `pnpm start` as the start command, and the environment variables below. If the host only accepts npm, install the pinned pnpm toolchain or use the Dockerfile rather than discarding the lockfile.
 
@@ -86,4 +86,4 @@ The rate limiters are in-memory and keyed by the visitor's IP. Express trusts `X
 
 ## Final checks on your own host
 
-Confirm `/api/health` returns success, artwork loads, the `inquiries` table exists, a real form submission is stored, `/inbox` rejects a wrong password and accepts the right one, and unknown paths return 404. Confirm the domain certificate and sitemap.
+Confirm `/api/health` returns success and `/api/ready` returns ready, artwork loads, the `inquiries` table exists, a real form submission is stored, `/inbox` rejects a wrong password and accepts the right one, and unknown paths return 404. Confirm the domain certificate and sitemap.

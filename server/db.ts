@@ -5,7 +5,6 @@ import {
   desc,
   eq,
   gt,
-  gte,
   isNotNull,
   isNull,
   lt,
@@ -209,13 +208,16 @@ export async function readDaily(day: string, scope: string): Promise<number> {
   return row?.used ?? 0;
 }
 
-export async function countAgentsSince(since: Date): Promise<number> {
-  const db = await requireDb();
-  const [row] = await db
-    .select({ total: count() })
-    .from(agents)
-    .where(gte(agents.createdAt, since));
-  return row?.total ?? 0;
+// Lightweight readiness probe: confirms a connection and a round-trip.
+export async function pingDb(): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    await db.execute(sql`select 1`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function createAgent(agent: {
