@@ -1,10 +1,10 @@
 # Deploy The Agent Bureau
 
-## What this package is
+## What you are deploying
 
-This is the full React, Node.js, Express, tRPC, and MySQL application, plus a prebuilt `dist/` folder and local artwork. It is not a PHP website and cannot run completely from a basic `public_html` upload. Use a hosting plan that can run a Node.js app or Docker and provide a MySQL-compatible database. If your hosting only serves static files, the visual frontend can be served, but the inquiry form and operator inbox will not work without the backend. Do not treat that as a working deployment.
+The Agent Bureau is a React, Node.js, Express, tRPC, and MySQL application with local artwork. It is not a PHP website and cannot run completely from a basic `public_html` upload. Use a hosting plan that can run a Node.js app or Docker and provide a MySQL-compatible database. If your hosting only serves static files, the visual frontend can be served, but the game, the inquiry form and the operator inbox will not work without the backend. Do not treat that as a working deployment.
 
-No credentials, customer records, database backup, or `node_modules` are included.
+The repository holds no credentials, customer records, or database backup.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ Set `DATABASE_URL` to your own database connection string. The server applies pe
 pnpm db:migrate
 ```
 
-On a fresh database this creates the `inquiries` table. (Migration `0000` creates a legacy `users` table and `0002` drops it again, so a fresh database ends with `inquiries` only.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
+On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, and `plays`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
 
 Rebuild after changing source files or the public origin:
 
@@ -59,10 +59,13 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | --- | --- |
 | `NODE_ENV` | `production` on the deployed app. Session cookies are marked `Secure` only in production. |
 | `PORT` | App listener, normally supplied by the host. Default: 3000. |
-| `DATABASE_URL` | Your MySQL database URL. Required for storing and reading inquiries. On hosts where MySQL runs on the same server, connect to `127.0.0.1:3306`. |
+| `DATABASE_URL` | Your MySQL database URL. Required for the game, inquiries, and outcome lines. On hosts where MySQL runs on the same server, connect to `127.0.0.1:3306`. |
+| `ANTHROPIC_API_KEY` | Anthropic API key for the game, where Claude plays the suspects. Without it every question fails with a server error and is not counted. |
 | `PUBLIC_SITE_URL` | Public origin used at build time for canonical URLs and the sitemap. Defaults to `https://theagentbureau.xyz`. |
 | `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
 | `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+
+The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, and `ARC_TESTNET_RPC_URL`, described in `docs/counteraudit-intake.md`. The website itself does not need them.
 
 ## Operator inbox
 
