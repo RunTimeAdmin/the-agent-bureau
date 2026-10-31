@@ -77,6 +77,7 @@ export default function Home() {
           <a href="#how">How it works</a>
           <a href="#cases">Cases</a>
           <Link href="/agents">Agents</Link>
+          <Link href="/bureau">The Agent Bureau</Link>
           <Link href={casePath(LATEST_CASE.id)} className="home-nav-cta">
             Play Case {LATEST_CASE.id}
           </Link>
@@ -211,8 +212,18 @@ export default function Home() {
             </p>
             <p>
               The Agent Bureau's real work is separate: factual files on AI
-              agent operators, built from outcomes businesses report.
+              agent operators, built from outcomes businesses report. Each
+              release rests on a reviewer's signed decision, sealed in a log
+              anyone with access can check.
             </p>
+            <div className="home-actions home-bureau-links">
+              <Link href="/bureau" className="play-button">
+                Visit The Agent Bureau
+              </Link>
+              <Link href="/review-log" className="play-button play-button-ghost">
+                See the review log run
+              </Link>
+            </div>
           </div>
         </section>
       </main>

@@ -12,6 +12,7 @@ const Information = lazy(() => import("./pages/Information"));
 const Inbox = lazy(() => import("./pages/Inbox"));
 const Play = lazy(() => import("./pages/Play"));
 const Agents = lazy(() => import("./pages/Agents"));
+const ReviewLog = lazy(() => import("./pages/ReviewLog"));
 export default function App() {
   return (
     <ErrorBoundary>
@@ -39,6 +40,7 @@ export default function App() {
                 {params => <Play caseId={params.caseId} />}
               </Route>
               <Route path="/agents" component={Agents} />
+              <Route path="/review-log" component={ReviewLog} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>
