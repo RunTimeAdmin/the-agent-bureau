@@ -16,4 +16,7 @@ export const ENV = {
   // Arc testnet JSON-RPC for the evidence check (server/evidence.ts). Only read
   // calls are made: no key is held and nothing is sent.
   get arcTestnetRpcUrl() { return process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.io"; },
+  // Arc testnet's explorer (Blockscout), read by the funding screen
+  // (server/fundingScreen.ts) for a payer's transfers. Read calls only.
+  get arcTestnetExplorerUrl() { return process.env.ARC_TESTNET_EXPLORER_URL || "https://explorer.testnet.arc.io"; },
 };

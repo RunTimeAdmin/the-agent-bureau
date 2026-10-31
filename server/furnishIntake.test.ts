@@ -297,6 +297,51 @@ describe("runIntake", () => {
     );
   });
 
+  it("keeps a complete funding screen when a re-run's screen could not read", async () => {
+    const screen = (result: string, extra: Record<string, unknown> = {}) => ({
+      screen: "arc-funding/1",
+      result,
+      flags: [],
+      gaps: [],
+      window_start: "2026-09-30T18:31:52.000Z",
+      window_end: "2026-10-30T18:31:52.000Z",
+      ...extra,
+    });
+    const complete = { ...VERIFIED, funding_screen: screen("clear") };
+    const failedRead = {
+      ...VERIFIED,
+      funding_screen: screen("inconclusive", { gaps: ["the screen could not finish reading: 502"], read_failed: true }),
+    };
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: complete });
+    db.updateOutcomeEventEvidence.mockResolvedValue(undefined);
+    evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen).toEqual(screen("clear"));
+
+    // A screen that read everything replaces the stored one.
+    const flagged = { ...VERIFIED, funding_screen: screen("flagged", { flags: ["first seen"] }) };
+    evidence.verifyEvidence.mockResolvedValueOnce(flagged);
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.result).toBe("flagged");
+
+    // So does one that found a flag before a read failed.
+    const flaggedThenFailed = {
+      ...VERIFIED,
+      funding_screen: screen("flagged", { flags: ["first seen"], gaps: ["the screen could not finish reading the explorer or the RPC"], read_failed: true }),
+    };
+    evidence.verifyEvidence.mockResolvedValueOnce(flaggedThenFailed);
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.flags).toEqual(["first seen"]);
+
+    // A stored screen for another charge is never kept.
+    const otherCharge = { ...complete, charge: { ...VERIFIED.charge, log_index: 99 } };
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: otherCharge });
+    evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.read_failed).toBe(true);
+  });
+
   it("loses the same race when a re-run claims a charge for a stored line", async () => {
     ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
     db.findOutcomeEvent.mockResolvedValue(stored);

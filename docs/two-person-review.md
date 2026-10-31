@@ -8,14 +8,14 @@ A line is released, and shows as `verified`, when all of these hold:
 
 1. **Its proof passed**: CounterAudit sealed it and the furnisher's signature checked out (`source_signed`).
 2. **Its evidence allows it.**
-   - `verified` evidence: any approval counts.
+   - `verified` evidence: any approval counts, except for a settled payment whose funding screen (`docs/evidence-verifier.md`) is not `clear`: a flag, an inconclusive screen or none needs an approval that waives it, with a reason.
    - `needs_review` evidence, which a person must judge (no machine check applies, or the check found something only a person can settle, such as a subject that is not a wallet or a merchant paying itself): only an approval that waives it (`approve_with_waiver`, with a reason) counts.
    - `failed` evidence can never be waived. `pending`, `error` or no check yet: run the intake again first.
 3. **It holds the claim on its charge**, if it is backed by one (`docs/evidence-verifier.md`), so no two released lines rest on one charge.
 4. **No listed reviewer currently rejects it.**
 5. **Enough approvals from different listed reviewers**: two for live data, one for test data (Phase 0 item 6 keeps the solo path for test data and dry runs). `pnpm review queue` reports a solo release as such, and a file must label it.
 
-**Approving a payment line.** `pnpm review queue` names what a payment line's evidence proved: `payment_settlement_verified` for a `paid` or `refunded` line whose evidence is `verified`, `payment_failure_verified` for `payment_failed`. Beside it are `subject_control` and `payer_independence_screen` (`docs/independent-payer.md`), and the reminder that a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered. Approving a payment line confirms you judged whether the payer is related to the furnisher, and you may reject on relatedness alone. Until subject control (Phase 3) and the funding screen are built, they read `unproven` and `inconclusive`.
+**Approving a payment line.** `pnpm review queue` names what a payment line's evidence proved: `payment_settlement_verified` for a `paid` or `refunded` line whose evidence is `verified`, `payment_failure_verified` for `payment_failed`. Beside it are `subject_control` and `payer_independence_screen` (`docs/independent-payer.md`), and the reminder that a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered. Approving a payment line confirms you judged whether the payer is related to the furnisher, and you may reject on relatedness alone. The queue lists the funding screen's flags and gaps. Subject control is Phase 3, so it reads `unproven` until then.
 
 Each decision is signed for one line (`furnisher_id`, `event_id`), one version of its event (`signed_event_hash`), its data class, and the digest of its evidence result as the reviewer saw it (`evidence_digest`). A decision for another version or data class never counts. An approval counts only while the line's evidence result still has that digest: if a re-run of the intake changes it (a reused charge found, say), the approval stops counting and the line needs a new review. A rejection holds the line whatever evidence it was signed against.
 

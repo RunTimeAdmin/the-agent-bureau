@@ -134,12 +134,19 @@ export function releaseFor(
 ): { released: Release | null; holdingBack: string | null } {
   const hold = (holdingBack: string) => ({ released: null, holdingBack });
   if (!line.proofOk) return hold("its proof has not passed");
+  // A MariaDB server older than 10.5.2 returns the JSON column as text.
+  let result: unknown = line.evidenceResult;
+  if (typeof result === "string") {
+    try {
+      result = JSON.parse(result);
+    } catch {
+      result = null;
+    }
+  }
   // A line backed by a charge counts only while it holds that charge's claim,
   // which is unique, so no two released lines can rest on one charge (review
   // M-02).
-  const charge = isRecord(line.evidenceResult)
-    ? line.evidenceResult.charge
-    : undefined;
+  const charge = isRecord(result) ? result.charge : undefined;
   if (
     isRecord(charge) &&
     line.evidenceKey !== chargeKey(charge as LevyCharge)
@@ -162,11 +169,22 @@ export function releaseFor(
   if (rejected.length > 0) {
     return hold(`rejected by ${rejected.map(d => d.reviewerId).join(", ")}`);
   }
+  // A settled payment counts on a plain approval only when its funding screen
+  // is clear; a flag, an inconclusive screen or none needs a person to waive it
+  // with a reason (review M-04, decided 2026-10-31). An evidence result that
+  // cannot be read at all is held the same way.
+  const screened = isRecord(result) ? result.funding_screen : undefined;
+  const screenHolds =
+    !isRecord(result) ||
+    (isRecord(charge) &&
+      charge.kind === "charged" &&
+      !(isRecord(screened) && screened.result === "clear"));
+  const plain = evidence === "verified" && !screenHolds;
   const digest = evidenceDigest(line.evidenceResult);
   const approvals = decisions.filter(
     d =>
       d.evidenceDigest === digest &&
-      (evidence === "verified" || d.decision === "approve_with_waiver")
+      (plain || d.decision === "approve_with_waiver")
   ).length;
   if (approvals >= 2) return { released: "two_person", holdingBack: null };
   if (approvals === 1 && line.dataClass === "test") {
@@ -174,10 +192,9 @@ export function releaseFor(
   }
   const missing = 2 - approvals;
   const plural = missing > 1;
-  const what =
-    evidence === "verified"
-      ? `approval${plural ? "s" : ""}`
-      : `approval${plural ? "s that waive" : " that waives"} the evidence`;
+  const what = plain
+    ? `approval${plural ? "s" : ""}`
+    : `approval${plural ? "s that waive" : " that waives"} the ${evidence === "verified" ? "funding screen's result" : "evidence"}`;
   const test = line.dataClass === "test" ? " (test data: one is enough)" : "";
   return hold(`needs ${missing} more ${what} from different reviewers${test}`);
 }

@@ -210,6 +210,16 @@ export function evidenceLabel(outcome: string, status: string | null): string {
   return PAYMENT_OUTCOMES.has(outcome) ? "payment_settlement_verified" : "verified";
 }
 
+/** The funding screen's result and why, for the queue. */
+function describeScreen(screen: unknown): string {
+  if (!isRecord(screen) || typeof screen.result !== "string") return "not run";
+  const reasons = [
+    ...(Array.isArray(screen.flags) ? screen.flags : []),
+    ...(Array.isArray(screen.gaps) ? screen.gaps : []),
+  ].map(String);
+  return `${screen.result}${reasons.length ? `: ${reasons.join("; ")}` : ""}`;
+}
+
 async function queue(io: ReviewIO, reviewers: Record<string, Reviewer>) {
   if (!(await needDatabase(io))) return 2;
   const lines = await listOutcomeLines();
@@ -239,11 +249,11 @@ async function queue(io: ReviewIO, reviewers: Record<string, Reviewer>) {
         `${line.furnisherId}/${line.eventId}  ${line.outcome}  ${line.dataClass} data  shown ${line.displayState}`,
         `  hash ${line.signedEventHash}`,
         `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${evidenceLabel(line.outcome, line.evidenceStatus)}${reasons ? `: ${reasons}` : ""}`,
-        // Subject control is Phase 3 and the funding screen is not built, so a
-        // payment line has neither yet (docs/independent-payer.md, layers 2 and 3).
+        // Subject control is Phase 3, so it is unproven for every line
+        // (docs/independent-payer.md, layers 2 and 3).
         ...(PAYMENT_OUTCOMES.has(line.outcome)
           ? [
-              "  subject_control unproven; payer_independence_screen inconclusive (not built yet)",
+              `  subject_control unproven; payer_independence_screen ${describeScreen(evidence.funding_screen)}`,
               "  check: a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered; reject if you judge the payer related to the furnisher",
             ]
           : []),

@@ -9,11 +9,26 @@ import {
   type Hex,
 } from "viem";
 import type { ChainReader } from "./evidence";
+import type { WalletState } from "./fundingScreen";
 
 const LEVY_READS = parseAbi([
   "function subscriptions(uint256) view returns (address subscriber, uint256 planId, uint64 start, uint64 nextChargeAt, uint64 failedAttempts, uint256 credit, uint256 chargeCount, uint8 status)",
   "function plans(uint256) view returns (address merchant, uint256 price, uint256 cycleSeconds, uint256 trialSeconds, uint256 graceSeconds, uint8 maxFailed, bool exists)",
 ]);
+
+/** A wallet's nonce and balance at a past block, for the funding screen. Needs a node that keeps old state, as Arc's public RPC does. */
+export function walletState(rpcUrl: string): WalletState {
+  const client = createPublicClient({
+    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1 }),
+  });
+  return {
+    nonceAt: (address, blockNumber) => client.getTransactionCount({ address, blockNumber }),
+    balanceAt: (address, blockNumber) => client.getBalance({ address, blockNumber }),
+    async blockTime(blockNumber) {
+      return Number((await client.getBlock({ blockNumber })).timestamp) * 1000;
+    },
+  };
+}
 
 export function rpcReader(rpcUrl: string): ChainReader {
   const client = createPublicClient({
