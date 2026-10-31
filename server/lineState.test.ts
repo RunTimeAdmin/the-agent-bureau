@@ -3,8 +3,11 @@ import {
   displayStateFor,
   lineStates,
   relationProblem,
+  releaseFor,
   type Line,
+  type Review,
 } from "./lineState";
+import { evidenceDigest } from "./reviewDecision";
 
 const WALLET = "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77";
 
@@ -17,6 +20,8 @@ function line(overrides: Partial<Line> = {}): Line {
     dataClass: "test",
     proofOk: true,
     evidenceStatus: null,
+    evidenceResult: null,
+    signedEventHash: "a".repeat(64),
     displayState: "unverified",
     relationType: null,
     relationTargetEventId: null,
@@ -45,6 +50,7 @@ describe("lineStates", () => {
       disputed: false,
       withdrawn: false,
       superseded: false,
+      released: null,
     });
     expect(lineStates(line({ evidenceStatus: "verified" }), [])).toMatchObject({
       source_signed: true,
@@ -97,7 +103,7 @@ describe("lineStates", () => {
     ).toBe(true);
   });
 
-  it("never returns verified, even when every check passed", () => {
+  it("does not return verified without a release, even when every check passed", () => {
     const states = lineStates(line({ evidenceStatus: "verified" }), []);
     expect(displayStateFor(states)).toBe("unverified");
   });
@@ -158,5 +164,216 @@ describe("relationProblem", () => {
     });
     expect(relationProblem(self, self)).toBe("it points at itself");
     expect(lineStates(self, [self]).withdrawn).toBe(false);
+  });
+});
+
+describe("releaseFor: two-person review", () => {
+  const HASH = "a".repeat(64);
+  const EVIDENCE = { status: "verified", reasons: [] };
+  let id = 100;
+  // A decision as re-read from its signed form, about the test line below
+  // unless overridden.
+  function review(
+    reviewerId: string,
+    decision: Review["decision"],
+    overrides: Partial<Omit<Review, "decidedAt">> & { decidedAt?: string } = {}
+  ): Review {
+    const { decidedAt = "2026-10-31T10:00:00.000Z", ...rest } = overrides;
+    return {
+      id: id++,
+      reviewerId,
+      decision,
+      signedEventHash: HASH,
+      dataClass: "test",
+      evidenceDigest: evidenceDigest(EVIDENCE),
+      decidedAt: new Date(decidedAt),
+      ...rest,
+    };
+  }
+  const live = line({
+    dataClass: "live",
+    evidenceStatus: "verified",
+    evidenceResult: EVIDENCE,
+  });
+  const test = line({
+    dataClass: "test",
+    evidenceStatus: "verified",
+    evidenceResult: EVIDENCE,
+  });
+  const onLive = { dataClass: "live" as const };
+
+  it("releases a live line only with two different reviewers", () => {
+    expect(releaseFor(live, [review("rev_alice", "approve", onLive)])).toEqual({
+      released: null,
+      holdingBack: "needs 1 more approval from different reviewers",
+    });
+    const sameTwice = [
+      review("rev_alice", "approve", onLive),
+      review("rev_alice", "approve", {
+        ...onLive,
+        decidedAt: "2026-10-31T11:00:00.000Z",
+      }),
+    ];
+    expect(releaseFor(live, sameTwice).released).toBeNull();
+    const two = [
+      review("rev_alice", "approve", onLive),
+      review("rev_bob", "approve", onLive),
+    ];
+    expect(releaseFor(live, two).released).toBe("two_person");
+    expect(displayStateFor(lineStates(live, [], two))).toBe("verified");
+  });
+
+  it("lets one reviewer release test data, flagged as solo", () => {
+    const one = [review("rev_alice", "approve")];
+    expect(releaseFor(test, one).released).toBe("solo_test");
+    expect(displayStateFor(lineStates(test, [], one))).toBe("verified");
+    expect(releaseFor(test, []).holdingBack).toBe(
+      "needs 2 more approvals from different reviewers (test data: one is enough)"
+    );
+  });
+
+  it("counts only decisions signed for the line's data class", () => {
+    expect(
+      releaseFor(live, [
+        review("rev_alice", "approve"),
+        review("rev_bob", "approve"),
+      ]).released
+    ).toBeNull();
+    expect(
+      releaseFor(test, [review("rev_alice", "approve", onLive)]).released
+    ).toBeNull();
+  });
+
+  it("holds a line any reviewer currently rejects", () => {
+    const decisions = [
+      review("rev_alice", "approve", onLive),
+      review("rev_bob", "approve", onLive),
+      review("rev_carol", "reject", onLive),
+    ];
+    expect(releaseFor(live, decisions)).toEqual({
+      released: null,
+      holdingBack: "rejected by rev_carol",
+    });
+  });
+
+  it("counts each reviewer's latest signed decision, whatever order they were recorded in", () => {
+    const changedMind = [
+      review("rev_carol", "reject", { decidedAt: "2026-10-31T09:00:00.000Z" }),
+      review("rev_carol", "approve", { decidedAt: "2026-10-31T10:00:00.000Z" }),
+    ];
+    expect(releaseFor(test, changedMind).released).toBe("solo_test");
+    // An older approval recorded after a newer rejection does not undo it.
+    const replayed = [
+      review("rev_carol", "reject", { decidedAt: "2026-10-31T10:00:00.000Z" }),
+      review("rev_carol", "approve", { decidedAt: "2026-10-31T09:00:00.000Z" }),
+    ];
+    expect(releaseFor(test, replayed).holdingBack).toBe(
+      "rejected by rev_carol"
+    );
+  });
+
+  it("needs approvals that waive evidence a person must judge", () => {
+    const evidence = {
+      status: "needs_review",
+      reasons: ["no machine check exists for delivered outcomes"],
+    };
+    const unchecked = line({
+      dataClass: "live",
+      evidenceStatus: "needs_review",
+      evidenceResult: evidence,
+    });
+    const digest = { ...onLive, evidenceDigest: evidenceDigest(evidence) };
+    expect(
+      releaseFor(unchecked, [
+        review("rev_alice", "approve", digest),
+        review("rev_bob", "approve", digest),
+      ]).holdingBack
+    ).toBe(
+      "needs 2 more approvals that waive the evidence from different reviewers"
+    );
+    expect(
+      releaseFor(unchecked, [
+        review("rev_alice", "approve_with_waiver", digest),
+        review("rev_bob", "approve_with_waiver", digest),
+      ]).released
+    ).toBe("two_person");
+  });
+
+  it("drops approvals once the evidence changes, but keeps a rejection", () => {
+    const before = {
+      status: "needs_review",
+      reasons: ["the subject is not an EVM wallet"],
+    };
+    const after = {
+      ...before,
+      reasons: [
+        ...before.reasons,
+        "the same charge already backs fur_other01/e1",
+      ],
+    };
+    const changed = line({
+      dataClass: "live",
+      evidenceStatus: "needs_review",
+      evidenceResult: after,
+    });
+    const stale = { ...onLive, evidenceDigest: evidenceDigest(before) };
+    expect(
+      releaseFor(changed, [
+        review("rev_alice", "approve_with_waiver", stale),
+        review("rev_bob", "approve_with_waiver", stale),
+      ]).released
+    ).toBeNull();
+    expect(
+      releaseFor(changed, [review("rev_carol", "reject", stale)]).holdingBack
+    ).toBe("rejected by rev_carol");
+  });
+
+  it.each([
+    [
+      "failed evidence, which cannot be waived",
+      { evidenceStatus: "failed" as const },
+      "its evidence check failed, which cannot be waived",
+    ],
+    [
+      "evidence not checked yet",
+      { evidenceStatus: "pending" as const },
+      "its evidence is pending; run the intake again",
+    ],
+    [
+      "a proof that has not passed",
+      { proofOk: false },
+      "its proof has not passed",
+    ],
+  ])("never releases a line with %s", (_name, overrides, holdingBack) => {
+    const all = [
+      review("rev_alice", "approve_with_waiver"),
+      review("rev_bob", "approve_with_waiver"),
+    ];
+    expect(
+      releaseFor(
+        line({ dataClass: "test", evidenceResult: EVIDENCE, ...overrides }),
+        all
+      )
+    ).toEqual({
+      released: null,
+      holdingBack,
+    });
+  });
+
+  it("ignores decisions about a different version of the event", () => {
+    const other = [
+      review("rev_alice", "approve", { signedEventHash: "b".repeat(64) }),
+    ];
+    expect(releaseFor(test, other).released).toBeNull();
+  });
+
+  it("shows a dispute or withdrawal over a release", () => {
+    const one = [review("rev_alice", "approve")];
+    expect(displayStateFor(lineStates(test, [relating("disputes")], one))).toBe(
+      "disputed"
+    );
+    expect(
+      displayStateFor(lineStates(test, [relating("withdraws")], one))
+    ).toBe("withdrawn");
   });
 });

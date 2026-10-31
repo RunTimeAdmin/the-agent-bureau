@@ -1,6 +1,6 @@
 # Line states
 
-What the Bureau knows about each stored line, kept as separate facts instead of one "verified" bit, and how a furnisher's later line can withdraw, replace or dispute an earlier one. Code: `server/lineState.ts`, applied by the operator intake (`docs/counteraudit-intake.md`).
+What the Bureau knows about each stored line, kept as separate facts instead of one "verified" bit, how a furnisher's later line can withdraw, replace or dispute an earlier one, and whether reviewers released it. Code: `server/lineState.ts`, applied by the operator intake (`docs/counteraudit-intake.md`).
 
 ## States
 
@@ -12,19 +12,21 @@ What the Bureau knows about each stored line, kept as separate facts instead of 
 | `disputed`          | A later line from the same furnisher `disputes` it.                                            | Furnisher relation          |
 | `withdrawn`         | A later line from the same furnisher `withdraws` it.                                           | Furnisher relation          |
 | `superseded`        | A later line from the same furnisher `supersedes` or `corrects` it.                            | Furnisher relation          |
+| `released`          | Listed reviewers released it: `two_person`, or `solo_test` for one reviewer on test data.      | `docs/two-person-review.md` |
 
 Each fact stays readable on its own. A line can be source signed with evidence still under review, or evidence verified and withdrawn.
 
 ## Display state
 
-The stored `displayState` (Phase 0 decision 4) follows from the states. A withdrawal outranks a replacement, which outranks a dispute:
+The stored `displayState` (Phase 0 decision 4) follows from the states. A withdrawal outranks a replacement, which outranks a dispute, which outranks a release:
 
 1. `withdrawn`
 2. `superseded`
 3. `disputed`
-4. `unverified`
+4. `verified`, once reviewers released the line (`released`: `two_person`, or `solo_test` for test data)
+5. `unverified`
 
-`verified` is never set yet. It will need a passing proof, verified evidence (or a reviewed waiver), and two-person review, which comes in the next change. Until then the best a line can show is `unverified`.
+A release needs a passing proof, evidence verified or waived by every approving reviewer (and unchanged since they signed), no current rejection, and two different reviewers (one for test data). `docs/two-person-review.md` has the rule and the steps.
 
 ## Relations
 
@@ -44,6 +46,5 @@ A withdrawal, a replacement or a furnisher's own dispute takes effect without re
 ## Not covered yet
 
 - **Subject disputes.** The spec has the subject dispute by signing with the wallet that controls the agent. That needs subject matching (Phase 0 decision 3) and its own intake. Today only a furnisher's `disputes` relation marks a line disputed.
-- **Two-person review**, the review queue and evidence waivers: the next change.
 - **Dispute deadlines.** The furnisher's 15 days to confirm, correct or withdraw a disputed line.
 - **Event ids that differ only in case.** The unique index on furnisher and event id compares without case, so the Bureau cannot store two events from one furnisher whose ids differ only in case; the second fails to store with a duplicate-key error. Fixing that needs a binary collation on those columns.

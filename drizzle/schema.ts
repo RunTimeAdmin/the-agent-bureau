@@ -208,6 +208,42 @@ export const outcomeEvents = mysqlTable(
 export type OutcomeEvent = typeof outcomeEvents.$inferSelect;
 export type InsertOutcomeEvent = typeof outcomeEvents.$inferInsert;
 
+// What a reviewer may decide about a line (docs/two-person-review.md).
+// approve_with_waiver also accepts evidence that has no machine check.
+export const REVIEW_DECISIONS = [
+  "approve",
+  "approve_with_waiver",
+  "reject",
+] as const;
+
+// One row per signed review decision, kept whole: every settle checks its
+// signature again and reads only the signed form, so the other columns are
+// for querying, never trusted. A reviewer's latest decision for a line, by the
+// time they signed, is the one that counts. decisionHash (SHA-256 of the
+// canonical signed decision) records each decision once.
+export const outcomeReviews = mysqlTable(
+  "outcome_reviews",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    outcomeEventId: int("outcomeEventId").notNull(),
+    reviewerId: varchar("reviewerId", { length: 36 }).notNull(),
+    decision: mysqlEnum("decision", REVIEW_DECISIONS).notNull(),
+    reason: varchar("reason", { length: 500 }),
+    // The signed event the decision is about; a decision counts only for it.
+    signedEventHash: varchar("signedEventHash", { length: 64 }).notNull(),
+    decidedAt: datetime("decidedAt", { fsp: 3 }).notNull(),
+    recordedAt: datetime("recordedAt", { fsp: 3 }).notNull(),
+    decisionHash: varchar("decisionHash", { length: 64 }).notNull().unique(),
+    signedDecision: json("signedDecision")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+  },
+  table => [index("outcome_reviews_event_idx").on(table.outcomeEventId)]
+);
+
+export type OutcomeReview = typeof outcomeReviews.$inferSelect;
+export type InsertOutcomeReview = typeof outcomeReviews.$inferInsert;
+
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
 export type PlayQuestion = typeof playQuestions.$inferSelect;

@@ -1,14 +1,17 @@
 // What is known about a stored line, kept apart instead of folded into one
 // "verified" bit (the 2026-10-31 review, proof contract): CounterAudit sealed
 // it, the furnisher's signature checked out through CounterAudit's proof, its
-// evidence passed, and what later lines from the same furnisher did to it.
-// See docs/line-states.md.
+// evidence passed, what later lines from the same furnisher did to it, and
+// whether reviewers released it. See docs/line-states.md and
+// docs/two-person-review.md.
 import canonicalize from "canonicalize";
 import type {
   DISPLAY_STATES,
   OutcomeEvent,
   RELATION_TYPES,
+  REVIEW_DECISIONS,
 } from "../drizzle/schema";
+import { evidenceDigest } from "./reviewDecision";
 
 export type DisplayState = (typeof DISPLAY_STATES)[number];
 type RelationType = (typeof RELATION_TYPES)[number];
@@ -22,10 +25,28 @@ export type Line = Pick<
   | "dataClass"
   | "proofOk"
   | "evidenceStatus"
+  | "evidenceResult"
+  | "signedEventHash"
   | "displayState"
   | "relationType"
   | "relationTargetEventId"
 >;
+
+// A recorded decision, read from its re-checked signed form
+// (server/settleLines.ts), never from the table's own columns.
+export type Review = {
+  id: number;
+  reviewerId: string;
+  decision: (typeof REVIEW_DECISIONS)[number];
+  signedEventHash: string;
+  dataClass: "test" | "live";
+  evidenceDigest: string;
+  decidedAt: Date;
+};
+
+// How reviewers released a line: two different reviewers, or for test data
+// one reviewer alone, which a file must label as such.
+export type Release = "two_person" | "solo_test";
 
 export type LineStates = {
   sealed: true;
@@ -34,6 +55,7 @@ export type LineStates = {
   disputed: boolean;
   withdrawn: boolean;
   superseded: boolean;
+  released: Release | null;
 };
 
 // EVM addresses compare without case; everything else exactly. A MariaDB
@@ -75,13 +97,86 @@ export function relationProblem(relating: Line, target: Line): string | null {
   return null;
 }
 
+// Each reviewer's latest decision about this exact event and data class, by
+// the time they signed it (ties go to the later record).
+function currentDecisions(line: Line, reviews: Review[]): Review[] {
+  const latest = new Map<string, Review>();
+  for (const review of reviews) {
+    if (review.signedEventHash !== line.signedEventHash) continue;
+    if (review.dataClass !== line.dataClass) continue;
+    const seen = latest.get(review.reviewerId);
+    const later =
+      !seen ||
+      review.decidedAt.getTime() > seen.decidedAt.getTime() ||
+      (review.decidedAt.getTime() === seen.decidedAt.getTime() &&
+        review.id > seen.id);
+    if (later) latest.set(review.reviewerId, review);
+  }
+  return [...latest.values()];
+}
+
 /**
- * The line's states, given the later lines whose relation targets it. A
- * dispute the furnisher has since withdrawn stops acting (owner decision,
- * 2026-10-31). A withdrawn correction or withdrawal stays in force: to bring a
- * line back, the furnisher sends a new one.
+ * Whether reviewers have released the line (Phase 0 item 6), and if not, why.
+ * reviews must already be limited to listed reviewers. A line needs its proof
+ * passed and two approvals from different reviewers, one for test data. An
+ * approval counts only with evidence verified, unless it waives evidence a
+ * person must judge; a failed check cannot be waived. An approval counts only
+ * while the line's evidence result is the one the reviewer signed for, so a
+ * later change (a reused charge, say) needs a new review. Any current
+ * rejection holds the line, whatever evidence it was signed against.
  */
-export function lineStates(line: Line, relating: Line[]): LineStates {
+export function releaseFor(
+  line: Line,
+  reviews: Review[]
+): { released: Release | null; holdingBack: string | null } {
+  const hold = (holdingBack: string) => ({ released: null, holdingBack });
+  if (!line.proofOk) return hold("its proof has not passed");
+  const evidence = line.evidenceStatus;
+  if (evidence === "failed") {
+    return hold("its evidence check failed, which cannot be waived");
+  }
+  if (evidence !== "verified" && evidence !== "needs_review") {
+    return hold(
+      `its evidence is ${evidence ?? "not checked"}; run the intake again`
+    );
+  }
+  const decisions = currentDecisions(line, reviews);
+  const rejected = decisions.filter(d => d.decision === "reject");
+  if (rejected.length > 0) {
+    return hold(`rejected by ${rejected.map(d => d.reviewerId).join(", ")}`);
+  }
+  const digest = evidenceDigest(line.evidenceResult);
+  const approvals = decisions.filter(
+    d =>
+      d.evidenceDigest === digest &&
+      (evidence === "verified" || d.decision === "approve_with_waiver")
+  ).length;
+  if (approvals >= 2) return { released: "two_person", holdingBack: null };
+  if (approvals === 1 && line.dataClass === "test") {
+    return { released: "solo_test", holdingBack: null };
+  }
+  const missing = 2 - approvals;
+  const plural = missing > 1;
+  const what =
+    evidence === "verified"
+      ? `approval${plural ? "s" : ""}`
+      : `approval${plural ? "s that waive" : " that waives"} the evidence`;
+  const test = line.dataClass === "test" ? " (test data: one is enough)" : "";
+  return hold(`needs ${missing} more ${what} from different reviewers${test}`);
+}
+
+/**
+ * The line's states, given the later lines whose relation targets it and the
+ * listed reviewers' decisions. A dispute the furnisher has since withdrawn
+ * stops acting (owner decision, 2026-10-31). A withdrawn correction or
+ * withdrawal stays in force: to bring a line back, the furnisher sends a new
+ * one.
+ */
+export function lineStates(
+  line: Line,
+  relating: Line[],
+  reviews: Review[] = []
+): LineStates {
   const acting = relating.filter(
     r =>
       relationProblem(r, line) === null &&
@@ -96,17 +191,19 @@ export function lineStates(line: Line, relating: Line[]): LineStates {
     disputed: has("disputes"),
     withdrawn: has("withdraws"),
     superseded: has("supersedes", "corrects"),
+    released: releaseFor(line, reviews).released,
   };
 }
 
 /**
  * How the line may be shown (Phase 0 decision 4). A withdrawal outranks a
- * replacement, which outranks a dispute. Never "verified": that also needs
- * two-person review, which is not built.
+ * replacement, which outranks a dispute, which outranks a release: a dispute
+ * shows at once, even on a released line.
  */
 export function displayStateFor(states: LineStates): DisplayState {
   if (states.withdrawn) return "withdrawn";
   if (states.superseded) return "superseded";
   if (states.disputed) return "disputed";
+  if (states.released) return "verified";
   return "unverified";
 }

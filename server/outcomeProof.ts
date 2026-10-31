@@ -35,7 +35,7 @@ export type Jwks = { keys: Jwk[] };
 
 // ---- src/utils/dataIntegrityProof.js ----
 
-function canonicalizeJson(value: unknown): string {
+export function canonicalizeJson(value: unknown): string {
   const canonical = canonicalize(value);
   if (canonical === undefined) {
     throw new Error("Value is not JSON-LD canonicalizable");
@@ -217,7 +217,7 @@ function isSmallOrderKey(bytes: Buffer): boolean {
 // Base64url text that decodes to `length` bytes and is the only spelling of
 // them. The last character carries spare bits, so without this one key or
 // signature has several spellings.
-function decodeCanonicalBase64url(text: string, length: number): Buffer | null {
+export function decodeCanonicalBase64url(text: string, length: number): Buffer | null {
   const bytes = Buffer.from(text, "base64url");
   return bytes.length === length && bytes.toString("base64url") === text
     ? bytes
@@ -225,7 +225,7 @@ function decodeCanonicalBase64url(text: string, length: number): Buffer | null {
 }
 
 // A furnisher public key, `ed25519:` and the 43-character base64url JWK x.
-function parsePublicKey(text: unknown): KeyObject {
+export function parsePublicKey(text: unknown): KeyObject {
   const value = String(text || "").trim();
   const bytes = value.startsWith(KEY_PREFIX)
     ? decodeCanonicalBase64url(value.slice(KEY_PREFIX.length), 32)
