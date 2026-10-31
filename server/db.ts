@@ -8,6 +8,8 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
+  or,
   sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
@@ -366,7 +368,11 @@ export async function finishPlay(
 export async function findOutcomeEvent(furnisherId: string, eventId: string) {
   const db = await requireDb();
   const [row] = await db
-    .select({ id: outcomeEvents.id, packetId: outcomeEvents.packetId })
+    .select({
+      id: outcomeEvents.id,
+      packetId: outcomeEvents.packetId,
+      signedEventHash: outcomeEvents.signedEventHash,
+    })
     .from(outcomeEvents)
     .where(
       and(
@@ -396,4 +402,42 @@ export async function updateOutcomeEventProof(
 ): Promise<void> {
   const db = await requireDb();
   await db.update(outcomeEvents).set(proof).where(eq(outcomeEvents.id, id));
+}
+
+// Another stored line whose evidence matched the same settlement log, if any.
+export async function findOtherOutcomeEventWithEvidence(
+  evidenceKey: string,
+  furnisherId: string,
+  eventId: string
+) {
+  const db = await requireDb();
+  const [row] = await db
+    .select({
+      furnisherId: outcomeEvents.furnisherId,
+      eventId: outcomeEvents.eventId,
+    })
+    .from(outcomeEvents)
+    .where(
+      and(
+        eq(outcomeEvents.evidenceKey, evidenceKey),
+        or(
+          ne(outcomeEvents.furnisherId, furnisherId),
+          ne(outcomeEvents.eventId, eventId)
+        )
+      )
+    )
+    .limit(1);
+  return row;
+}
+
+// Records a later evidence check (server/evidence.ts).
+export async function updateOutcomeEventEvidence(
+  id: number,
+  evidence: Pick<
+    InsertOutcomeEvent,
+    "evidenceStatus" | "evidenceResult" | "evidenceCheckedAt" | "evidenceKey"
+  >
+): Promise<void> {
+  const db = await requireDb();
+  await db.update(outcomeEvents).set(evidence).where(eq(outcomeEvents.id, id));
 }

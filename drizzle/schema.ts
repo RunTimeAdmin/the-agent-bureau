@@ -120,14 +120,24 @@ export const RELATION_TYPES = [
   "withdraws",
 ] as const;
 // How a line may be shown on a file (Phase 0 decision 4). Nothing sets
-// "verified" yet: that needs the evidence policy, which is not built, so a
-// sealed line with a passing proof is still "unverified".
+// "verified" yet: a passing proof and evidence check are recorded on the line,
+// but the display rule also needs the review states and two-person review,
+// which are not built, so every line is still "unverified".
 export const DISPLAY_STATES = [
   "unverified",
   "verified",
   "disputed",
   "withdrawn",
   "superseded",
+] as const;
+// Results of an evidence check (server/evidence.ts, docs/evidence-verifier.md).
+// "pending" and "error" are not verdicts: the check runs again later.
+export const EVIDENCE_STATUSES = [
+  "verified",
+  "failed",
+  "needs_review",
+  "pending",
+  "error",
 ] as const;
 
 // One row per furnished outcome event sealed in CounterAudit, the system of
@@ -171,6 +181,15 @@ export const outcomeEvents = mysqlTable(
     proofOk: boolean("proofOk").default(false).notNull(),
     proofChecks: json("proofChecks").$type<Record<string, unknown>>(),
     proofCheckedAt: datetime("proofCheckedAt", { fsp: 3 }),
+    // The last evidence check: its status, the full result, and when it ran;
+    // null until a check has run. evidenceKey is the settlement log this line
+    // claims (chain id, transaction, log index), so one charge cannot back two
+    // lines unnoticed. It is set only once the proof passed and the charge's
+    // merchant is the furnisher's vetted account, and never cleared.
+    evidenceStatus: mysqlEnum("evidenceStatus", EVIDENCE_STATUSES),
+    evidenceResult: json("evidenceResult").$type<Record<string, unknown>>(),
+    evidenceCheckedAt: datetime("evidenceCheckedAt", { fsp: 3 }),
+    evidenceKey: varchar("evidenceKey", { length: 96 }),
     displayState: mysqlEnum("displayState", DISPLAY_STATES)
       .default("unverified")
       .notNull(),
@@ -182,6 +201,7 @@ export const outcomeEvents = mysqlTable(
       table.furnisherId,
       table.eventId
     ),
+    index("outcome_events_evidence_key_idx").on(table.evidenceKey),
   ]
 );
 
