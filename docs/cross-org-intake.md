@@ -24,6 +24,8 @@ The owner settled three questions on 2026-10-31:
 4. Seal each signed event with an ingest key of that organization: `POST /v1/audit/ingest` with `connector_id: "agent-bureau-outcome-v1"`, the signed event as `raw_event`, and `public_proof: true`. The receipt gives the `packet_id`.
 5. Send the Bureau a JSONL file with one line per event: `{"packet_id": "<packet id>", "event": { ...the signed event... }}`.
 
+`furnish seal` in agent-bureau-furnish does steps 4 and 5: with the organization's ingest key in `COUNTERAUDIT_INGEST_KEY`, `furnish seal --out sealed.jsonl signed.jsonl` seals the file `furnish sign` wrote and writes the sealed lines. It checks each receipt for what this intake checks (the connector, a public proof, the event's hash, an expiry within 24 months of sealing) and writes nothing unless every event passes, so a furnisher learns of a missing retention policy at the first event rather than from a refused file.
+
 ## What the Bureau checks
 
 For each line, `pnpm furnish:intake --test-data --sealed <file>`:
@@ -51,6 +53,5 @@ A pull request to `server/furnishers.ts` with its `furnisher_id`, its CounterAud
 
 ## Not built yet
 
-- A `seal` command in agent-bureau-furnish that seals events in the furnisher's organization and writes the sealed lines.
 - Checking a furnisher's chain for gaps between the packets it sends (its signed checkpoints would allow it).
 - Any intake of outside data: the test-data limit applies here as everywhere.
