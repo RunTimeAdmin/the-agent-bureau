@@ -236,7 +236,7 @@ describe("runIntake", () => {
     expect(printed()).toContain(`evidence verified (arc-testnet tx ${TX}, log 14)`);
   });
 
-  it("sends a line to review when another stored line already holds its charge", async () => {
+  it("fails a line whose charge another line already holds, so no review can release it", async () => {
     ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
     db.findOutcomeEvent.mockResolvedValue(undefined);
     db.findOtherOutcomeEventWithEvidence.mockResolvedValue({
@@ -247,13 +247,93 @@ describe("runIntake", () => {
     const { io, printed } = fakeIO();
 
     await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.insertOutcomeEvent).toHaveBeenCalledTimes(1);
     const row = db.insertOutcomeEvent.mock.calls[0][0];
-    expect(row.evidenceStatus).toBe("needs_review");
-    expect(row.evidenceKey).toBe(`5042002:${TX}:14`);
+    expect(row.evidenceStatus).toBe("failed");
+    expect(row).not.toHaveProperty("evidenceKey");
     expect(row.evidenceResult.reasons).toEqual([
       "the same charge already backs fur_other01/charge-8-1",
     ]);
-    expect(printed()).toContain("Evidence: 0 verified, 1 to review");
+    expect(printed()).toContain("Evidence: 0 verified, 0 to review, 1 failed");
+  });
+
+  // What MySQL says when a second line tries to claim a charge, as Drizzle
+  // wraps it.
+  function duplicate(index: string, value = "x") {
+    const sqlMessage = `Duplicate entry '${value}' for key '${index}'`;
+    return Object.assign(new Error("Failed query"), {
+      cause: Object.assign(new Error(sqlMessage), { code: "ER_DUP_ENTRY", sqlMessage }),
+    });
+  }
+
+  it("loses a race for a charge to the line stored first, and claims nothing", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    // Nothing held the charge when this run looked; by the insert, a parallel
+    // run had stored it.
+    db.findOtherOutcomeEventWithEvidence
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ furnisherId: "fur_e2etest01", eventId: "parallel-1" });
+    db.insertOutcomeEvent
+      .mockRejectedValueOnce(duplicate("outcome_events_evidence_key_uq"))
+      .mockResolvedValueOnce(undefined);
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io, printed } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.insertOutcomeEvent).toHaveBeenCalledTimes(2);
+    expect(db.insertOutcomeEvent.mock.calls[0][0].evidenceKey).toBe(`5042002:${TX}:14`);
+    const row = db.insertOutcomeEvent.mock.calls[1][0];
+    expect(row.evidenceStatus).toBe("failed");
+    expect(row).not.toHaveProperty("evidenceKey");
+    expect(printed()).toContain(
+      "evidence FAILED: the same charge already backs fur_e2etest01/parallel-1"
+    );
+  });
+
+  it("loses the same race when a re-run claims a charge for a stored line", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue(stored);
+    db.updateOutcomeEventEvidence
+      .mockRejectedValueOnce(duplicate("outcome_events.outcome_events_evidence_key_uq"))
+      .mockResolvedValueOnce(undefined);
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.updateOutcomeEventEvidence).toHaveBeenCalledTimes(2);
+    const [, columns] = db.updateOutcomeEventEvidence.mock.calls[1];
+    expect(columns.evidenceStatus).toBe("failed");
+    expect(columns).not.toHaveProperty("evidenceKey");
+    expect(columns.evidenceResult.reasons).toEqual([
+      "the same charge already backs a line stored at the same time",
+    ]);
+  });
+
+  it.each([
+    ["another index", duplicate("outcome_events_packetId_unique")],
+    // The message quotes the duplicated value, which may contain anything.
+    [
+      "a value that contains the claim index's name",
+      duplicate(
+        "outcome_events_furnisher_event_uq",
+        "fur_e2etest01-outcome_events_evidence_key_uq"
+      ),
+    ],
+    [
+      "an index name that only ends like the claim index's",
+      duplicate("outcome_eventsXoutcome_events_evidence_key_uq"),
+    ],
+  ])("does not mistake a duplicate on %s for a claimed charge", async (_name, error) => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    db.insertOutcomeEvent.mockRejectedValueOnce(error);
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io, printed } = fakeIO();
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+    expect(db.insertOutcomeEvent).toHaveBeenCalledTimes(1);
+    expect(printed()).toContain("not stored (Failed query)");
   });
 
   it.each([

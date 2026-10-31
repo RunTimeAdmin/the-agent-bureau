@@ -9,10 +9,11 @@ A line is released, and shows as `verified`, when all of these hold:
 1. **Its proof passed**: CounterAudit sealed it and the furnisher's signature checked out (`source_signed`).
 2. **Its evidence allows it.**
    - `verified` evidence: any approval counts.
-   - `needs_review` evidence, which a person must judge (no machine check applies, or the check found something only a person can settle, such as a subject that is not a wallet, a merchant paying itself or a charge another line already claims): only an approval that waives it (`approve_with_waiver`, with a reason) counts.
+   - `needs_review` evidence, which a person must judge (no machine check applies, or the check found something only a person can settle, such as a subject that is not a wallet or a merchant paying itself): only an approval that waives it (`approve_with_waiver`, with a reason) counts.
    - `failed` evidence can never be waived. `pending`, `error` or no check yet: run the intake again first.
-3. **No listed reviewer currently rejects it.**
-4. **Enough approvals from different listed reviewers**: two for live data, one for test data (Phase 0 item 6 keeps the solo path for test data and dry runs). `pnpm review queue` reports a solo release as such, and a file must label it.
+3. **It holds the claim on its charge**, if it is backed by one (`docs/evidence-verifier.md`), so no two released lines rest on one charge.
+4. **No listed reviewer currently rejects it.**
+5. **Enough approvals from different listed reviewers**: two for live data, one for test data (Phase 0 item 6 keeps the solo path for test data and dry runs). `pnpm review queue` reports a solo release as such, and a file must label it.
 
 Each decision is signed for one line (`furnisher_id`, `event_id`), one version of its event (`signed_event_hash`), its data class, and the digest of its evidence result as the reviewer saw it (`evidence_digest`). A decision for another version or data class never counts. An approval counts only while the line's evidence result still has that digest: if a re-run of the intake changes it (a reused charge found, say), the approval stops counting and the line needs a new review. A rejection holds the line whatever evidence it was signed against.
 

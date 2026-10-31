@@ -11,6 +11,8 @@ import type {
   RELATION_TYPES,
   REVIEW_DECISIONS,
 } from "../drizzle/schema";
+import { chargeKey, type LevyCharge } from "./evidence";
+import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
 
 export type DisplayState = (typeof DISPLAY_STATES)[number];
@@ -26,6 +28,7 @@ export type Line = Pick<
   | "proofOk"
   | "evidenceStatus"
   | "evidenceResult"
+  | "evidenceKey"
   | "signedEventHash"
   | "displayState"
   | "relationType"
@@ -131,6 +134,20 @@ export function releaseFor(
 ): { released: Release | null; holdingBack: string | null } {
   const hold = (holdingBack: string) => ({ released: null, holdingBack });
   if (!line.proofOk) return hold("its proof has not passed");
+  // A line backed by a charge counts only while it holds that charge's claim,
+  // which is unique, so no two released lines can rest on one charge (review
+  // M-02).
+  const charge = isRecord(line.evidenceResult)
+    ? line.evidenceResult.charge
+    : undefined;
+  if (
+    isRecord(charge) &&
+    line.evidenceKey !== chargeKey(charge as LevyCharge)
+  ) {
+    return hold(
+      "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it"
+    );
+  }
   const evidence = line.evidenceStatus;
   if (evidence === "failed") {
     return hold("its evidence check failed, which cannot be waived");
@@ -163,6 +180,22 @@ export function releaseFor(
       : `approval${plural ? "s that waive" : " that waives"} the evidence`;
   const test = line.dataClass === "test" ? " (test data: one is enough)" : "";
   return hold(`needs ${missing} more ${what} from different reviewers${test}`);
+}
+
+/**
+ * Whether a new line may take over the settlement log its target claims: it
+ * corrects or supersedes that line, is the same furnisher's, and its relation
+ * acts (relationProblem). Any other line naming the same charge is a second
+ * line on it, and its evidence fails (review M-02).
+ */
+export function takesOverClaim(relating: Line, holder: Line): boolean {
+  return (
+    (relating.relationType === "corrects" ||
+      relating.relationType === "supersedes") &&
+    relating.relationTargetEventId === holder.eventId &&
+    relating.furnisherId === holder.furnisherId &&
+    relationProblem(relating, holder) === null
+  );
 }
 
 /**

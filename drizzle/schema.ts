@@ -132,6 +132,9 @@ export const DISPLAY_STATES = [
 ] as const;
 // Results of an evidence check (server/evidence.ts, docs/evidence-verifier.md).
 // "pending" and "error" are not verdicts: the check runs again later.
+// The unique index on outcome_events.evidenceKey; the intake recognizes a
+// conflict on it by this name.
+export const EVIDENCE_KEY_INDEX = "outcome_events_evidence_key_uq";
 export const EVIDENCE_STATUSES = [
   "verified",
   "failed",
@@ -183,9 +186,10 @@ export const outcomeEvents = mysqlTable(
     proofCheckedAt: datetime("proofCheckedAt", { fsp: 3 }),
     // The last evidence check: its status, the full result, and when it ran;
     // null until a check has run. evidenceKey is the settlement log this line
-    // claims (chain id, transaction, log index), so one charge cannot back two
-    // lines unnoticed. It is set only once the proof passed and the charge's
-    // merchant is the furnisher's vetted account, and never cleared.
+    // claims (chain id, transaction, log index). It is unique, so one charge
+    // backs at most one line even when two runs store at once. It is set only
+    // once the proof passed and the charge's merchant is the furnisher's
+    // vetted account, and never cleared.
     evidenceStatus: mysqlEnum("evidenceStatus", EVIDENCE_STATUSES),
     evidenceResult: json("evidenceResult").$type<Record<string, unknown>>(),
     evidenceCheckedAt: datetime("evidenceCheckedAt", { fsp: 3 }),
@@ -201,7 +205,7 @@ export const outcomeEvents = mysqlTable(
       table.furnisherId,
       table.eventId
     ),
-    index("outcome_events_evidence_key_idx").on(table.evidenceKey),
+    uniqueIndex(EVIDENCE_KEY_INDEX).on(table.evidenceKey),
   ]
 );
 
