@@ -30,7 +30,13 @@ export const QUORUM = 2;
 // they agree on it (docs/two-person-review.md, Setup). Pinned here, a genesis sealed first by
 // whoever administers the review organization counts for nothing. Until it is set, no genesis
 // counts and nothing is released.
-export const REVIEW_GENESIS: string | null = null;
+export const REVIEW_GENESIS: string | null = "8cb804864151e37ef952ddfef76ff788dffe6508bab7d50cfb17a5f51b5456df";
+// The testnet genesis (2026-10-31): three reviewers the operator holds, named as such in the
+// testnet review organization, so the review flow runs end to end on testnet. While it is the
+// pinned genesis, a decision on live data counts for nothing, so no live line is released: live
+// data waits for a genesis of independent reviewers, in a review organization of their own, whose
+// hash replaces the pin. The testnet reviewers' decisions then stop counting.
+export const TESTNET_GENESIS = "8cb804864151e37ef952ddfef76ff788dffe6508bab7d50cfb17a5f51b5456df";
 const SIGNING_CONTEXT = `${REVIEWER_KEY_SCHEMA}\n`;
 const SIGNATURE_PREFIX = "ed25519:";
 export const REVIEWER_ID = /^rev_[a-z0-9]{3,32}$/;
@@ -207,6 +213,8 @@ export type ReviewLog = {
   events: { sequence: number; text: string }[];
   // The last sequence read, or null for an empty log.
   readTo: number | null;
+  // Whether the genesis in effect is the operator-held testnet one: only test-data decisions count.
+  testnet: boolean;
 };
 
 function describe(change: KeyChange): string {
@@ -244,7 +252,12 @@ function stateProblem(change: Exclude<KeyChange, { type: "genesis" }>, reviewers
  * kept, marked, so its line is held. Suspension holds a reviewer's decisions, not their vote, so
  * no one key can suspend the others out of the quorum.
  */
-export function replayReviewLog(records: LogRecord[], pinned: string | null = REVIEW_GENESIS): ReviewLog {
+export function replayReviewLog(
+  records: LogRecord[],
+  pinned: string | null = REVIEW_GENESIS,
+  testnetGenesis: string | null = TESTNET_GENESIS
+): ReviewLog {
+  const testnet = pinned !== null && pinned === testnetGenesis;
   const ordered = [...records].sort((a, b) => a.sequence - b.sequence);
   let reviewers: Map<string, ReviewerState> | null = null;
   const genesisVotes = new Map<string, Set<string>>();
@@ -366,6 +379,7 @@ export function replayReviewLog(records: LogRecord[], pinned: string | null = RE
       // Checked as sealed: not dated more than a few minutes after CounterAudit sealed it.
       const checked = checkReviewDecision(entry.record, { [id as string]: { name: state.name, publicKey: state.publicKey } }, entry.sealedAt);
       if (!checked.ok) continue;
+      if (testnet && checked.decision.data_class === "live") continue;
       counted.push({
         decision: checked.decision,
         sequence: entry.sequence,
@@ -379,5 +393,6 @@ export function replayReviewLog(records: LogRecord[], pinned: string | null = RE
     decisions: counted,
     events,
     readTo: ordered.length ? ordered[ordered.length - 1].sequence : null,
+    testnet,
   };
 }

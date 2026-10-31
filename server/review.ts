@@ -520,7 +520,13 @@ function describeLog(log: ReviewLog): string[] {
   const reviewers = [...log.reviewers.entries()]
     .filter(([, r]) => r.status !== "removed")
     .map(([id, r]) => `${id} (${r.name}) ${r.status}`);
-  return [read, `Reviewers: ${reviewers.join(", ") || "none"}.`];
+  return [
+    read,
+    `Reviewers: ${reviewers.join(", ") || "none"}.`,
+    ...(log.testnet
+      ? ["These are the operator-held testnet reviewers: only decisions on test data count, and no live line is released."]
+      : []),
+  ];
 }
 
 const PAYMENT_OUTCOMES = new Set(["paid", "refunded", "payment_failed"]);
