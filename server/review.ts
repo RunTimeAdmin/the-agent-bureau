@@ -12,6 +12,15 @@ import {
   listReviewLogRecords,
   schemaReady,
 } from "./db";
+import {
+  APPROVABLE_OPERATIONS,
+  KEY_APPROVAL_SCHEMA,
+  checkKeyApprovalForm,
+  keyApprovalVerifies,
+  payloadDigest,
+  signKeyApproval,
+  type ApprovableOperation,
+} from "./keyApproval";
 import { lineStates, releaseFor } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import {
@@ -49,6 +58,7 @@ export const USAGE = [
   "  pnpm review key --key <private-key-file> --signer <rev_id> --rotate <rev_id> --public-key <ed25519:...> [--reason <text>] --out <record-file>",
   "  pnpm review key --key <private-key-file> --signer <rev_id> --<suspend|reenable|remove> <rev_id> [--reason <text>] --out <record-file>",
   "  pnpm review submit <record-file>",
+  "  pnpm review approve-key --key <private-key-file> --reviewer <rev_id> --request <request.json> --out <approval-file>",
   "  pnpm review sync",
   "  pnpm review queue",
   "  pnpm review settle",
@@ -108,23 +118,20 @@ async function readPrivateKey(
   }
 }
 
-// Writes a signed record to a new file for pnpm review submit, and shows it.
+// Writes a signed record to a new file, and shows it with what to do next.
 async function writeRecord(
   path: string,
   record: object,
-  io: ReviewIO
+  io: ReviewIO,
+  next = `Seal it with: pnpm review submit ${path}`
 ): Promise<number> {
   try {
-    await io.writeNewFile(path, `${JSON.stringify(record)}
-`);
+    await io.writeNewFile(path, `${JSON.stringify(record)}\n`);
   } catch (error) {
     io.log(`Cannot write ${path}: ${describeError(error)}`);
     return 2;
   }
-  io.log(
-    `Signed and written to ${path}. Seal it with: pnpm review submit ${path}
-${JSON.stringify(record)}`
-  );
+  io.log(`Signed and written to ${path}. ${next}\n${JSON.stringify(record)}`);
   return 0;
 }
 
@@ -362,6 +369,128 @@ async function submit(args: string[], io: ReviewIO): Promise<number> {
   return 0;
 }
 
+// Control, format and line-separator characters (an escape sequence, a bidi override) could
+// make the description below say something other than what is signed, so a request holding
+// any is refused.
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+function hasHidden(value: unknown): boolean {
+  if (typeof value === "string") return HIDDEN.test(value);
+  if (Array.isArray(value)) return value.some(hasHidden);
+  if (isRecord(value)) {
+    return Object.entries(value).some(([k, v]) => HIDDEN.test(k) || hasHidden(v));
+  }
+  return false;
+}
+
+// What an approval request asks for, in words, so the reviewer sees what they sign. Every
+// value is shown as JSON, quoted.
+function describeRequest(
+  operation: ApprovableOperation,
+  payload: Record<string, unknown>
+): string {
+  const q = (value: unknown) => JSON.stringify(value ?? null);
+  switch (operation) {
+    case "create_key":
+      return `create a key with role ${q(payload.role ?? "admin")}, labelled ${q(payload.label ?? "api")}, expiring in ${q(payload.expires_in_days ?? "the default number of")} days`;
+    case "revoke_key":
+      return payload.key_prefix === undefined
+        ? `revoke key ${q(payload.key_id)}, which CounterAudit did not find in this organization`
+        : `revoke key ${q(payload.key_id)}: role ${q(payload.role)}, labelled ${q(payload.label)}, prefix ${q(payload.key_prefix)}`;
+    case "set_review_org":
+      return typeof payload.genesis_hash === "string"
+        ? `treat this organization as the review organization, counting only genesis ${q(payload.genesis_hash)}`
+        : "stop treating this organization as the review organization";
+  }
+}
+
+// Signs a reviewer's approval of one CounterAudit approval request in the review
+// organization: the request as GET /v1/admin/keys/requests/:id returns it, which
+// the operator hands over. The signature covers the request's id, organization,
+// operation and payload, so it approves that request and nothing else.
+async function approveKeyCommand(args: string[], io: ReviewIO): Promise<number> {
+  const flags = readFlags(args);
+  const required = ["key", "reviewer", "request", "out"];
+  if (
+    !flags ||
+    Object.keys(flags).some(name => !required.includes(name)) ||
+    required.some(name => !flags[name])
+  ) {
+    io.log(USAGE);
+    return 2;
+  }
+  let request: unknown;
+  try {
+    request = JSON.parse(await io.readText(flags.request));
+  } catch (error) {
+    io.log(`Cannot read the approval request in ${flags.request}: ${describeError(error)}`);
+    return 2;
+  }
+  if (
+    !isRecord(request) ||
+    typeof request.id !== "string" ||
+    typeof request.org_id !== "string" ||
+    !isRecord(request.payload)
+  ) {
+    io.log(
+      `${flags.request} is not an approval request as GET /v1/admin/keys/requests/:id returns it. Nothing signed.`
+    );
+    return 2;
+  }
+  if (!APPROVABLE_OPERATIONS.includes(request.operation as ApprovableOperation)) {
+    io.log(
+      `A reviewer approves only ${APPROVABLE_OPERATIONS.join(", ")}; this request is ${String(request.operation)}. Nothing signed.`
+    );
+    return 2;
+  }
+  if (request.status !== undefined && request.status !== "pending") {
+    io.log(`The request is ${String(request.status)}, not pending. Nothing signed.`);
+    return 2;
+  }
+  if (hasHidden(request.payload)) {
+    io.log(
+      "The request holds control or formatting characters, which could hide what it does. Nothing signed; ask the operator for a request without them."
+    );
+    return 2;
+  }
+  const reviewOrg = ENV.counterauditReviewOrgId;
+  if (reviewOrg && request.org_id !== reviewOrg) {
+    io.log(
+      `The request is for organization ${JSON.stringify(request.org_id)}, not the review organization ${reviewOrg}. Nothing signed.`
+    );
+    return 2;
+  }
+  const key = await readPrivateKey(flags.key, io);
+  if (!key) return 2;
+  const operation = request.operation as ApprovableOperation;
+  const approval = signKeyApproval(
+    {
+      schema: KEY_APPROVAL_SCHEMA,
+      reviewer_id: flags.reviewer,
+      org_id: request.org_id,
+      request_id: request.id,
+      operation,
+      payload_sha256: payloadDigest(request.payload),
+      decided_at: io.now().toISOString(),
+    },
+    key.privateKeyPem
+  );
+  const form = checkKeyApprovalForm(approval);
+  if (!form.ok || !keyApprovalVerifies(form.approval, key.publicKey)) {
+    io.log(`Not signed: ${form.ok ? "the signature does not check" : form.reason}.`);
+    return 2;
+  }
+  const needed = request.reviewer_approvals_required;
+  io.log(
+    `Approving request ${request.id} in organization ${request.org_id}: ${describeRequest(operation, request.payload)}.${typeof needed === "number" && needed > 1 ? ` It runs once ${needed} different reviewers approve it.` : ""}${reviewOrg ? "" : " COUNTERAUDIT_REVIEW_ORG_ID is not set here, so the organization was not checked."}`
+  );
+  return writeRecord(
+    flags.out,
+    approval,
+    io,
+    `Give it to the operator, who sends it to CounterAudit (POST /v1/admin/keys/requests/${request.id}/reviewer-approval). It approves this request only.`
+  );
+}
+
 async function needDatabase(io: ReviewIO): Promise<boolean> {
   if (!ENV.databaseUrl) {
     io.log("Not set: DATABASE_URL. See docs/two-person-review.md.");
@@ -573,6 +702,8 @@ export async function runReview(
       return keyCommand(args, io);
     case "submit":
       return submit(args, io);
+    case "approve-key":
+      return approveKeyCommand(args, io);
     case "sync":
       return noArgs(() => sync(io));
     case "queue":

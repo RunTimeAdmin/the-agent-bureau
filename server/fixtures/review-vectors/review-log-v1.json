@@ -1,0 +1,3709 @@
+{
+  "description": "Shared test vectors for the Agent Bureau's review log (docs/review-log-design.md): review_log cases give a pinned genesis and the review organization's records in sequence order, and the reviewers they establish (null when no genesis takes effect); key_approvals cases give a reviewer's approval of a CounterAudit approval request. Built by scripts/review-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
+  "keys": {
+    "alice": {
+      "seed": "dbdf40ab5c474a7bf651bba0a29800df8bfda96a9904480d5a69d194d221a346",
+      "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+    },
+    "bob": {
+      "seed": "22486199adfcdedaad2de3806052bef208d9ee9c3404b2a4e3939e19526aa410",
+      "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+    },
+    "carol": {
+      "seed": "82c175a55f1da1f2d5dc8323292861bb4c536169983c85ee327f984141558451",
+      "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+    },
+    "dave": {
+      "seed": "8c10707a7b9d554ed84d33280a4d4eba66a3e63be63bce85b0e5ce96c4874b66",
+      "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+    },
+    "bob_k1": {
+      "seed": "a9029f0e85a934df4e140abfc797ebb603c904e846e0c40eece77a34b8469f59",
+      "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+    },
+    "bob_k2": {
+      "seed": "f383f1adb617734ad9154c635e949a56f84c158d45e4f758a571c7c90cea4ba5",
+      "public_key": "ed25519:XNPJxiUvy6329uqte_8mVzk7F85H8r9NQrLNlmNI_VY"
+    },
+    "impostor_alice": {
+      "seed": "7d547f8cb46faccb07304ec7a3d41e500c02438f91dd7ef877253fd8cfe5e8cc",
+      "public_key": "ed25519:9TWYJh-NGg_ftDLebz5NKj24C9G8GOX3tHqh7aGUVlc"
+    },
+    "impostor_bob": {
+      "seed": "f9215ad8602de83a361e3603a3635d2d301565a069dcd18317dd36ee09a8f1f9",
+      "public_key": "ed25519:apYNw7palOa5X8n0Ty1HUFQTqSEyN3qehzmnO2UypDM"
+    },
+    "impostor_carol": {
+      "seed": "33994ad7f8221b3ca8e30bd387941df9869eefc49e8ea3f12bdb6e3acde4d798",
+      "public_key": "ed25519:-V6QzwPuuPU-sit1-gHx2iEKM4qExtWM9OAqVHJpQjE"
+    }
+  },
+  "review_log": [
+    {
+      "id": "genesis_complete",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "genesis_missing_a_signature",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": null
+      }
+    },
+    {
+      "id": "genesis_not_pinned",
+      "pinned_genesis": null,
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": null
+      }
+    },
+    {
+      "id": "genesis_signed_with_another_key",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:zRPIXvu_D-sYI_sY614btAgbUXjFwAmRpabLFK2UHIL0dKhu7qQgXyRwOI1E2ykBMFO6uIwgUAc3SoM8dWndDw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": null
+      }
+    },
+    {
+      "id": "impostor_genesis_sealed_first",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:9TWYJh-NGg_ftDLebz5NKj24C9G8GOX3tHqh7aGUVlc"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:apYNw7palOa5X8n0Ty1HUFQTqSEyN3qehzmnO2UypDM"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:-V6QzwPuuPU-sit1-gHx2iEKM4qExtWM9OAqVHJpQjE"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:HKNLltI8l75Tky9nVRtgg-3VlI3L4Fs210O_TDewuWKA4vB2K461MRrIykzDmUosK-AJPC4TtPwjnkhSQat4AA"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:9TWYJh-NGg_ftDLebz5NKj24C9G8GOX3tHqh7aGUVlc"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:apYNw7palOa5X8n0Ty1HUFQTqSEyN3qehzmnO2UypDM"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:-V6QzwPuuPU-sit1-gHx2iEKM4qExtWM9OAqVHJpQjE"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:1bjI4xEGFJ72r9zRqd7slHMcFuDkw_3HfZSobilM3AdUa0ywcVQHgpoQXCUBBQiZsnKWMqH0uQ1T84PHL0HDCA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:9TWYJh-NGg_ftDLebz5NKj24C9G8GOX3tHqh7aGUVlc"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:apYNw7palOa5X8n0Ty1HUFQTqSEyN3qehzmnO2UypDM"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:-V6QzwPuuPU-sit1-gHx2iEKM4qExtWM9OAqVHJpQjE"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GtD7oYgdQNIGRI5S9XEQBvu71AZ-XkqCOvseZoakpVmcS_XPKW8-7hLsnSJSyHmQOjMweJtUQ0TCynQ0_XsDDw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "second_genesis_ignored",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "one_reviewer_suspends",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "suspended"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "two_reviewers_add",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:-_0SbKbybL4yrTl0o4KO0v4zf4os3m6jyh9WSHGXMHbY-14ETYV8wXG_dghyV7kEqXJC8KcJhMXrNqNdgszJAA"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:1ke8CldLFbHQnTLaXSvbDXIfj-DXnY_5jyTpE4y5FA31oBljRasO2AlxD8wQwoHoAXggSPzjx42iQhIswQT9AQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          },
+          "rev_dave": {
+            "name": "Dave",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "one_reviewer_twice_adds_nothing",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:-_0SbKbybL4yrTl0o4KO0v4zf4os3m6jyh9WSHGXMHbY-14ETYV8wXG_dghyV7kEqXJC8KcJhMXrNqNdgszJAA"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:01:00.000Z",
+            "signature": "ed25519:vWa5p5-tZA4qjP6j7pxMX__N-1RnnEyEhHk2kFwLTEW8NoD10CePXhJUmAltJDKkEkeSW8w6Oj3F3iXaRBkoBQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_change_clears_pending_votes",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:aPLbPlkyCaM2h6VRvo6gQx_bOn5B-HHmBGD4D6oJ6wB9rQfJRdfg1zsSfRc2VJJ6QJugCLeFP-iT17z2p4cIAQ"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:Rtxrej03euXf6frnBZraytGlNvA9MreWwm11h2ilULjadSc2JmN5mCf_uVJj30waqVc4XDsrKxDE1KpXOP3eCQ"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kzv9moLo36qOS7HHEyS4sHMaXhazvYX6fKJbmtiY455hMkad0kofp4OojMiLsCQwXChJ_8FNttyMvwYup_MfAg"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:XADmGv4FscFl_M9dMwxi_mLT8Xqvru5hApDFFv93dzbY2bEZKiVZx7pJcXNQjUb7g4YGb3kLqZ-GLj5cF1_TAQ"
+          }
+        },
+        {
+          "sequence": 7,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        },
+        {
+          "sequence": 8,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:TWHU-4IrO9BKyk-dR5DKTewCmi_UsUXI0PHjYaP9EeS55MLDXgxGjfRRESAM5XTlJ-qSWGgZcBHBlS7jnhxTBg"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU",
+            "status": "suspended"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_record_sealed_again_counts_for_nothing",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kzv9moLo36qOS7HHEyS4sHMaXhazvYX6fKJbmtiY455hMkad0kofp4OojMiLsCQwXChJ_8FNttyMvwYup_MfAg"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:XADmGv4FscFl_M9dMwxi_mLT8Xqvru5hApDFFv93dzbY2bEZKiVZx7pJcXNQjUb7g4YGb3kLqZ-GLj5cF1_TAQ"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:XNPJxiUvy6329uqte_8mVzk7F85H8r9NQrLNlmNI_VY"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:AyddlRGSIY6BTgjV7jt38X15TZ9U2GPSzHT-HxaZvn2AMBtfP_W4W9q53jEgolAvO6I3jGWH-3hxNnZ0RjJJDA"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:XNPJxiUvy6329uqte_8mVzk7F85H8r9NQrLNlmNI_VY"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:0qmCR4DFeuNj7Bks5d5vy3UbseKnQQKxlyIpD4f2FoG2A6_fuCJAXTOp8FJguMY26a3ZzBB6RIMYO2ZAF9CRDQ"
+          }
+        },
+        {
+          "sequence": 7,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kzv9moLo36qOS7HHEyS4sHMaXhazvYX6fKJbmtiY455hMkad0kofp4OojMiLsCQwXChJ_8FNttyMvwYup_MfAg"
+          }
+        },
+        {
+          "sequence": 8,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:XADmGv4FscFl_M9dMwxi_mLT8Xqvru5hApDFFv93dzbY2bEZKiVZx7pJcXNQjUb7g4YGb3kLqZ-GLj5cF1_TAQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:XNPJxiUvy6329uqte_8mVzk7F85H8r9NQrLNlmNI_VY",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "sealed_more_than_a_day_after_signing",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-10-31T11:59:00.000Z",
+            "signature": "ed25519:AOPRD8nF1zPJYhlO8eMggk0aJLY-vgg7ygCMLcYvGoEKlPEa-opNHRFss-9Gu6uFEJ8n5Q8cYUe6Bki4pvCPCA"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "dated_after_sealing",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T12:06:00.000Z",
+            "signature": "ed25519:Rwd9t1xGET5Poz9sCjBcrARIdhANXA42KT4-9FNaJj_GpcWfCYG06-YIZ3aInIwftZEbtkM1RPgPw-wTQshBAg"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "suspended_reviewers_keep_their_vote",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_carol"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:7ibI03ZQES8gAkz9UG0Bngh67xzxIO6TyUmZOBNkrXT4jFmvbLKtb-pM8xQJp1GKzyZWtVaCswKkAEn8yN6cCA"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "remove",
+              "reviewer_id": "rev_alice"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:W4J-ZhSHpTags7nY6mxbzGHq_IOUQcTMrw4Qzt4YXPmEzNQs-nH398x8nlbqHTQ1ytLUsSv1FXsq38F6ProABQ"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "remove",
+              "reviewer_id": "rev_alice"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:9RRQQUANVnTjvfdf9_igWIUOSLwB_qF0oTIIJ0f8KQI8MwvfIs1omW48cgS_eBGOgQLFCeJIeizEbWuiFj2-Dg"
+          }
+        },
+        {
+          "sequence": 7,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:JNWcK5J06fOtb_yAR0cIx6ft1kCg7RAjr90exnAgshCYRPJ2s5Bm1cK5n4JMuklqgzgG5VYkfVcBw9hw5Y1tAg"
+          }
+        },
+        {
+          "sequence": 8,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:TWHU-4IrO9BKyk-dR5DKTewCmi_UsUXI0PHjYaP9EeS55MLDXgxGjfRRESAM5XTlJ-qSWGgZcBHBlS7jnhxTBg"
+          }
+        },
+        {
+          "sequence": 9,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_carol"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:jjrmqlrWDA8H6jC8Ur-jbTgUNwlMYQX-3uZyq0M5XTUXsNqJPv3nFMQIho4aNl6G1rIimgtDgHkVezFaV1-9Aw"
+          }
+        },
+        {
+          "sequence": 10,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_carol"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:R1pBvlN8EH5f7dlFf7frDujXqgz1ql7dJEXQ7T7lo8A2WQrCvGOx6hXln2o8-BragCaTDpHTWMQOPHKZH4YXBg"
+          }
+        },
+        {
+          "sequence": 11,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "removed"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_rotation_settles_a_suspension",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kzv9moLo36qOS7HHEyS4sHMaXhazvYX6fKJbmtiY455hMkad0kofp4OojMiLsCQwXChJ_8FNttyMvwYup_MfAg"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:XADmGv4FscFl_M9dMwxi_mLT8Xqvru5hApDFFv93dzbY2bEZKiVZx7pJcXNQjUb7g4YGb3kLqZ-GLj5cF1_TAQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "changes_that_do_not_fit",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_bob",
+              "name": "Bob",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:2P_w7YCl7_q8cyAt6jBIkY0uK9FSCWX2AaXmXe5-p8wmq2OwaUC7MBSzkjGzvMj6kJZJQksTCCA2Lo2DujX4BQ"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_bob",
+              "name": "Bob",
+              "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:tLqLi-2tWqpN8L6OW8e0CRQw6soejTMZXn3CrQkCKARmqb9oYLIR5IqBhWijn7Kpcdyh70feDzkF8g4lDVd4Dg"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:5B-kO_iGNY9H_DkXIdBzYFmv3nKKCOD2FRTNS9oOBoDGu5JRUe1UqM7LWVllC3RbSZH9LGr6NejtdyKuyWUwAw"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:bXayy5u-sh29Dj-ciTgi3y7El4_c9ZVrj8MCsUC23M3bJKZjY5Bbooxk5AGWv25uZCKpLluryqCJnanjrMFhCA"
+          }
+        },
+        {
+          "sequence": 7,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:Rtxrej03euXf6frnBZraytGlNvA9MreWwm11h2ilULjadSc2JmN5mCf_uVJj30waqVc4XDsrKxDE1KpXOP3eCQ"
+          }
+        },
+        {
+          "sequence": 8,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "reenable",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:TWHU-4IrO9BKyk-dR5DKTewCmi_UsUXI0PHjYaP9EeS55MLDXgxGjfRRESAM5XTlJ-qSWGgZcBHBlS7jnhxTBg"
+          }
+        },
+        {
+          "sequence": 9,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kDu3relGWMx6dtHZL_gX3Kb_VU2b83IpK232i-ZLFCZ4Hd2Gyn_8ULWRYLNks9DSLbbSlJNKdFusSAVB5PziBA"
+          }
+        },
+        {
+          "sequence": 10,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:63uVfzhw1jpwxGHsAME6E2sMCP1qg1Cljy1QQdVa_hHBjI8e-ruEsSg_6mPFX8JCUnUM7Xa0ZRjvxTOHDApYBQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_key_in_a_second_spelling_is_refused",
+      "pinned_genesis": "87fa3112ab50a0fb14cb472377ede539b89658b6bb2ba7b3e1de551b48af6445",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0 "
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:f5r9RDbOmRegmiLg1geWMyrANrietfrDn7agarFXWPzPnoS98NQhbWo7BxJLaAe3H1Nv8KCX3egiluvNy1F7BQ"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0 "
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:kicaDxG-9-B7_7QN2wSHSRzC2QzVrLODkAjGVwGhG1IVJ2CQtMOo1sdIj_MYU-PDXhjETqUzTB2UnfnK7LOUAA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0 "
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:Vd3_stn5-ru9nD-ExJI_f_KUZrSBlwWvfVxy_s2eJWRCfoLYayUhN4NHLozPjKqR2lyeuvmF7Q2r3tX06UMvAQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": null
+      }
+    },
+    {
+      "id": "decisions_and_other_packets_do_not_change_reviewers",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/review-decision/v1",
+            "reviewer_id": "rev_alice",
+            "furnisher_id": "fur_vectors01",
+            "event_id": "vectors-event-1",
+            "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+            "data_class": "test",
+            "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "decision": "approve",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:lptx8hHcQNUT54rtxcqXghaFeFqrN7Wf7dFmUh1R0RCkfdl3BBU3j8Pgm7TJz8nGVG-xUfSMR4OT4q8LJrK-Bg"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": null
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "other"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/review-decision/v1",
+            "reviewer_id": "rev_bob",
+            "furnisher_id": "fur_vectors01",
+            "event_id": "vectors-event-1",
+            "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+            "data_class": "test",
+            "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "decision": "approve",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:VYxgyN666hF-kRyksSY8pbz5vByeK3OfFaXprPBwD23yTImaOVt4Cck8XmEVoudO8P146IwU67rJRbYLeKDzAg"
+          }
+        },
+        {
+          "sequence": 7,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "reviewer_id": "rev_carol",
+            "furnisher_id": "fur_vectors01",
+            "event_id": "vectors-event-1",
+            "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+            "data_class": "test",
+            "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "decision": "approve",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:FIJkqh5vOdy3CqJjZqrs3p9Veh7K9cqRzR_MrMtgl4t3rfn5w7-IRhM0cqpxuPxP0vIF9a3Ix6ewaOY9WUoPCA"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_small_order_key_is_refused",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:0TaIIIfTUk02LWkhu9J30KuJoClaiZapFk5pPgMqF8IyPNLFG7KyaPnaLnSHAB-5tCUQ5v_br1fYjC_jIRG8AA"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "add",
+              "reviewer_id": "rev_dave",
+              "name": "Dave",
+              "public_key": "ed25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:uci-GEh4HBNUsVzbYPhWA6r3okx8IGL-SB21jjvGoxdTjGqrI6Q1CuyL2Havg4459Tz2zysWRg59FawOyQ-FDA"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_reason_over_500_characters_is_refused",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:FAz7y4gTmV19-5QvJizK8tDhgVOoXkpFEDhXQdCPkZu200pBFCbIBfEA7FPWwNHvBJnk4vKm6QPXMkJs9uWbAQ"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_alice"
+            },
+            "reason": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:nE42EaVfZ2X4fYyuyTzByVOnGcDc2NS0STHfAOxCFolr4gRt6fp68ML6F9I8dElt9d55c9OHzcLFLYuUpU6uDw"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "suspended"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "id": "a_removed_reviewers_key_stays_taken",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "remove",
+              "reviewer_id": "rev_carol"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:_Cl-qGpPh9Py44_YHgeQJBkge5gbbEzLE13gLzkswFlTDI4pMtAvZiBFDJ9-nbywOf9pW9o4pgEaqRFv_itQBg"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "remove",
+              "reviewer_id": "rev_carol"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:OQSQcLyAnfmS3IE0RiIgG9Q436Ez1fpP21NyOGc652kZ8e7IHeP-fkg1qQoT6-hAreJbKpn2F7LIGar0UjOIBw"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:z7FGu7n3LYK2ppjSvloEDJ9U8mhSHitRulg-Sh2Nj-KSSbnB22nYlPV18ai08mhtHSx1jQAm1VkekCDZx17sAA"
+          }
+        },
+        {
+          "sequence": 6,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "rotate",
+              "reviewer_id": "rev_bob",
+              "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:RRxQDoOuKXDqrjExdoPgWpGRlXWtHPGtjgmarz75Ycgm3c2Axwi_rT7tH501sz29B7-_wgqfd6r1gVuzpuK2BQ"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "removed"
+          }
+        }
+      }
+    },
+    {
+      "id": "an_own_proto_key_is_refused",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "__proto__": {
+              "x": 1
+            },
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "suspend",
+              "reviewer_id": "rev_bob"
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:S0Ws7uUxNV3RXuUwer7l5S_nTNNu6aebLIsFeEak-umWKZIajujQRTovslfLIst63dSUzsUGyGijCg9dVCFUBg"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    }
+  ],
+  "key_approvals": [
+    {
+      "id": "create_key_approved",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBA"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "payload_in_another_key_order",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBA"
+      },
+      "payload": {
+        "role": "ingest",
+        "label": "rev_dave ingest",
+        "expires_in_days": 90
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "payload_changed",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBA"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "admin"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": false,
+        "payload_sha256": "6d57bcc5da43a4e5c4a8168e62f5ab9459eb297e04189eaa787c5f33a4166db1"
+      }
+    },
+    {
+      "id": "signed_with_another_reviewers_key",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:K_M_18Zq6abQCU8TewR6uNzHEOEn1KImqbubqbMIjU9uMzhPQTGD173KPlVfAd5KT-w12SFcbgKnIbOxJ_vTCA"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "invalid",
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "request_id_changed_after_signing",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e70",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBA"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "invalid",
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "signature_in_a_second_spelling",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBB"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "invalid",
+        "signature": null,
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "operation_not_approvable",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "erase_packet",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:GMTdgBErJON-S-mK-W9NUyZ_ucfHjCFgDde-jTultzsVOiQSLgV7NF6rwPFowHGmkJ1wed8PtQppRGZorRlRBQ"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "invalid",
+        "signature": null,
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "extra_field",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:u9pkUYs4qLIPUQH2JZtwbsjWDvuSDJlRj0mMAeXfsLQE1bpA8FXyLSZBBuMqeBFU9UMoY5g2UuhIVSIUhSnyBA",
+        "note": "x"
+      },
+      "payload": {
+        "label": "rev_dave ingest",
+        "expires_in_days": 90,
+        "role": "ingest"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "invalid",
+        "signature": null,
+        "payload_matches": true,
+        "payload_sha256": "eeb85784dae52a39478fa41b1a4843a1aa9e9cc9ff3a44b53048073d2b8bc1b6"
+      }
+    },
+    {
+      "id": "revoke_key_approved",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_carol",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "revoke_key",
+        "payload_sha256": "e26b7a245658184146c9c617daff87514e41f79e6fab3615178770b1f0759b27",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:nhpcxo9QbCiUmRpucOAFo4eTq6Y5JDzV55HnEGi3otPiZVSq1nmkAyHB78txaklsccANzWlhfF2O87fZadm7AA"
+      },
+      "payload": {
+        "key_id": "9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+      },
+      "verify_with": "carol",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": true,
+        "payload_sha256": "e26b7a245658184146c9c617daff87514e41f79e6fab3615178770b1f0759b27"
+      }
+    },
+    {
+      "id": "set_review_org_approved",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_bob",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "set_review_org",
+        "payload_sha256": "b3228254076e89ce482defc7cb80cf038c1946d87c665e53450db0ca3e953b0a",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:J7m8wsX14MnwCLLzMdpbQ1Bl4vfVcl9botNnkia2NvyJscEaZrsLfzpa9MBd-GKFghkaYYlWwE_xN6vjNfQgCg"
+      },
+      "payload": {
+        "genesis_hash": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097"
+      },
+      "verify_with": "bob",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": true,
+        "payload_sha256": "b3228254076e89ce482defc7cb80cf038c1946d87c665e53450db0ca3e953b0a"
+      }
+    },
+    {
+      "id": "payload_with_non_ascii_text",
+      "approval": {
+        "schema": "agent-bureau/key-approval/v1",
+        "reviewer_id": "rev_alice",
+        "org_id": "00000000-0000-4000-8000-0000000000a1",
+        "request_id": "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+        "operation": "create_key",
+        "payload_sha256": "5e54684c5c2d0f2e7a3ba8067f85a8b5c36e24471b6f26a628c8ac5010991b4e",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:x4EsXA11Yg9Ga2H4FWvZPEJEzQ1jEJZkMt9EVKX9-TigLUctJypmmvdYEoantEg08werD_FGMSlFHDAjq_19CQ"
+      },
+      "payload": {
+        "label": "Revisión ü ✓",
+        "expires_in_days": 30,
+        "role": "read"
+      },
+      "verify_with": "alice",
+      "expect": {
+        "form": "valid",
+        "signature": "valid",
+        "payload_matches": true,
+        "payload_sha256": "5e54684c5c2d0f2e7a3ba8067f85a8b5c36e24471b6f26a628c8ac5010991b4e"
+      }
+    }
+  ]
+}
