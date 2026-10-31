@@ -1,0 +1,42 @@
+name: Test
+
+# Typecheck and tests, including the shared outcome event vectors, on pull
+# requests that change code. Actions minutes are pooled across RunTimeAdmin's
+# private repositories and tight, so this runs only for code paths, cancels a
+# superseded run, and stops at 10 minutes (a run takes about a minute).
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - 'shared/**'
+      - 'drizzle/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/test.yml'
+
+concurrency:
+  group: test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
