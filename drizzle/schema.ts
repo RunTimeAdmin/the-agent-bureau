@@ -119,10 +119,10 @@ export const RELATION_TYPES = [
   "supersedes",
   "withdraws",
 ] as const;
-// How a line may be shown on a file (Phase 0 decision 4). Nothing sets
-// "verified" yet: a passing proof and evidence check are recorded on the line,
-// but the display rule also needs the review states and two-person review,
-// which are not built, so every line is still "unverified".
+// How a line may be shown on a file (Phase 0 decision 4), set by
+// server/lineState.ts. Nothing sets "verified" yet: a passing proof and
+// evidence check are recorded on the line, but the display rule also needs
+// two-person review, which is not built.
 export const DISPLAY_STATES = [
   "unverified",
   "verified",

@@ -5,23 +5,34 @@
 // Phase 0 limits, enforced here: no public endpoint accepts an outcome (this
 // is a script, and no route imports it), and until retention is signed off
 // and two-person review exists, only runs marked as test data are accepted.
-// Every stored line is "unverified": a passing proof shows what was sealed and
-// who signed it, not that the outcome happened. Each line's evidence is
+// No stored line is shown as "verified": a passing proof shows what was sealed
+// and who signed it, not that the outcome happened. Each line's evidence is
 // checked against the chain where a check exists (server/evidence.ts) and the
 // result stored with it, but showing a line as verified also needs two-person
-// review, which is not built.
+// review, which is not built. A furnisher's later line can withdraw, replace
+// or dispute an earlier one (server/lineState.ts); that takes effect here.
 import { readFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
 import { fetchJwks, fetchProof, ingestSignedEvent } from "./counteraudit";
 import {
   findOtherOutcomeEventWithEvidence,
   findOutcomeEvent,
+  findRelatingOutcomeLines,
+  getOutcomeLine,
   insertOutcomeEvent,
   schemaReady,
+  setOutcomeEventDisplayState,
   updateOutcomeEventEvidence,
   updateOutcomeEventProof,
 } from "./db";
 import { chargeKey, verifyEvidence, type EvidenceResult } from "./evidence";
+import {
+  displayStateFor,
+  lineStates,
+  relationProblem,
+  type DisplayState,
+  type Line,
+} from "./lineState";
 import {
   PROOF_CHECKS,
   isRecord,
@@ -231,6 +242,75 @@ function describeEvidence({ status, reasons, charge }: EvidenceResult): string {
     error: "evidence not checked",
   }[status];
   return `${label}: ${reasons.join("; ")}`;
+}
+
+const MAX_RELATION_HOPS = 10;
+
+// Recomputes one line's display state from the relations acting on it, and
+// stores it if it changed. Returns the new state, or null if unchanged.
+async function settle(line: Line): Promise<DisplayState | null> {
+  const relating = await findRelatingOutcomeLines(
+    line.furnisherId,
+    line.eventId
+  );
+  const state = displayStateFor(lineStates(line, relating));
+  if (state === line.displayState) return null;
+  await setOutcomeEventDisplayState(line.id, state);
+  return state;
+}
+
+// Brings this line, and the line its relation points at, in line with the
+// relations that act on them. A relation may arrive before its target, so a
+// line's own state is settled too. Returns notes for the report.
+async function settleDisplayStates(
+  furnisherId: string,
+  eventId: string
+): Promise<string[]> {
+  const line = await getOutcomeLine(furnisherId, eventId);
+  if (!line) return [];
+  const notes: string[] = [];
+  const own = await settle(line);
+  if (own) notes.push(`now shown as ${own}`);
+  const targetId = line.relationTargetEventId;
+  if (!line.relationType || !targetId) return notes;
+
+  const label = `${line.relationType} ${targetId}`;
+  const target = await getOutcomeLine(furnisherId, targetId);
+  if (!target) {
+    notes.push(
+      `${label}: ${furnisherId} has no such line yet; it takes effect when that line is stored`
+    );
+    return notes;
+  }
+  // Settled whether or not the relation applies: one that applied before and
+  // no longer does (its proof failed on a re-run) must stop acting.
+  const problem = relationProblem(line, target);
+  const changed = await settle(target);
+  const outcome = problem ? `not applied, ${problem}` : "applied";
+  notes.push(
+    changed
+      ? `${label}: ${outcome}; that line is now ${changed}`
+      : `${label}: ${outcome}`
+  );
+
+  // A withdrawn dispute stops acting, so a change can carry on along the
+  // chain of relations. Bounded, in case a furnisher's relations loop.
+  let current = target;
+  for (
+    let hop = 0;
+    changed && hop < MAX_RELATION_HOPS && current.relationTargetEventId;
+    hop++
+  ) {
+    const next = await getOutcomeLine(furnisherId, current.relationTargetEventId);
+    if (!next) break;
+    const nextChanged = await settle(next);
+    if (!nextChanged) break;
+    notes.push(
+      `${current.relationType} ${next.eventId} by ${current.eventId}: that line is now ${nextChanged}`
+    );
+    current = next;
+  }
+  return notes;
 }
 
 type Tally = {
@@ -457,7 +537,21 @@ async function intakeLine(
   else tally.evidenceNotChecked++;
   parts.push(describeEvidence(evidence));
 
-  const clean = stored && proofOk;
+  let settled = true;
+  if (stored) {
+    try {
+      parts.push(
+        ...(await settleDisplayStates(fields.furnisherId, fields.eventId))
+      );
+    } catch (error) {
+      settled = false;
+      parts.push(
+        `display state not settled (${describeError(error)}); run again to settle it`
+      );
+    }
+  }
+
+  const clean = stored && proofOk && settled;
   return { report: `${ref}: ${parts.join(", ")}`, clean };
 }
 
