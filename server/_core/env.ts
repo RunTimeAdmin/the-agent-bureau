@@ -13,4 +13,7 @@ export const ENV = {
   get counterauditApiUrl() { return process.env.COUNTERAUDIT_API_URL || "https://api.counteraudit.io"; },
   get counterauditOrgId() { return process.env.COUNTERAUDIT_ORG_ID ?? ""; },
   get counterauditIngestKey() { return process.env.COUNTERAUDIT_INGEST_KEY ?? ""; },
+  // Arc testnet JSON-RPC for the evidence check (server/evidence.ts). Only read
+  // calls are made: no key is held and nothing is sent.
+  get arcTestnetRpcUrl() { return process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.io"; },
 };

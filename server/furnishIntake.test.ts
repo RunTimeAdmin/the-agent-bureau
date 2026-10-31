@@ -3,9 +3,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
+  findOtherOutcomeEventWithEvidence: vi.fn(),
   findOutcomeEvent: vi.fn(),
   insertOutcomeEvent: vi.fn(),
   schemaReady: vi.fn(),
+  updateOutcomeEventEvidence: vi.fn(),
   updateOutcomeEventProof: vi.fn(),
 }));
 const ca = vi.hoisted(() => ({
@@ -13,9 +15,17 @@ const ca = vi.hoisted(() => ({
   fetchProof: vi.fn(),
   ingestSignedEvent: vi.fn(),
 }));
+// The real evidence check unless a test says otherwise. The fixture event is a
+// "delivered" line, which it sends to review without reading any chain.
+const evidence = vi.hoisted(() => ({ verifyEvidence: vi.fn() }));
 
 vi.mock("./db", () => db);
 vi.mock("./counteraudit", () => ca);
+vi.mock("./evidence", async importOriginal => {
+  const actual = await importOriginal<typeof import("./evidence")>();
+  evidence.verifyEvidence.mockImplementation(actual.verifyEvidence);
+  return { ...actual, verifyEvidence: evidence.verifyEvidence };
+});
 
 import { runIntake, type IntakeIO } from "./furnishIntake";
 
@@ -40,6 +50,34 @@ const packet = {
   created_at: proof.created_at,
   raw_event_hash: proof.raw_event_hash,
   receipt: { receipt_type: "counteraudit.packet_receipt" },
+};
+
+// A passing Levy check, as server/evidence.ts returns it for the paid line in
+// fixtures/arc-levy.
+const TX = "0xd6fbaf6ec24b0ae502b0dd4e3360619eb9052652ecbaf51ae5566d86ad6aafe5";
+const VERIFIED = {
+  verifier: "levy-arc/1",
+  status: "verified",
+  reasons: [],
+  charge: {
+    kind: "charged",
+    chain: "arc-testnet",
+    chain_id: 5042002,
+    tx_hash: TX,
+    log_index: 14,
+    block_number: "69882369",
+    payer: "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77",
+    recipient: "0x83F45b842c15c1417fDbCE296D966b1CE17544bD",
+    amount: "1000000",
+  },
+  recipient_confirmed: true,
+};
+
+// The line the Bureau already holds for the fixture event.
+const stored = {
+  id: 7,
+  packetId: packet.packet_id,
+  signedEventHash: proof.outcome_claim.signed_event_hash,
 };
 
 function fakeIO(text = signedJsonl) {
@@ -138,9 +176,18 @@ describe("runIntake", () => {
       receipt: packet.receipt,
       proofOk: true,
       proofCheckedAt: NOW,
+      evidenceStatus: "needs_review",
+      evidenceResult: {
+        verifier: null,
+        status: "needs_review",
+        reasons: ["no machine check exists for delivered outcomes"],
+      },
+      evidenceCheckedAt: NOW,
       displayState: "unverified",
       dataClass: "test",
     });
+    // A line with no charge claims none.
+    expect(row).not.toHaveProperty("evidenceKey");
     // The furnisher's claim, the Bureau's receipt and CounterAudit's seal,
     // each from its own source.
     expect(row.occurredAt).toEqual(new Date("2026-10-30T18:54:49Z"));
@@ -154,8 +201,132 @@ describe("runIntake", () => {
     expect(printed()).toContain("sealed (201)");
     expect(printed()).toContain("proof verified");
     expect(printed()).toContain("stored as unverified test data");
+    expect(printed()).toContain(
+      "evidence needs review: no machine check exists for delivered outcomes"
+    );
+    expect(printed()).toContain("Evidence: 0 verified, 1 to review");
     expect(printed()).not.toContain(INGEST_KEY);
     expect(printed()).not.toContain(DB_PASSWORD);
+  });
+
+  it("stores a verified charge with its settlement key, and the line stays unverified", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io, printed } = fakeIO();
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(0);
+    expect(evidence.verifyEvidence).toHaveBeenCalledWith(event);
+    expect(db.findOtherOutcomeEventWithEvidence).toHaveBeenCalledWith(
+      `5042002:${TX}:14`,
+      "fur_e2etest01",
+      "e2e-20261030185449"
+    );
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(row).toMatchObject({
+      evidenceStatus: "verified",
+      evidenceResult: VERIFIED,
+      evidenceKey: `5042002:${TX}:14`,
+      displayState: "unverified",
+    });
+    expect(printed()).toContain(`evidence verified (arc-testnet tx ${TX}, log 14)`);
+  });
+
+  it("sends a line to review when another stored line already holds its charge", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    db.findOtherOutcomeEventWithEvidence.mockResolvedValue({
+      furnisherId: "fur_other01",
+      eventId: "charge-8-1",
+    });
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io, printed } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(row.evidenceStatus).toBe("needs_review");
+    expect(row.evidenceKey).toBe(`5042002:${TX}:14`);
+    expect(row.evidenceResult.reasons).toEqual([
+      "the same charge already backs fur_other01/charge-8-1",
+    ]);
+    expect(printed()).toContain("Evidence: 0 verified, 1 to review");
+  });
+
+  it.each([
+    [
+      "its merchant is not the furnisher's",
+      () =>
+        evidence.verifyEvidence.mockResolvedValueOnce({
+          ...VERIFIED,
+          status: "failed",
+          recipient_confirmed: false,
+        }),
+    ],
+    [
+      "its proof failed",
+      () => {
+        vi.stubEnv("COUNTERAUDIT_ORG_ID", "00000000-0000-4000-8000-000000000000");
+        evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+      },
+    ],
+  ])("lets no line claim a charge when %s, so it cannot block the line that can", async (_name, arrange) => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    arrange();
+    const { io } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.findOtherOutcomeEventWithEvidence).not.toHaveBeenCalled();
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(row).not.toHaveProperty("evidenceKey");
+    expect(row.evidenceResult.charge.tx_hash).toBe(TX);
+  });
+
+  it("never clears a stored claim when a later check finds no charge", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue(stored);
+    evidence.verifyEvidence.mockResolvedValueOnce({
+      verifier: "levy-arc/1",
+      status: "failed",
+      reasons: [`transaction ${TX} reverted`],
+    });
+    const { io } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    const [, update] = db.updateOutcomeEventEvidence.mock.calls[0];
+    expect(update.evidenceStatus).toBe("failed");
+    expect(update).not.toHaveProperty("evidenceKey");
+  });
+
+  it("updates nothing when the stored line holds a different event under the same packet", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, signedEventHash: "0".repeat(64) });
+    const { io, printed } = fakeIO();
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+    expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
+    expect(db.updateOutcomeEventEvidence).not.toHaveBeenCalled();
+    expect(printed()).toContain(
+      "not updated: the stored line holds a different signed event under this packet"
+    );
+  });
+
+  it("keeps a stored line's evidence when a resubmission's check reaches no result", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue(stored);
+    evidence.verifyEvidence.mockResolvedValueOnce({
+      verifier: "levy-arc/1",
+      status: "error",
+      reasons: ["chain read failed: fetch failed"],
+    });
+    const { io, printed } = fakeIO();
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(0);
+    expect(db.updateOutcomeEventProof).toHaveBeenCalledTimes(1);
+    expect(db.updateOutcomeEventEvidence).not.toHaveBeenCalled();
+    expect(printed()).toContain("already stored; proof check updated");
+    expect(printed()).toContain("evidence not checked: chain read failed: fetch failed");
+    expect(printed()).toContain("0 failed, 1 not checked yet");
   });
 
   it("treats a 200 as idempotent: the stored line keeps everything but its proof check", async () => {
@@ -164,10 +335,7 @@ describe("runIntake", () => {
       status: 200,
       packet,
     });
-    db.findOutcomeEvent.mockResolvedValue({
-      id: 7,
-      packetId: packet.packet_id,
-    });
+    db.findOutcomeEvent.mockResolvedValue(stored);
     const { io, printed } = fakeIO();
 
     const code = await runIntake(["--test-data", "events.jsonl"], io);
@@ -183,8 +351,13 @@ describe("runIntake", () => {
       "proofOk",
     ]);
     expect(update.proofOk).toBe(true);
+    expect(db.updateOutcomeEventEvidence).toHaveBeenCalledWith(7, {
+      evidenceStatus: "needs_review",
+      evidenceResult: expect.objectContaining({ status: "needs_review" }),
+      evidenceCheckedAt: NOW,
+    });
     expect(printed()).toContain("already sealed (200)");
-    expect(printed()).toContain("already stored");
+    expect(printed()).toContain("already stored; proof and evidence checks updated");
   });
 
   it("leaves a stored line alone when a resubmission's proof cannot be fetched", async () => {
@@ -198,10 +371,7 @@ describe("runIntake", () => {
       status: 503,
       message: "This proof cannot be produced right now",
     });
-    db.findOutcomeEvent.mockResolvedValue({
-      id: 7,
-      packetId: packet.packet_id,
-    });
+    db.findOutcomeEvent.mockResolvedValue(stored);
     const { io } = fakeIO();
 
     expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);

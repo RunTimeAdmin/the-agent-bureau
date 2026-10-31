@@ -6,16 +6,22 @@
 // is a script, and no route imports it), and until retention is signed off
 // and two-person review exists, only runs marked as test data are accepted.
 // Every stored line is "unverified": a passing proof shows what was sealed and
-// who signed it, not that the outcome happened.
+// who signed it, not that the outcome happened. Each line's evidence is
+// checked against the chain where a check exists (server/evidence.ts) and the
+// result stored with it, but showing a line as verified also needs two-person
+// review, which is not built.
 import { readFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
 import { fetchJwks, fetchProof, ingestSignedEvent } from "./counteraudit";
 import {
+  findOtherOutcomeEventWithEvidence,
   findOutcomeEvent,
   insertOutcomeEvent,
   schemaReady,
+  updateOutcomeEventEvidence,
   updateOutcomeEventProof,
 } from "./db";
+import { chargeKey, verifyEvidence, type EvidenceResult } from "./evidence";
 import {
   PROOF_CHECKS,
   isRecord,
@@ -160,6 +166,73 @@ async function checkProof(
   };
 }
 
+// The settlement log a line claims, if it may claim one: its proof passed, so
+// the furnisher named in it signed it, and the charge's merchant is that
+// furnisher's vetted account. Every Levy charge is public, so a line that
+// cannot claim a charge must not be able to block the line that can.
+function claimedCharge(
+  evidence: EvidenceResult,
+  proofOk: boolean
+): string | null {
+  return proofOk && evidence.charge && evidence.recipient_confirmed
+    ? chargeKey(evidence.charge)
+    : null;
+}
+
+// What the chain cannot show: whether another stored line already claims the
+// same settlement log. One charge backs one line; a second is not verified.
+async function withSettlementReuse(
+  evidence: EvidenceResult,
+  claim: string | null,
+  fields: EventFields
+): Promise<EvidenceResult> {
+  if (!claim) return evidence;
+  const other = await findOtherOutcomeEventWithEvidence(
+    claim,
+    fields.furnisherId,
+    fields.eventId
+  );
+  if (!other) return evidence;
+  return {
+    ...evidence,
+    status: evidence.status === "verified" ? "needs_review" : evidence.status,
+    reasons: [
+      ...evidence.reasons,
+      `the same charge already backs ${other.furnisherId}/${other.eventId}`,
+    ],
+  };
+}
+
+// A claim, once stored, is never cleared by a later check, so a later check
+// cannot free the charge for another line.
+function evidenceColumns(
+  evidence: EvidenceResult,
+  claim: string | null,
+  checkedAt: Date
+) {
+  return {
+    evidenceStatus: evidence.status,
+    evidenceResult: evidence,
+    evidenceCheckedAt: checkedAt,
+    ...(claim ? { evidenceKey: claim } : {}),
+  };
+}
+
+function describeEvidence({ status, reasons, charge }: EvidenceResult): string {
+  if (status === "verified") {
+    return charge
+      ? `evidence verified (${charge.chain} tx ${charge.tx_hash}, log ${charge.log_index})`
+      : "evidence verified";
+  }
+  const label = {
+    failed: "evidence FAILED",
+    needs_review: "evidence needs review",
+    pending: "evidence not final yet",
+    error: "evidence not checked",
+  }[status];
+  return `${label}: ${reasons.join("; ")}`;
+}
+
 type Tally = {
   notSent: number;
   sealed: number;
@@ -170,6 +243,10 @@ type Tally = {
   proofVerified: number;
   proofFailed: number;
   proofNotChecked: number;
+  evidenceVerified: number;
+  evidenceReview: number;
+  evidenceFailed: number;
+  evidenceNotChecked: number;
   stored: number;
   alreadyStored: number;
   notStored: number;
@@ -186,6 +263,10 @@ function newTally(): Tally {
     proofVerified: 0,
     proofFailed: 0,
     proofNotChecked: 0,
+    evidenceVerified: 0,
+    evidenceReview: 0,
+    evidenceFailed: 0,
+    evidenceNotChecked: 0,
     stored: 0,
     alreadyStored: 0,
     notStored: 0,
@@ -292,9 +373,15 @@ async function intakeLine(
         caCreatedAt: new Date(packet.created_at),
       };
 
+  const checked = await verifyEvidence(event);
+  const evidenceCheckedAt = io.now();
+  const claim = claimedCharge(checked, proofOk);
+  let evidence = checked;
+
   let stored = false;
   try {
     const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
+    evidence = await withSettlementReuse(checked, claim, fields);
     if (!existing) {
       await insertOutcomeEvent({
         furnisherId: fields.furnisherId,
@@ -312,6 +399,7 @@ async function intakeLine(
         receivedAt,
         receipt: packet.receipt,
         ...(proofColumns ?? { proofOk: false }),
+        ...evidenceColumns(evidence, claim, evidenceCheckedAt),
         displayState: "unverified",
         dataClass: "test",
       });
@@ -323,16 +411,36 @@ async function intakeLine(
       parts.push(
         `not stored: the Bureau already holds this event as packet ${existing.packetId}`
       );
+    } else if (existing.signedEventHash !== signedEventHash(event)) {
+      // Same packet id, different event: the ingest response is not signed,
+      // so its checks say nothing about the stored line.
+      tally.notStored++;
+      parts.push(
+        "not updated: the stored line holds a different signed event under this packet"
+      );
     } else {
       // The same event sent again: the stored line keeps its times, state
-      // and data class. Only a proof check that ran is recorded.
+      // and data class. Only checks that reached a result are recorded: a
+      // proof check that ran, and an evidence check that is neither pending
+      // nor an error.
       if (proofColumns)
         await updateOutcomeEventProof(existing.id, proofColumns);
+      const evidenceReached =
+        evidence.status !== "pending" && evidence.status !== "error";
+      if (evidenceReached)
+        await updateOutcomeEventEvidence(
+          existing.id,
+          evidenceColumns(evidence, claim, evidenceCheckedAt)
+        );
       tally.alreadyStored++;
       stored = true;
+      const updated = [
+        ...(proofColumns ? ["proof"] : []),
+        ...(evidenceReached ? ["evidence"] : []),
+      ];
       parts.push(
-        proofColumns
-          ? "already stored; proof check updated"
+        updated.length > 0
+          ? `already stored; ${updated.join(" and ")} check${updated.length > 1 ? "s" : ""} updated`
           : "already stored; left unchanged"
       );
     }
@@ -342,6 +450,12 @@ async function intakeLine(
       `not stored (${describeError(error)}); run again to store it, CounterAudit will answer 200 with the same packet`
     );
   }
+
+  if (evidence.status === "verified") tally.evidenceVerified++;
+  else if (evidence.status === "needs_review") tally.evidenceReview++;
+  else if (evidence.status === "failed") tally.evidenceFailed++;
+  else tally.evidenceNotChecked++;
+  parts.push(describeEvidence(evidence));
 
   const clean = stored && proofOk;
   return { report: `${ref}: ${parts.join(", ")}`, clean };
@@ -426,6 +540,7 @@ export async function runIntake(
       `Summary: ${lines} line${lines === 1 ? "" : "s"}.`,
       `CounterAudit: ${t.sealed} sealed, ${t.alreadySealed} already sealed, ${t.refused} refused, ${t.conflicts} conflicts, ${t.failed} failed, ${t.notSent} not sent.`,
       `Proofs: ${t.proofVerified} verified, ${t.proofFailed} failed, ${t.proofNotChecked} not checked.`,
+      `Evidence: ${t.evidenceVerified} verified, ${t.evidenceReview} to review, ${t.evidenceFailed} failed, ${t.evidenceNotChecked} not checked yet.`,
       `Bureau: ${t.stored} stored, ${t.alreadyStored} already stored, ${t.notStored} not stored.`,
     ].join("\n")
   );

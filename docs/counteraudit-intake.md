@@ -8,7 +8,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 
 - **No public endpoint accepts an outcome.** Intake is a script the operator runs by hand. No HTTP or tRPC route reaches it.
 - **Test data only.** Every run must carry `--test-data`. A run without it is refused before anything is sent, because outside data waits on the retention decision (decision 5, provisional at 24 months, pending counsel) and on two-person review. Until both exist, the solo-operator path is limited to test data and internal dry runs. Rows are stored with data class `test`.
-- **Every line is `unverified`.** A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. `verified` needs the evidence policy, which is not built, so nothing sets it yet.
+- **Every line is `unverified`.** A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. The intake also checks each line's evidence against the chain where a check exists (`docs/evidence-verifier.md`) and stores the result, but showing a line as `verified` also needs two-person review, which is not built, so nothing sets it yet.
 - **The Bureau holds no private keys.** Furnishers sign with their own keys. The operator registers each furnisher's public key in CounterAudit (`POST /v1/admin/outcome-signers`, which needs CounterAudit's admin TOTP). This code never registers keys.
 
 ## Before a run
@@ -16,16 +16,17 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 1. Get a signed JSONL file, one event per line, as `agent-bureau-furnish sign` writes it (outcome event v1).
 2. Make sure the signing key is registered for that `furnisher_id` and `key_id` in the Bureau's CounterAudit org. Otherwise CounterAudit refuses each event with `outcome_signer_unknown`.
 3. Set the environment (below), in the shell or in `.env`.
-4. Make sure the database has the `outcome_events` table. The server applies migrations when it starts, or run `pnpm db:migrate`. The script checks this before it sends anything, so it cannot seal events it has nowhere to store.
+4. Make sure the database has the `outcome_events` table with its evidence columns (migration 0008). The server applies migrations when it starts, or run `pnpm db:migrate`. The script checks this before it sends anything, so it cannot seal events it has nowhere to store.
 
 ## Environment
 
-| Variable                  | Use                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| `COUNTERAUDIT_API_URL`    | CounterAudit's API. Default `https://api.counteraudit.io`.                                  |
-| `COUNTERAUDIT_ORG_ID`     | The Bureau's CounterAudit organization. Every proof must name this org, or its check fails. |
-| `COUNTERAUDIT_INGEST_KEY` | An API key of that org with the `ingest` role. Secret: the script never prints it.          |
-| `DATABASE_URL`            | The Bureau's MySQL database, as for the server.                                             |
+| Variable                  | Use                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `COUNTERAUDIT_API_URL`    | CounterAudit's API. Default `https://api.counteraudit.io`.                                    |
+| `COUNTERAUDIT_ORG_ID`     | The Bureau's CounterAudit organization. Every proof must name this org, or its check fails.   |
+| `COUNTERAUDIT_INGEST_KEY` | An API key of that org with the `ingest` role. Secret: the script never prints it.            |
+| `DATABASE_URL`            | The Bureau's MySQL database, as for the server.                                               |
+| `ARC_TESTNET_RPC_URL`     | Arc testnet JSON-RPC for the evidence check, read-only. Default `https://rpc.testnet.arc.io`. |
 
 ## Run
 
@@ -35,9 +36,9 @@ From a checkout with dependencies installed:
 pnpm furnish:intake --test-data signed.jsonl
 ```
 
-For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
+For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
 
-Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its proof check is refreshed.
+Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
 
 ## What each result means
 
@@ -53,6 +54,8 @@ Running the same file again is safe. CounterAudit answers 200 with the packet it
 | `not sent`                                | The line is not JSON or lacks the fields the Bureau stores.                                                                                | No                  |
 
 After a seal, the proof is reported as `verified`, `FAILED` with the checks that failed, or `not checked` when the proof or CounterAudit's keys could not be fetched. A sealed event is stored whatever its proof result, with the result recorded, because the packet exists either way. Run the file again to retry a proof that was not checked.
+
+The evidence is then reported as `verified`, `needs review`, `FAILED` or `not final yet` with its reasons, or `not checked` when the chain could not be read. The exit code does not depend on it: most outcomes have no machine check yet and always go to review. See `docs/evidence-verifier.md` for what each result means.
 
 ## Proof checks
 
@@ -73,4 +76,4 @@ After a seal, the proof is reported as `verified`, `FAILED` with the checks that
 
 ## Not built yet
 
-Display states other than `unverified` (disputes, withdrawals, supersession and the evidence policy), furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
+Display states other than `unverified` (disputes, withdrawals, supersession, and two-person review of evidence), furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
