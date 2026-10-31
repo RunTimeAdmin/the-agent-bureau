@@ -13,7 +13,8 @@
 // (server/lineState.ts); that takes effect here.
 import { readFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
-import { fetchJwks, fetchProof, ingestSignedEvent } from "./counteraudit";
+import { fetchProof, ingestSignedEvent } from "./counteraudit";
+import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import {
   findOtherOutcomeEventWithEvidence,
   findOutcomeEvent,
@@ -170,14 +171,12 @@ async function checkProof(
       reason: `proof not fetched (${fetched.status ?? "no answer"}: ${fetched.message})`,
     };
   }
-  const keys = await fetchJwks();
-  if (!keys.ok) return { ran: false, reason: keys.message };
   return {
     ran: true,
     verification: verifyOutcomeProof({
       proof: fetched.proof,
       event,
-      jwks: keys.jwks,
+      jwks: COUNTERAUDIT_EXPORT_KEYS,
       orgId,
       packetId,
     }),

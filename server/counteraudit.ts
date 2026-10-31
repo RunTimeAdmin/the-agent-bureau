@@ -3,11 +3,10 @@
 // route of this server uses it, and nothing here accepts an event from
 // outside. See docs/counteraudit-intake.md.
 import { ENV } from "./_core/env";
-import { FURNISH_CONNECTOR_ID, isRecord, type Jwks } from "./outcomeProof";
+import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
 
 const TIMEOUT_MS = 15_000;
 // CounterAudit serves its export keys with Cache-Control: max-age=3600.
-const JWKS_TTL_MS = 60 * 60 * 1000;
 
 function baseUrl(): string {
   return ENV.counterauditApiUrl.replace(/\/+$/, "");
@@ -189,43 +188,4 @@ export async function fetchProof(packetId: string): Promise<ProofResult> {
   if (res.status === 200 && isRecord(body)) return { ok: true, proof: body };
   const { error, message } = errorFields(body);
   return { ok: false, status: res.status, message: message || error };
-}
-
-export type JwksResult =
-  { ok: true; jwks: Jwks } | { ok: false; message: string };
-
-let jwksCache: { url: string; jwks: Jwks; expiresAt: number } | null = null;
-
-/** CounterAudit's export signing keys, cached for an hour. */
-export async function fetchJwks(): Promise<JwksResult> {
-  const url = `${baseUrl()}/.well-known/counteraudit-export-jwk.json`;
-  if (jwksCache && jwksCache.url === url && jwksCache.expiresAt > Date.now()) {
-    return { ok: true, jwks: jwksCache.jwks };
-  }
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      message: `CounterAudit's export keys could not be fetched: ${describeError(error)}`,
-    };
-  }
-  const body = await readJson(res);
-  if (res.status !== 200 || !isRecord(body) || !Array.isArray(body.keys)) {
-    return {
-      ok: false,
-      message: `CounterAudit's export keys could not be read (HTTP ${res.status})`,
-    };
-  }
-  const jwks: Jwks = { keys: body.keys.filter(isRecord) };
-  jwksCache = { url, jwks, expiresAt: Date.now() + JWKS_TTL_MS };
-  return { ok: true, jwks };
-}
-
-export function resetJwksCache(): void {
-  jwksCache = null;
 }

@@ -65,7 +65,7 @@ The evidence is then reported as `verified`, `needs review`, `FAILED` or `not fi
 
 `server/outcomeProof.ts` runs each check on its own and stores every result:
 
-- `proof_signature`: CounterAudit's eddsa-jcs-2022 signature over the proof verifies with its key from `/.well-known/counteraudit-export-jwk.json`. This is a port of CounterAudit's `verifyExportSignature`.
+- `proof_signature`: CounterAudit's eddsa-jcs-2022 signature over the proof verifies with its export key as pinned in `server/counterauditKeys.ts`, the key CounterAudit publishes at `/.well-known/counteraudit-export-jwk.json`. It is pinned by pull request rather than fetched, so a proof is not only as strong as TLS to the server that served it; when CounterAudit adds a key, add it there. This is a port of CounterAudit's `verifyExportSignature`.
 - `org_id`, `connector_id`, `packet_id`: the proof is for the Bureau's org, the furnish connector and the packet ingest returned.
 - `public_proof`, `content_verified`: both true.
 - `signed_event_hash`: SHA-256 of the event's RFC 8785 canonical JSON equals the hash CounterAudit sealed.

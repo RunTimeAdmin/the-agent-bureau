@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fetchJwks,
-  fetchProof,
-  ingestSignedEvent,
-  resetJwksCache,
-} from "./counteraudit";
+import { fetchProof, ingestSignedEvent } from "./counteraudit";
 
 const fetchMock = vi.fn();
 
@@ -38,7 +33,6 @@ afterEach(() => {
   fetchMock.mockReset();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
-  resetJwksCache();
 });
 
 describe("ingestSignedEvent", () => {
@@ -173,29 +167,5 @@ describe("fetchProof", () => {
       status: 404,
       message: "No public proof",
     });
-  });
-});
-
-describe("fetchJwks", () => {
-  const jwks = {
-    keys: [{ kty: "OKP", crv: "Ed25519", x: "abc", kid: "k1" }],
-  };
-
-  it("fetches the export keys once and serves later calls from cache", async () => {
-    fetchMock.mockResolvedValueOnce(respond(200, jwks));
-    expect(await fetchJwks()).toEqual({ ok: true, jwks });
-    expect(await fetchJwks()).toEqual({ ok: true, jwks });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://ca.example/.well-known/counteraudit-export-jwk.json"
-    );
-  });
-
-  it("does not cache a failure", async () => {
-    fetchMock
-      .mockResolvedValueOnce(respond(503, { error: "unavailable" }))
-      .mockResolvedValueOnce(respond(200, jwks));
-    expect(await fetchJwks()).toMatchObject({ ok: false });
-    expect(await fetchJwks()).toEqual({ ok: true, jwks });
   });
 });
