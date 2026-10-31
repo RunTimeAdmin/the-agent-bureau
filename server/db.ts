@@ -12,23 +12,27 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
-import { createPool } from "mysql2";
+import { createPool, type Pool } from "mysql2";
 import {
   InsertInquiry,
+  InsertOutcomeEvent,
   agents,
   dailyUsage,
   inquiries,
+  outcomeEvents,
   playQuestions,
   plays,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: Pool | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       const pool = createPool(process.env.DATABASE_URL);
+      _pool = pool;
       // Pin every pooled connection to UTC. Daily windows and registration
       // counts compare a UTC value with DEFAULT(now()) TIMESTAMP columns, which
       // MySQL reads in the session time zone; without this the day could start
@@ -43,6 +47,18 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+// Ends the pool so a one-off script (scripts/furnish-intake.ts) can exit. The
+// server never calls this.
+export async function closeDb(): Promise<void> {
+  const pool = _pool;
+  _pool = null;
+  _db = null;
+  if (!pool) return;
+  await new Promise<void>((resolve, reject) =>
+    pool.end(error => (error ? reject(error) : resolve()))
+  );
 }
 
 // Applies pending drizzle/ migrations so hosts without shell access still get
@@ -220,13 +236,15 @@ export async function pingDb(): Promise<boolean> {
   }
 }
 
-// The Bureau tables the app needs to serve games, inquiries and the inbox.
-// daily_usage is from the most recent migration, so its presence doubles as a
-// check that migrations ran to the current version.
+// The Bureau tables the app needs to serve games, inquiries and the inbox, and
+// to hold furnished outcome events. outcome_events is from the most recent
+// migration, so its presence doubles as a check that migrations ran to the
+// current version.
 const REQUIRED_TABLES = [
   "agents",
   "daily_usage",
   "inquiries",
+  "outcome_events",
   "play_questions",
   "plays",
 ] as const;
@@ -242,7 +260,7 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'inquiries', 'play_questions', 'plays')`
+            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'play_questions', 'plays')`
     );
     const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       present?: number | string;
@@ -341,4 +359,41 @@ export async function finishPlay(
     .set({ accused, solved, finishedAt: new Date() })
     .where(and(eq(plays.id, playId), isNull(plays.finishedAt)));
   return result.affectedRows === 1;
+}
+
+// Furnished outcome events (see outcomeEvents in drizzle/schema.ts). Written
+// only by the operator intake script; no route reads or writes them.
+export async function findOutcomeEvent(furnisherId: string, eventId: string) {
+  const db = await requireDb();
+  const [row] = await db
+    .select({ id: outcomeEvents.id, packetId: outcomeEvents.packetId })
+    .from(outcomeEvents)
+    .where(
+      and(
+        eq(outcomeEvents.furnisherId, furnisherId),
+        eq(outcomeEvents.eventId, eventId)
+      )
+    );
+  return row;
+}
+
+export async function insertOutcomeEvent(
+  row: InsertOutcomeEvent
+): Promise<void> {
+  const db = await requireDb();
+  await db.insert(outcomeEvents).values(row);
+}
+
+// Records a later proof check. Nothing else about a stored line changes when
+// the same event is submitted again.
+export async function updateOutcomeEventProof(
+  id: number,
+  proof: {
+    proofOk: boolean;
+    proofChecks: Record<string, unknown>;
+    proofCheckedAt: Date;
+  }
+): Promise<void> {
+  const db = await requireDb();
+  await db.update(outcomeEvents).set(proof).where(eq(outcomeEvents.id, id));
 }

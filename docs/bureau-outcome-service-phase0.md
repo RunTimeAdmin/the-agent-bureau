@@ -4,9 +4,9 @@ Lock the product, data and trust decisions before any public endpoint accepts an
 
 ```
 Owner:      David (RunTimeAdmin)
-Status:     Decisions recorded 2026-10-29. Two items await external input: retention (counsel) and CounterAudit envelope sealing (CounterAudit team).
+Status:     Decisions recorded 2026-10-29, refreshed 2026-10-31. Open before outside data: retention (counsel review and CounterAudit expiry) and the Bureau's cross-org intake.
 Created:    2026-10-29
-Decided:    2026-10-29
+Decided:    2026-10-29 (decision 5 replaced by the 2026-10-31 baseline)
 Relates to: docs/bureau-spec.md, the Outcome Ingestion and Evidence Verification Implementation Plan (Phase 0, §4 and §15)
 ```
 
@@ -61,13 +61,21 @@ Proposed: a negative outcome is never displayed as established fact until its si
 
 Proposed: approve purpose limitation, subject access, correction and dispute, retention, deletion, backup expiry and access logging. The spec proposes 24-month file retention while CounterAudit keeps the sealed audit history. (Open question §15.5: retention for source envelopes, derived indexes, disputes, backups and operator access logs.) Confirm with counsel before accepting any personal or commercially sensitive data.
 
-- Decision: **24-month file retention, provisional pending counsel.** CounterAudit keeps the sealed audit history. Purpose limitation, subject access, correction and dispute, deletion, backup expiry and access logging are approved in principle. Counsel must sign off the retention number and these policies before any personal or commercially sensitive data is accepted (resolves §15.5, subject to counsel).
+- Decision: **provisional baseline, recorded 2026-10-31 by the owner.** Counsel checks the Bureau's legal obligations before launch, and no outside outcome is accepted before then.
+  - No law sets a single retention period for this data. Each data category gets its own period, with a stated reason, and data is deleted or anonymized once it is no longer needed. Correction and erasure requests are honoured.
+  - Purpose limitation, subject access, correction and dispute, deletion, backup expiry and access logging are approved in principle (owner, 2026-10-29); counsel signs off these policies with the retention periods.
+  - **Active file: at most 24 months** from the Bureau's `received_at`. After that the outcome and its source content are removed from files, APIs and indexes. 24 months is a chosen product policy, not a legal safe harbor.
+  - **Backups** expire on a rolling 90 days.
+  - **Security logs** are kept 12 months and carry no payloads.
+  - **Legal hold** applies only to a specific case, with a reason and a review date.
+  - **CounterAudit** does not keep identifiable source content indefinitely by default: it expires or crypto-erases it after 24 months, and keeps a minimal commitment only if counsel confirms that is appropriate. Today CounterAudit keeps every sealed packet with no expiry, so this is a requirement CounterAudit must meet before outside outcomes are sealed.
+  - **Sigvara's** public outcome sharing and peer import stay off on mainnet until this policy covers copies held by other operators, because those copies cannot be guaranteed deleted.
 
 ### 6. CounterAudit authorization
 
 Proposed: provision a dedicated Bureau organization in CounterAudit. Decide whether CounterAudit adds per-key scopes, and how a furnisher's evidence packet from its own CounterAudit organization is verified without exposing that organization's API key. (Open question §15.1: does CounterAudit seal the full source envelope and offer cross-org proof, or does the Bureau store a separately encrypted envelope with a CounterAudit commitment? The second option changes the spec's claim that CounterAudit alone is the record store.)
 
-- Decision: **CounterAudit seals the full envelope and issues a cross-org proof.** This keeps the spec's position that CounterAudit is the record store. It depends on the CounterAudit team adding full signed-envelope sealing and a shareable packet proof a third party can validate without the furnisher's API key, in a dedicated least-privilege Bureau organization (resolves §15.1; blocked on CounterAudit delivery). Intake does not go live until that lands.
+- Decision: **CounterAudit seals the full envelope and issues a cross-org proof.** This keeps the spec's position that CounterAudit is the record store. CounterAudit's part is built: a dedicated least-privilege Bureau organization with separate ingest, read and admin keys, furnisher keys registered per organization, the full signed event sealed in each packet, and public packet proofs a third party can check without any API key (resolves §15.1). A test event went through it end to end on 2026-10-31. Still to build on the Bureau's side: intake seals each event in the Bureau's own organization and requires the proof to name it, so a packet a furnisher already sealed in its own CounterAudit organization cannot be accepted yet. Intake stays test-data-only until that and decision 5's conditions are met.
 
 ### 7. Receipt semantics
 
@@ -101,18 +109,18 @@ Open from the plan and not yet drafted: evidence field shapes specific enough to
 
 From §15 of the plan. Status as of 2026-10-29:
 
-1. **Resolved, pending CounterAudit delivery.** CounterAudit seals the full source envelope and provides cross-org proof (decision 6). Blocked on the CounterAudit team building it; no intake before then.
+1. **Resolved; CounterAudit's part built.** CounterAudit seals the full signed event and serves public proofs anyone can check without a key (decision 6). Remaining: the Bureau accepting a packet sealed in a furnisher's own organization. No outside intake before then.
 2. **Resolved.** First evidence source is on-chain settlement on Arc, read via Levy (decision 2).
 3. **Direction set, fields are Phase 2.** `payment_failed` and `not_delivered`, where there may be no successful on-chain receipt, are evidenced by furnisher signed logs or a CounterAudit packet plus human review, and never show as `verified` without a passing check. The exact evidence field shapes are drafted in Phase 2.
 4. **Resolved.** Several scoped keys per furnisher, each with a `key_id`; the Bureau custodies none (decision 3).
-5. **Pending counsel.** 24-month retention is provisional; counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs before external data is accepted (decision 5).
+5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs, and CounterAudit must build its expiry and crypto-erasure (designed, not built), before external data is accepted.
 6. **Resolved.** Two-person review is required before any approval, match change, evidence waiver or negative-line release affects a third party. The solo-operator path is limited to test data and internal dry runs.
 
 ## Exit criteria
 
 Owner sign-off recorded 2026-10-29 on the v1 outcome scope, the publication rule and file-display states, the furnisher key and identity-matching model, and the receipt semantics. Two items stay open before any public endpoint accepts an external outcome:
 
-- **Retention and data policy**: provisional at 24 months, awaiting counsel sign-off.
-- **CounterAudit extension**: full envelope sealing and cross-org proof, awaiting the CounterAudit team.
+- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off and CounterAudit's expiry and crypto-erasure, which is designed but not built.
+- **Cross-org intake**: CounterAudit's full-event sealing and keyless public proofs are built; the Bureau's intake of a packet sealed in a furnisher's own organization is not.
 
 No public endpoint accepts an external outcome until both close.
