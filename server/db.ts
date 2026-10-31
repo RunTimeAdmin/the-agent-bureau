@@ -18,10 +18,12 @@ import { createPool, type Pool } from "mysql2";
 import {
   InsertInquiry,
   InsertOutcomeEvent,
+  InsertOutcomeReview,
   agents,
   dailyUsage,
   inquiries,
   outcomeEvents,
+  outcomeReviews,
   playQuestions,
   plays,
 } from "../drizzle/schema";
@@ -240,14 +242,15 @@ export async function pingDb(): Promise<boolean> {
 }
 
 // The Bureau tables the app needs to serve games, inquiries and the inbox, and
-// to hold furnished outcome events. outcome_events is from the most recent
-// migration, so its presence doubles as a check that migrations ran to the
-// current version.
+// to hold furnished outcome events and their reviews. outcome_reviews is from
+// the most recent migration, so its presence doubles as a check that
+// migrations ran to the current version.
 const REQUIRED_TABLES = [
   "agents",
   "daily_usage",
   "inquiries",
   "outcome_events",
+  "outcome_reviews",
   "play_questions",
   "plays",
 ] as const;
@@ -263,7 +266,7 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'play_questions', 'plays')`
+            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays')`
     );
     const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       present?: number | string;
@@ -413,6 +416,8 @@ const LINE_COLUMNS = {
   dataClass: outcomeEvents.dataClass,
   proofOk: outcomeEvents.proofOk,
   evidenceStatus: outcomeEvents.evidenceStatus,
+  evidenceResult: outcomeEvents.evidenceResult,
+  signedEventHash: outcomeEvents.signedEventHash,
   displayState: outcomeEvents.displayState,
   relationType: outcomeEvents.relationType,
   relationTargetEventId: outcomeEvents.relationTargetEventId,
@@ -509,4 +514,45 @@ export async function updateOutcomeEventEvidence(
 ): Promise<void> {
   const db = await requireDb();
   await db.update(outcomeEvents).set(evidence).where(eq(outcomeEvents.id, id));
+}
+
+// Every stored line, with what the review queue shows (pnpm review).
+export async function listOutcomeLines() {
+  const db = await requireDb();
+  return db
+    .select({ ...LINE_COLUMNS, outcome: outcomeEvents.outcome })
+    .from(outcomeEvents)
+    .orderBy(asc(outcomeEvents.id));
+}
+
+// The signed review decisions recorded for a line, as signed. The table's
+// other columns are for querying; only the signed form is trusted
+// (server/settleLines.ts checks it again).
+export async function listReviewsForLine(
+  outcomeEventId: number
+): Promise<{ id: number; signedDecision: unknown }[]> {
+  const db = await requireDb();
+  return db
+    .select({
+      id: outcomeReviews.id,
+      signedDecision: outcomeReviews.signedDecision,
+    })
+    .from(outcomeReviews)
+    .where(eq(outcomeReviews.outcomeEventId, outcomeEventId));
+}
+
+// Records a signed decision. False when this exact decision was recorded
+// before (decisionHash is unique).
+export async function insertOutcomeReview(
+  row: InsertOutcomeReview
+): Promise<boolean> {
+  const db = await requireDb();
+  try {
+    await db.insert(outcomeReviews).values(row);
+    return true;
+  } catch (error) {
+    const { code, cause } = error as { code?: string; cause?: { code?: string } };
+    if ((code ?? cause?.code) === "ER_DUP_ENTRY") return false;
+    throw error;
+  }
 }

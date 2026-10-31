@@ -8,7 +8,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 
 - **No public endpoint accepts an outcome.** Intake is a script the operator runs by hand. No HTTP or tRPC route reaches it.
 - **Test data only.** Every run must carry `--test-data`. A run without it is refused before anything is sent, because outside data waits on the retention decision (decision 5, provisional at 24 months, pending counsel) and on two-person review. Until both exist, the solo-operator path is limited to test data and internal dry runs. Rows are stored with data class `test`.
-- **No line is `verified`.** A line shows as `unverified`, or as `withdrawn`, `superseded` or `disputed` once a later signed line from its furnisher says so (`docs/line-states.md`). A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. The intake also checks each line's evidence against the chain where a check exists (`docs/evidence-verifier.md`) and stores the result, but showing a line as `verified` also needs two-person review, which is not built, so nothing sets it yet.
+- **No line is `verified` at intake.** A line shows as `unverified`, or as `withdrawn`, `superseded` or `disputed` once a later signed line from its furnisher says so (`docs/line-states.md`). A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. The intake also checks each line's evidence against the chain where a check exists (`docs/evidence-verifier.md`) and stores the result. A line shows as `verified` only once reviewers release it (`docs/two-person-review.md`).
 - **The Bureau holds no private keys.** Furnishers sign with their own keys. The operator registers each furnisher's public key in CounterAudit (`POST /v1/admin/outcome-signers`, which needs CounterAudit's admin TOTP). This code never registers keys.
 
 ## Before a run
@@ -78,4 +78,4 @@ The evidence is then reported as `verified`, `needs review`, `FAILED` or `not fi
 
 ## Not built yet
 
-The `verified` display state and two-person review, subject disputes, furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
+A review screen (review runs on the command line), subject disputes, furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
