@@ -25,6 +25,7 @@ import {
   playQuestions,
   plays,
 } from "../drizzle/schema";
+import type { DisplayState, Line } from "./lineState";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
@@ -402,6 +403,74 @@ export async function updateOutcomeEventProof(
 ): Promise<void> {
   const db = await requireDb();
   await db.update(outcomeEvents).set(proof).where(eq(outcomeEvents.id, id));
+}
+
+const LINE_COLUMNS = {
+  id: outcomeEvents.id,
+  furnisherId: outcomeEvents.furnisherId,
+  eventId: outcomeEvents.eventId,
+  subjectRef: outcomeEvents.subjectRef,
+  dataClass: outcomeEvents.dataClass,
+  proofOk: outcomeEvents.proofOk,
+  evidenceStatus: outcomeEvents.evidenceStatus,
+  displayState: outcomeEvents.displayState,
+  relationType: outcomeEvents.relationType,
+  relationTargetEventId: outcomeEvents.relationTargetEventId,
+};
+
+// The columns compare without case under the server's default collation, but
+// CounterAudit's event ids do not, so the two lookups below also match exactly.
+
+// A stored line with what its states depend on (server/lineState.ts).
+export async function getOutcomeLine(
+  furnisherId: string,
+  eventId: string
+): Promise<Line | undefined> {
+  const db = await requireDb();
+  const [row] = await db
+    .select(LINE_COLUMNS)
+    .from(outcomeEvents)
+    .where(
+      and(
+        eq(outcomeEvents.furnisherId, furnisherId),
+        eq(outcomeEvents.eventId, eventId)
+      )
+    );
+  return row && row.furnisherId === furnisherId && row.eventId === eventId
+    ? row
+    : undefined;
+}
+
+// The same furnisher's lines whose relation points at this event.
+export async function findRelatingOutcomeLines(
+  furnisherId: string,
+  eventId: string
+): Promise<Line[]> {
+  const db = await requireDb();
+  const rows = await db
+    .select(LINE_COLUMNS)
+    .from(outcomeEvents)
+    .where(
+      and(
+        eq(outcomeEvents.furnisherId, furnisherId),
+        eq(outcomeEvents.relationTargetEventId, eventId)
+      )
+    );
+  return rows.filter(
+    row =>
+      row.furnisherId === furnisherId && row.relationTargetEventId === eventId
+  );
+}
+
+export async function setOutcomeEventDisplayState(
+  id: number,
+  displayState: DisplayState
+): Promise<void> {
+  const db = await requireDb();
+  await db
+    .update(outcomeEvents)
+    .set({ displayState })
+    .where(eq(outcomeEvents.id, id));
 }
 
 // Another stored line whose evidence matched the same settlement log, if any.

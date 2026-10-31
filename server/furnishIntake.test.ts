@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   findOtherOutcomeEventWithEvidence: vi.fn(),
+  findRelatingOutcomeLines: vi.fn(),
+  getOutcomeLine: vi.fn(),
+  setOutcomeEventDisplayState: vi.fn(),
   findOutcomeEvent: vi.fn(),
   insertOutcomeEvent: vi.fn(),
   schemaReady: vi.fn(),
@@ -421,6 +424,172 @@ describe("runIntake", () => {
     expect(db.findOutcomeEvent).not.toHaveBeenCalled();
     expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
     expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
+  });
+
+  describe("relations between a furnisher's lines", () => {
+    // Stored lines, kept in memory so settling one updates what the next
+    // lookup sees. The fixture event is stored as "e2e-20261030185449".
+    type Row = {
+      id: number;
+      furnisherId: string;
+      eventId: string;
+      subjectRef: Record<string, unknown>;
+      dataClass: "test" | "live";
+      proofOk: boolean;
+      evidenceStatus: string | null;
+      displayState: string;
+      relationType: string | null;
+      relationTargetEventId: string | null;
+    };
+    const OWN = "e2e-20261030185449";
+    let rows: Row[];
+    let nextId: number;
+
+    function row(eventId: string, overrides: Partial<Row> = {}): Row {
+      return {
+        id: nextId++,
+        furnisherId: "fur_e2etest01",
+        eventId,
+        subjectRef: event.subject_ref,
+        dataClass: "test",
+        proofOk: true,
+        evidenceStatus: "needs_review",
+        displayState: "unverified",
+        relationType: null,
+        relationTargetEventId: null,
+        ...overrides,
+      };
+    }
+    const byId = (eventId: string) => rows.find(r => r.eventId === eventId);
+
+    beforeEach(() => {
+      rows = [];
+      nextId = 1;
+      ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+      db.findOutcomeEvent.mockResolvedValue(undefined);
+      db.getOutcomeLine.mockImplementation(async (_f: string, eventId: string) => {
+        const found = byId(eventId);
+        return found && { ...found };
+      });
+      db.findRelatingOutcomeLines.mockImplementation(async (_f: string, eventId: string) =>
+        rows.filter(r => r.relationTargetEventId === eventId).map(r => ({ ...r }))
+      );
+      db.setOutcomeEventDisplayState.mockImplementation(async (id: number, state: string) => {
+        rows.find(r => r.id === id)!.displayState = state;
+      });
+    });
+
+    it("applies a signed withdrawal to the furnisher's earlier line", async () => {
+      rows.push(
+        row("e2e-original"),
+        row(OWN, { relationType: "withdraws", relationTargetEventId: "e2e-original" })
+      );
+      const { io, printed } = fakeIO();
+
+      expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(0);
+      expect(byId("e2e-original")!.displayState).toBe("withdrawn");
+      expect(printed()).toContain(
+        "withdraws e2e-original: applied; that line is now withdrawn"
+      );
+    });
+
+    it("waits for a target that is not stored yet", async () => {
+      rows.push(row(OWN, { relationType: "withdraws", relationTargetEventId: "e2e-original" }));
+      const { io, printed } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(db.setOutcomeEventDisplayState).not.toHaveBeenCalled();
+      expect(printed()).toContain(
+        "withdraws e2e-original: fur_e2etest01 has no such line yet; it takes effect when that line is stored"
+      );
+    });
+
+    it("does not apply a relation whose own proof has not passed", async () => {
+      rows.push(
+        row("e2e-original"),
+        row(OWN, {
+          proofOk: false,
+          relationType: "withdraws",
+          relationTargetEventId: "e2e-original",
+        })
+      );
+      const { io, printed } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(byId("e2e-original")!.displayState).toBe("unverified");
+      expect(printed()).toContain(
+        "withdraws e2e-original: not applied, its own proof has not passed"
+      );
+    });
+
+    it("restores a target when a relation that applied no longer does", async () => {
+      rows.push(
+        row("e2e-original", { displayState: "withdrawn" }),
+        row(OWN, {
+          proofOk: false,
+          relationType: "withdraws",
+          relationTargetEventId: "e2e-original",
+        })
+      );
+      const { io, printed } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(byId("e2e-original")!.displayState).toBe("unverified");
+      expect(printed()).toContain(
+        "withdraws e2e-original: not applied, its own proof has not passed; that line is now unverified"
+      );
+    });
+
+    it("settles a line stored after the line that withdraws it", async () => {
+      rows.push(
+        row(OWN),
+        row("e2e-later", { relationType: "withdraws", relationTargetEventId: OWN })
+      );
+      const { io, printed } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(byId(OWN)!.displayState).toBe("withdrawn");
+      expect(printed()).toContain("now shown as withdrawn");
+    });
+
+    it("ends a dispute the furnisher withdraws, along the chain", async () => {
+      rows.push(
+        row("e2e-a", { displayState: "disputed" }),
+        row("e2e-b", { relationType: "disputes", relationTargetEventId: "e2e-a" }),
+        row(OWN, { relationType: "withdraws", relationTargetEventId: "e2e-b" })
+      );
+      const { io, printed } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(byId("e2e-b")!.displayState).toBe("withdrawn");
+      expect(byId("e2e-a")!.displayState).toBe("unverified");
+      expect(printed()).toContain(
+        "disputes e2e-a by e2e-b: that line is now unverified"
+      );
+    });
+
+    it("keeps a correction in force when the furnisher withdraws it", async () => {
+      rows.push(
+        row("e2e-a", { displayState: "superseded" }),
+        row("e2e-b", { relationType: "corrects", relationTargetEventId: "e2e-a" }),
+        row(OWN, { relationType: "withdraws", relationTargetEventId: "e2e-b" })
+      );
+      const { io } = fakeIO();
+
+      await runIntake(["--test-data", "events.jsonl"], io);
+      expect(byId("e2e-b")!.displayState).toBe("withdrawn");
+      expect(byId("e2e-a")!.displayState).toBe("superseded");
+    });
+
+    it("exits 1 when a display state cannot be settled", async () => {
+      db.getOutcomeLine.mockRejectedValue(new Error("connection lost"));
+      const { io, printed } = fakeIO();
+
+      expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+      expect(printed()).toContain(
+        "display state not settled (connection lost); run again to settle it"
+      );
+    });
   });
 
   it("does not send a line that is not a signed v1 event", async () => {

@@ -8,7 +8,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 
 - **No public endpoint accepts an outcome.** Intake is a script the operator runs by hand. No HTTP or tRPC route reaches it.
 - **Test data only.** Every run must carry `--test-data`. A run without it is refused before anything is sent, because outside data waits on the retention decision (decision 5, provisional at 24 months, pending counsel) and on two-person review. Until both exist, the solo-operator path is limited to test data and internal dry runs. Rows are stored with data class `test`.
-- **Every line is `unverified`.** A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. The intake also checks each line's evidence against the chain where a check exists (`docs/evidence-verifier.md`) and stores the result, but showing a line as `verified` also needs two-person review, which is not built, so nothing sets it yet.
+- **No line is `verified`.** A line shows as `unverified`, or as `withdrawn`, `superseded` or `disputed` once a later signed line from its furnisher says so (`docs/line-states.md`). A passing proof shows that CounterAudit sealed this exact signed event in the Bureau's org and that the furnisher's registered key signed it. It does not show that the outcome happened. The intake also checks each line's evidence against the chain where a check exists (`docs/evidence-verifier.md`) and stores the result, but showing a line as `verified` also needs two-person review, which is not built, so nothing sets it yet.
 - **The Bureau holds no private keys.** Furnishers sign with their own keys. The operator registers each furnisher's public key in CounterAudit (`POST /v1/admin/outcome-signers`, which needs CounterAudit's admin TOTP). This code never registers keys.
 
 ## Before a run
@@ -39,6 +39,8 @@ pnpm furnish:intake --test-data signed.jsonl
 For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
 
 Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
+
+After storing a line, the intake settles its display state and, if the line carries a `relation`, its target's: `withdraws ... applied, that line is now withdrawn`, `not applied` with the reason, or `no such line yet` when the target has not been stored. `docs/line-states.md` has the rules.
 
 ## What each result means
 
@@ -76,4 +78,4 @@ The evidence is then reported as `verified`, `needs review`, `FAILED` or `not fi
 
 ## Not built yet
 
-Display states other than `unverified` (disputes, withdrawals, supersession, and two-person review of evidence), furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
+The `verified` display state and two-person review, subject disputes, furnisher records, assembling files, the unsigned CSV pilot fallback, and any intake of outside data.
