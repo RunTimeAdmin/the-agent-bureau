@@ -196,6 +196,20 @@ async function needDatabase(io: ReviewIO): Promise<boolean> {
   return true;
 }
 
+const PAYMENT_OUTCOMES = new Set(["paid", "refunded", "payment_failed"]);
+
+/**
+ * What a line's evidence proved, by the names decided for review finding M-04
+ * (docs/independent-payer.md): a verified payment proves a transfer settled, not
+ * who controls the payer. The stored status stays `verified` until these become
+ * the states in code, before any external file or API.
+ */
+export function evidenceLabel(outcome: string, status: string | null): string {
+  if (status !== "verified") return status ?? "not checked";
+  if (outcome === "payment_failed") return "payment_failure_verified";
+  return PAYMENT_OUTCOMES.has(outcome) ? "payment_settlement_verified" : "verified";
+}
+
 async function queue(io: ReviewIO, reviewers: Record<string, Reviewer>) {
   if (!(await needDatabase(io))) return 2;
   const lines = await listOutcomeLines();
@@ -224,7 +238,15 @@ async function queue(io: ReviewIO, reviewers: Record<string, Reviewer>) {
       [
         `${line.furnisherId}/${line.eventId}  ${line.outcome}  ${line.dataClass} data  shown ${line.displayState}`,
         `  hash ${line.signedEventHash}`,
-        `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${line.evidenceStatus ?? "not checked"}${reasons ? `: ${reasons}` : ""}`,
+        `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${evidenceLabel(line.outcome, line.evidenceStatus)}${reasons ? `: ${reasons}` : ""}`,
+        // Subject control is Phase 3 and the funding screen is not built, so a
+        // payment line has neither yet (docs/independent-payer.md, layers 2 and 3).
+        ...(PAYMENT_OUTCOMES.has(line.outcome)
+          ? [
+              "  subject_control unproven; payer_independence_screen inconclusive (not built yet)",
+              "  check: a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered; reject if you judge the payer related to the furnisher",
+            ]
+          : []),
         release.released
           ? `  released (${release.released === "solo_test" ? "one reviewer, test data" : "two reviewers"})`
           : `  review: ${release.holdingBack}`,
