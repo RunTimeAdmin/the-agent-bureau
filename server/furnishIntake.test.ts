@@ -1,3 +1,4 @@
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +32,9 @@ vi.mock("./evidence", async importOriginal => {
   return { ...actual, verifyEvidence: evidence.verifyEvidence };
 });
 
+import bs58 from "bs58";
 import { runIntake, type IntakeIO } from "./furnishIntake";
+import { canonicalizeJson } from "./outcomeProof";
 
 // The real CounterAudit output in fixtures/counteraudit (see
 // outcomeProof.test.ts), so the proof check below runs for real.
@@ -680,5 +683,186 @@ describe("runIntake", () => {
     expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
     expect(printed()).toContain("line 1: not sent");
     expect(printed()).toContain("line 2: not sent: not valid JSON");
+  });
+});
+
+// Packets a furnisher sealed in its own CounterAudit organization
+// (docs/cross-org-intake.md). CounterAudit's proofs there carry expires_at, so
+// these sign their own proofs the way CounterAudit does (eddsa-jcs-2022), with
+// a test export key, over the fixture proof's fields.
+describe("runIntake --sealed", () => {
+  const FUR_ORG = "4f1d2c3b-5a6e-4b7c-8d9e-0f1a2b3c4d5e";
+  const SIGNER_KEY = proof.outcome_claim.signer.public_key as string;
+  const exportKeys = generateKeyPairSync("ed25519");
+  const testJwks = {
+    keys: [{ ...exportKeys.publicKey.export({ format: "jwk" }), kid: "test-export-1" }],
+  };
+  const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest();
+
+  function signProof(payload: Record<string, unknown>) {
+    const options = {
+      type: "DataIntegrityProof",
+      cryptosuite: "eddsa-jcs-2022",
+      created: "2026-10-31T00:00:00.000Z",
+      verificationMethod: "/.well-known/counteraudit-export-jwk.json#test-export-1",
+      proofPurpose: "assertionMethod",
+    };
+    const data = Buffer.concat([sha256(canonicalizeJson(options)), sha256(canonicalizeJson(payload))]);
+    return {
+      ...payload,
+      signature: {
+        algorithm: "eddsa-jcs-2022",
+        digest: sha256(canonicalizeJson(payload)).toString("hex"),
+        signature: `z${bs58.encode(sign(null, data, exportKeys.privateKey))}`,
+        key_id: "test-export-1",
+        proof: options,
+      },
+    };
+  }
+
+  const { signature: _signature, ...unsignedProof } = proof;
+  const IN_23_MONTHS = "2028-09-30T19:00:00.000Z";
+  const sealedProof = (changes: Record<string, unknown> = {}) =>
+    signProof({ ...unsignedProof, org_id: FUR_ORG, expires_at: IN_23_MONTHS, ...changes });
+
+  const registry = (status: "active" | "revoked" = "active", publicKey = SIGNER_KEY) => ({
+    [event.furnisher_id]: {
+      counterauditOrgId: FUR_ORG,
+      keys: { [event.key_id]: { publicKey, status } },
+    },
+  });
+  const sealedLine = JSON.stringify({ packet_id: proof.packet_id, event });
+
+  beforeEach(() => {
+    // A sealed run needs no Bureau CounterAudit key.
+    vi.stubEnv("COUNTERAUDIT_ORG_ID", "");
+    vi.stubEnv("COUNTERAUDIT_INGEST_KEY", "");
+    ca.fetchJwks.mockResolvedValue({ ok: true, jwks: testJwks });
+    ca.fetchProof.mockResolvedValue({ ok: true, proof: sealedProof() });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+  });
+
+  async function run(furnishers = registry(), text = sealedLine) {
+    const { io, printed } = fakeIO(text);
+    const code = await runIntake(["--test-data", "--sealed", "sealed.jsonl"], io, furnishers);
+    return { code, printed };
+  }
+
+  it("stores a packet from the furnisher's own organization once its proof verifies, sending nothing", async () => {
+    const signed = sealedProof();
+    ca.fetchProof.mockResolvedValue({ ok: true, proof: signed });
+    const { code, printed } = await run();
+    expect(code).toBe(0);
+    expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
+    expect(ca.fetchProof).toHaveBeenCalledWith(proof.packet_id);
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(row).toMatchObject({
+      furnisherId: "fur_e2etest01",
+      packetId: proof.packet_id,
+      entryHash: proof.entry_hash,
+      // CounterAudit's signed proof, the line's record of what was sealed.
+      receipt: signed,
+      proofOk: true,
+      dataClass: "test",
+      displayState: "unverified",
+    });
+    expect(row.proofChecks).toMatchObject({ org_id: { ok: true }, registered_key: { ok: true }, retention: { ok: true } });
+    expect(printed()).toContain(`packet ${proof.packet_id} (furnisher's listed organization ${FUR_ORG})`);
+    expect(printed()).toContain("proof verified");
+  });
+
+  it("refuses a furnisher or key the Bureau does not list, before fetching anything", async () => {
+    for (const furnishers of [{}, registry("revoked")]) {
+      ca.fetchProof.mockClear();
+      const { code, printed } = await run(furnishers);
+      expect(code).toBe(1);
+      expect(printed()).toMatch(/refused: .*(not a registered furnisher|is revoked)/);
+      expect(ca.fetchProof).not.toHaveBeenCalled();
+    }
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+  });
+
+  it("stores nothing when the proof names another organization, and checks no evidence for it", async () => {
+    ca.fetchProof.mockResolvedValue({ ok: true, proof: sealedProof({ org_id: TEST_ORG }) });
+    evidence.verifyEvidence.mockClear();
+    const { code, printed } = await run();
+    expect(code).toBe(1);
+    expect(printed()).toContain("proof FAILED (org_id)");
+    expect(printed()).toContain("stored only once its proof verifies");
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+    expect(evidence.verifyEvidence).not.toHaveBeenCalled();
+  });
+
+  it("leaves alone a line the Bureau holds from its own organization when the file names that packet", async () => {
+    // The real fixture packet, sealed in the Bureau's organization, and the
+    // line already stored from it.
+    db.findOutcomeEvent.mockResolvedValue(stored);
+    ca.fetchJwks.mockResolvedValue({ ok: true, jwks });
+    ca.fetchProof.mockResolvedValue({ ok: true, proof });
+    const { code, printed } = await run();
+    expect(code).toBe(1);
+    expect(printed()).toContain("not updated: the Bureau holds this line from another organization");
+    expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
+    expect(db.updateOutcomeEventEvidence).not.toHaveBeenCalled();
+  });
+
+  it("refuses a furnisher listed under the Bureau's own organization", async () => {
+    vi.stubEnv("COUNTERAUDIT_ORG_ID", FUR_ORG);
+    const { code, printed } = await run();
+    expect(code).toBe(1);
+    expect(printed()).toContain("listed under the Bureau's own CounterAudit organization");
+    expect(ca.fetchProof).not.toHaveBeenCalled();
+  });
+
+  it("stores nothing signed under a key the Bureau does not list for the furnisher", async () => {
+    const other = generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }).x as string;
+    const { code, printed } = await run(registry("active", `ed25519:${other}`));
+    expect(code).toBe(1);
+    expect(printed()).toContain("registered_key: the proof's signer key is not the key the Bureau lists");
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+  });
+
+  it("requires the proof to show erasure within 24 months of receipt", async () => {
+    const { expires_at: _none, ...withoutExpiry } = { ...unsignedProof, org_id: FUR_ORG, expires_at: undefined };
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [signProof(withoutExpiry), "not sealed under a retention policy"],
+      // 24 months after the fixture's seal is 2028-10-30.
+      [sealedProof({ expires_at: "2028-11-30T19:00:00.000Z" }), "later than 24 months after CounterAudit sealed it"],
+      [sealedProof({ expires_at: "2026-10-01T00:00:00.000Z" }), "the packet expired"],
+    ];
+    for (const [signed, message] of cases) {
+      ca.fetchProof.mockResolvedValue({ ok: true, proof: signed });
+      const { code, printed } = await run();
+      expect(code).toBe(1);
+      expect(printed()).toContain(message);
+    }
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+  });
+
+  it("records only CounterAudit's own checks on a line it already holds, so a packet past its expiry does not undo it", async () => {
+    db.findOutcomeEvent.mockResolvedValue(stored);
+    ca.fetchProof.mockResolvedValue({ ok: true, proof: sealedProof({ expires_at: "2026-10-01T00:00:00.000Z" }) });
+    const { printed } = await run();
+    expect(printed()).toContain("retention: the packet expired");
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+    const [id, update] = db.updateOutcomeEventProof.mock.calls[0];
+    expect(id).toBe(7);
+    expect(update.proofOk).toBe(true);
+    expect(Object.keys(update.proofChecks)).not.toContain("retention");
+    expect(Object.keys(update.proofChecks)).not.toContain("registered_key");
+  });
+
+  it("does not read a line that is not a packet id and an event", async () => {
+    const text = [
+      JSON.stringify(event),
+      JSON.stringify({ packet_id: "not-a-packet", event }),
+      "{",
+    ].join("\n");
+    const { code, printed } = await run(registry(), text);
+    expect(code).toBe(1);
+    expect(printed()).toContain('line 1: not read: a sealed line is {"packet_id": ..., "event": {...}}');
+    expect(printed()).toContain("line 2: not read: packet_id is not a CounterAudit packet id");
+    expect(printed()).toContain("line 3: not read: not valid JSON");
+    expect(ca.fetchProof).not.toHaveBeenCalled();
   });
 });

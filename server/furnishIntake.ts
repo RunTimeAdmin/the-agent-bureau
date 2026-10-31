@@ -30,8 +30,10 @@ import {
   isRecord,
   signedEventHash,
   verifyOutcomeProof,
+  type CheckResult,
   type ProofVerification,
 } from "./outcomeProof";
+import { FURNISHERS, registeredSigner, type Furnisher } from "./furnishers";
 import { settleDisplayStates } from "./settleLines";
 import {
   EVIDENCE_KEY_INDEX,
@@ -40,6 +42,12 @@ import {
 } from "../drizzle/schema";
 
 export const TEST_DATA_FLAG = "--test-data";
+// Lines of packets furnishers sealed in their own CounterAudit organizations
+// (docs/cross-org-intake.md), instead of events for the Bureau to seal.
+export const SEALED_FLAG = "--sealed";
+// The retention baseline (Phase 0 decision 5): a packet sealed elsewhere must
+// show it will be erased within this long of the Bureau receiving it.
+export const RETENTION_MONTHS = 24;
 
 export const REFUSAL = [
   `Refused: this intake accepts only runs marked ${TEST_DATA_FLAG}.`,
@@ -49,7 +57,10 @@ export const REFUSAL = [
   "test data and internal dry runs.",
 ].join("\n");
 
-const USAGE = `Usage: pnpm furnish:intake ${TEST_DATA_FLAG} <signed.jsonl>`;
+const USAGE = [
+  `Usage: pnpm furnish:intake ${TEST_DATA_FLAG} <signed.jsonl>`,
+  `       pnpm furnish:intake ${TEST_DATA_FLAG} ${SEALED_FLAG} <sealed.jsonl>`,
+].join("\n");
 
 export type IntakeIO = {
   readText(path: string): Promise<string>;
@@ -327,6 +338,196 @@ function newTally(): Tally {
   };
 }
 
+/** Adds calendar months in UTC, clamping to the month's last day as CounterAudit does. */
+function addMonthsUtc(date: Date, months: number): Date {
+  const out = new Date(date.getTime());
+  const day = out.getUTCDate();
+  out.setUTCDate(1);
+  out.setUTCMonth(out.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
+  out.setUTCDate(Math.min(day, lastDay));
+  return out;
+}
+
+// What a new line from a packet sealed in a furnisher's own organization must
+// also show, on top of the proof checks every line runs: that the key CounterAudit
+// verified is the one the Bureau lists for the furnisher (the furnisher
+// registered it there itself), and that CounterAudit has the packet scheduled
+// for erasure within the retention baseline of its seal (so the org has a
+// policy of 24 months or less). Both come from the signed proof. A hold the
+// furnisher's org places on the packet can still keep it longer, and the proof
+// does not show holds. These decide only whether a new line is stored.
+function sealedChecks(
+  proof: Record<string, unknown>,
+  publicKey: string,
+  receivedAt: Date
+): Record<"registered_key" | "retention", CheckResult> {
+  const claim = isRecord(proof.outcome_claim) ? proof.outcome_claim : {};
+  const signer = isRecord(claim.signer) ? claim.signer : {};
+  const expires =
+    typeof proof.expires_at === "string" ? new Date(proof.expires_at) : null;
+  const sealedAt =
+    typeof proof.created_at === "string" ? new Date(proof.created_at) : null;
+  let retention: CheckResult;
+  if (!expires || Number.isNaN(expires.getTime())) {
+    retention = {
+      ok: false,
+      detail: "the proof shows no expires_at: the packet was not sealed under a retention policy",
+    };
+  } else if (!sealedAt || Number.isNaN(sealedAt.getTime())) {
+    retention = { ok: false, detail: "the proof shows no created_at" };
+  } else if (expires.getTime() <= receivedAt.getTime()) {
+    retention = { ok: false, detail: `the packet expired at ${proof.expires_at}` };
+  } else if (expires.getTime() > addMonthsUtc(sealedAt, RETENTION_MONTHS).getTime()) {
+    retention = {
+      ok: false,
+      detail: `expires_at ${proof.expires_at} is later than ${RETENTION_MONTHS} months after CounterAudit sealed it (${addMonthsUtc(sealedAt, RETENTION_MONTHS).toISOString()})`,
+    };
+  } else {
+    retention = { ok: true };
+  }
+  return {
+    registered_key:
+      signer.public_key === publicKey
+        ? { ok: true }
+        : { ok: false, detail: "the proof's signer key is not the key the Bureau lists for this furnisher" },
+    retention,
+  };
+}
+
+const PACKET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// One line of a sealed file: `{"packet_id": ..., "event": {...}}`, a packet the
+// furnisher sealed in its own CounterAudit organization and the signed event in
+// it. Nothing is sent to CounterAudit; the proof is fetched without a key.
+async function intakeSealedLine(
+  text: string,
+  receivedAt: Date,
+  io: IntakeIO,
+  tally: Tally,
+  furnishers: Record<string, Furnisher>
+): Promise<{ report: string; clean: boolean }> {
+  let line: unknown;
+  try {
+    line = JSON.parse(text);
+  } catch {
+    tally.notSent++;
+    return { report: "not read: not valid JSON", clean: false };
+  }
+  if (!isRecord(line) || !isRecord(line.event) || typeof line.packet_id !== "string") {
+    tally.notSent++;
+    return { report: 'not read: a sealed line is {"packet_id": ..., "event": {...}}', clean: false };
+  }
+  const packetId = line.packet_id.toLowerCase();
+  if (!PACKET_ID.test(packetId)) {
+    tally.notSent++;
+    return { report: "not read: packet_id is not a CounterAudit packet id", clean: false };
+  }
+  const event = line.event;
+  const fields = readEventFields(event);
+  if (typeof fields === "string") {
+    tally.notSent++;
+    return { report: `not read: ${fields}`, clean: false };
+  }
+  const ref = `${fields.furnisherId}/${fields.eventId}`;
+  const signer = registeredSigner(furnishers, fields.furnisherId, fields.keyId);
+  if (!signer.ok) {
+    tally.refused++;
+    return { report: `${ref}: refused: ${signer.reason}. Not stored.`, clean: false };
+  }
+  // The two intakes keep apart: the Bureau's own organization is the normal one's.
+  if (ENV.counterauditOrgId && signer.counterauditOrgId === ENV.counterauditOrgId) {
+    tally.refused++;
+    return {
+      report: `${ref}: refused: ${fields.furnisherId} is listed under the Bureau's own CounterAudit organization, whose packets the normal intake takes. Not stored.`,
+      clean: false,
+    };
+  }
+
+  const parts = [`packet ${packetId} (furnisher's listed organization ${signer.counterauditOrgId})`];
+  // The proof must name the furnisher's own organization: the org check in
+  // verifyOutcomeProof pins it.
+  const proof = await checkProof(event, packetId, signer.counterauditOrgId);
+  const checkedAt = io.now();
+  let proofOk = false;
+  let orgMatches = false;
+  let proofColumns: RecordContext["proofColumns"] = null;
+  // On a line the Bureau already holds, only CounterAudit's own checks are
+  // recorded: whether the furnisher is still listed, or the packet is past its
+  // expiry by now, says nothing about what was sealed, and must not undo a line
+  // (a withdrawal stops acting once its proof fails).
+  let existingProofColumns: RecordContext["proofColumns"] = null;
+  if (!proof.ran) {
+    tally.proofNotChecked++;
+    parts.push(`proof not checked: ${proof.reason}`);
+  } else {
+    const extra = sealedChecks(proof.proof, signer.publicKey, receivedAt);
+    const checks: Record<string, CheckResult> = { ...proof.verification.checks, ...extra };
+    proofOk = Object.values(checks).every(c => c.ok);
+    orgMatches = proof.verification.checks.org_id.ok;
+    proofColumns = { proofOk, proofChecks: checks, proofCheckedAt: checkedAt };
+    existingProofColumns = {
+      proofOk: proof.verification.ok,
+      proofChecks: proof.verification.checks,
+      proofCheckedAt: checkedAt,
+    };
+    if (proofOk) {
+      tally.proofVerified++;
+      parts.push("proof verified");
+    } else {
+      tally.proofFailed++;
+      const failed = Object.entries(checks)
+        .filter(([, c]) => !c.ok)
+        .map(([name, c]) => (c.detail && !(PROOF_CHECKS as readonly string[]).includes(name) ? `${name}: ${c.detail}` : name));
+      parts.push(`proof FAILED (${failed.join(", ")})`);
+    }
+  }
+  if (!proofOk) {
+    // Nothing new is stored, and a line already held is left alone when the
+    // proof names another organization: it was stored from that one.
+    const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
+    if (!existing) {
+      tally.notStored++;
+      parts.push(
+        "not stored: a packet sealed outside the Bureau's organization is stored only once its proof verifies"
+      );
+      return { report: `${ref}: ${parts.join(", ")}`, clean: false };
+    }
+    if (proof.ran && !orgMatches) {
+      tally.notStored++;
+      parts.push(
+        "not updated: the Bureau holds this line from another organization than the one the proof names"
+      );
+      return { report: `${ref}: ${parts.join(", ")}`, clean: false };
+    }
+  }
+  const signed = proof.ran ? proof.proof : {};
+  const sealedFields = {
+    entryHash: String(signed.entry_hash ?? ""),
+    sequence: typeof signed.sequence === "number" ? signed.sequence : null,
+    caCreatedAt: new Date(String(signed.created_at ?? receivedAt.toISOString())),
+  };
+  return recordLine({
+    event,
+    fields,
+    ref,
+    parts,
+    packetId,
+    // CounterAudit's signed proof, kept as the line's record of what was
+    // sealed: it checks offline against the export key after the packet is gone.
+    receipt: proofOk && proof.ran ? proof.proof : null,
+    sealedFields,
+    receivedAt,
+    proofColumns,
+    existingProofColumns,
+    proofOk,
+    allowInsert: proofOk,
+    retryHint: "",
+    io,
+    tally,
+  });
+}
+
 // One line of the file. Returns the report line and whether it went through
 // cleanly (sealed, proof verified, stored).
 async function intakeLine(
@@ -427,6 +628,67 @@ async function intakeLine(
         caCreatedAt: new Date(packet.created_at),
       };
 
+  return recordLine({
+    event,
+    fields,
+    ref,
+    parts,
+    packetId: packet.packet_id,
+    receipt: packet.receipt,
+    sealedFields,
+    receivedAt,
+    proofColumns,
+    proofOk,
+    allowInsert: true,
+    io,
+    tally,
+  });
+}
+
+type RecordContext = {
+  event: Record<string, unknown>;
+  fields: EventFields;
+  ref: string;
+  parts: string[];
+  packetId: string;
+  receipt: Record<string, unknown> | null;
+  sealedFields: { entryHash: string; sequence: number | null; caCreatedAt: Date };
+  receivedAt: Date;
+  proofColumns: {
+    proofOk: boolean;
+    proofChecks: Record<string, CheckResult>;
+    proofCheckedAt: Date;
+  } | null;
+  /** What a line already held records; proofColumns when not given. */
+  existingProofColumns?: RecordContext["proofColumns"];
+  proofOk: boolean;
+  /** False for a sealed line whose proof did not verify: an existing line is updated, none is created. */
+  allowInsert: boolean;
+  /** Added to "run again to store it" after a failed write. */
+  retryHint?: string;
+  io: IntakeIO;
+  tally: Tally;
+};
+
+// The half of a line both intakes share once its packet and proof are known:
+// the evidence check, storing or updating the line, and settling its state.
+async function recordLine({
+  event,
+  fields,
+  ref,
+  parts,
+  packetId,
+  receipt,
+  sealedFields,
+  receivedAt,
+  proofColumns,
+  existingProofColumns = proofColumns,
+  proofOk,
+  allowInsert,
+  retryHint = ", CounterAudit will answer 200 with the same packet",
+  io,
+  tally,
+}: RecordContext): Promise<{ report: string; clean: boolean }> {
   const checked = await verifyEvidence(event);
   const evidenceCheckedAt = io.now();
   let claim = claimedCharge(checked, proofOk);
@@ -473,7 +735,12 @@ async function intakeLine(
         await write(evidenceColumns(evidence, claim, evidenceCheckedAt));
       }
     };
-    if (!existing) {
+    if (!existing && !allowInsert) {
+      tally.notStored++;
+      parts.push(
+        "not stored: a packet sealed outside the Bureau's organization is stored only once its proof verifies"
+      );
+    } else if (!existing) {
       await writeEvidence(columns => insertOutcomeEvent({
         furnisherId: fields.furnisherId,
         eventId: fields.eventId,
@@ -485,10 +752,10 @@ async function intakeLine(
         relationTargetEventId: fields.relationTargetEventId,
         signedEvent: event,
         signedEventHash: signedEventHash(event),
-        packetId: packet.packet_id,
+        packetId: packetId,
         ...sealedFields,
         receivedAt,
-        receipt: packet.receipt,
+        receipt: receipt,
         ...(proofColumns ?? { proofOk: false }),
         ...columns,
         displayState: "unverified",
@@ -498,7 +765,7 @@ async function intakeLine(
       stored = true;
       parts.push("stored as unverified test data");
       if (takeover) parts.push(takeover);
-    } else if (existing.packetId !== packet.packet_id) {
+    } else if (existing.packetId !== packetId) {
       tally.notStored++;
       parts.push(
         `not stored: the Bureau already holds this event as packet ${existing.packetId}`
@@ -515,8 +782,8 @@ async function intakeLine(
       // and data class. Only checks that reached a result are recorded: a
       // proof check that ran, and an evidence check that is neither pending
       // nor an error.
-      if (proofColumns)
-        await updateOutcomeEventProof(existing.id, proofColumns);
+      if (existingProofColumns)
+        await updateOutcomeEventProof(existing.id, existingProofColumns);
       const evidenceReached =
         evidence.status !== "pending" && evidence.status !== "error";
       if (evidenceReached)
@@ -539,7 +806,7 @@ async function intakeLine(
   } catch (error) {
     tally.notStored++;
     parts.push(
-      `not stored (${describeError(error)}); run again to store it, CounterAudit will answer 200 with the same packet`
+      `not stored (${describeError(error)}); run again to store it${retryHint}`
     );
   }
 
@@ -575,7 +842,8 @@ async function intakeLine(
  */
 export async function runIntake(
   argv: string[],
-  io: IntakeIO = defaultIO
+  io: IntakeIO = defaultIO,
+  furnishers: Record<string, Furnisher> = FURNISHERS
 ): Promise<number> {
   const args = argv.filter(arg => arg !== "--");
   if (!args.includes(TEST_DATA_FLAG)) {
@@ -583,20 +851,26 @@ export async function runIntake(
     return 2;
   }
   const files = args.filter(arg => !arg.startsWith("--"));
+  const sealed = args.includes(SEALED_FLAG);
   const unknown = args.filter(
-    arg => arg.startsWith("--") && arg !== TEST_DATA_FLAG
+    arg => arg.startsWith("--") && arg !== TEST_DATA_FLAG && arg !== SEALED_FLAG
   );
   if (unknown.length > 0 || files.length !== 1) {
     io.log(USAGE);
     return 2;
   }
 
-  // Names only: the values are secrets or connection strings.
-  const missing = [
-    ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
-    ["COUNTERAUDIT_INGEST_KEY", ENV.counterauditIngestKey],
-    ["DATABASE_URL", ENV.databaseUrl],
-  ]
+  // Names only: the values are secrets or connection strings. A sealed run
+  // sends nothing to CounterAudit, so it needs no key of the Bureau's.
+  const missing = (
+    sealed
+      ? [["DATABASE_URL", ENV.databaseUrl]]
+      : [
+          ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
+          ["COUNTERAUDIT_INGEST_KEY", ENV.counterauditIngestKey],
+          ["DATABASE_URL", ENV.databaseUrl],
+        ]
+  )
     .filter(([, value]) => !value)
     .map(([name]) => name);
   if (missing.length > 0) {
@@ -621,7 +895,9 @@ export async function runIntake(
   }
 
   io.log(
-    `Test-data intake into CounterAudit org ${ENV.counterauditOrgId} at ${ENV.counterauditApiUrl}`
+    sealed
+      ? `Test-data intake of packets sealed in furnishers' own CounterAudit organizations, proofs from ${ENV.counterauditApiUrl}`
+      : `Test-data intake into CounterAudit org ${ENV.counterauditOrgId} at ${ENV.counterauditApiUrl}`
   );
   const tally = newTally();
   let lines = 0;
@@ -631,7 +907,9 @@ export async function runIntake(
     const line = fileLines[index].trim();
     if (line === "") continue;
     lines++;
-    const { report, clean } = await intakeLine(line, io.now(), io, tally);
+    const { report, clean } = sealed
+      ? await intakeSealedLine(line, io.now(), io, tally, furnishers)
+      : await intakeLine(line, io.now(), io, tally);
     if (!clean) allClean = false;
     io.log(`line ${index + 1}: ${report}`);
   }

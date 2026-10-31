@@ -1,6 +1,7 @@
 // Operator intake of signed outcome events into CounterAudit, test data only.
 // Usage: pnpm furnish:intake --test-data <signed.jsonl>
-// See docs/counteraudit-intake.md.
+//        pnpm furnish:intake --test-data --sealed <sealed.jsonl>
+// See docs/counteraudit-intake.md and docs/cross-org-intake.md.
 import "dotenv/config";
 import { closeDb } from "../server/db";
 import { runIntake } from "../server/furnishIntake";
