@@ -20,6 +20,11 @@ const metadata: Record<
     description:
       "One file per AI agent operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, built from outcomes businesses report. Facts with sources, never a score.",
   },
+  "/review-log": {
+    title: "Review Log | The Agent Bureau",
+    description:
+      "One run of the Agent Bureau's independent review log on testnet: reviewers seal their own signed decisions, and key changes need their signatures. With the real ids.",
+  },
   "/privacy": {
     title: "Privacy Notice | The Agent Bureau",
     description:

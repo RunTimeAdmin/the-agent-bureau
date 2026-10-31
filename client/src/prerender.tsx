@@ -11,6 +11,7 @@ import Home from "./pages/Home";
 import Information from "./pages/Information";
 import NotFound from "./pages/NotFound";
 import Play from "./pages/Play";
+import ReviewLog from "./pages/ReviewLog";
 export function caseTitle(caseId: string): string {
   return `BUREAU | Case ${caseId}: ${findCase(caseId)!.title}`;
 }
@@ -76,6 +77,15 @@ export function renderPage(pathname: string): {
       title: "The Agent Bureau | The File on Every Agent",
       description:
         "One file per AI agent operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, built from outcomes businesses report. Facts with sources, never a score.",
+      status: 200,
+      noindex: false,
+    };
+  if (pathname === "/review-log")
+    return {
+      body: wrap(<ReviewLog />),
+      title: "Review Log | The Agent Bureau",
+      description:
+        "One run of the Agent Bureau's independent review log on testnet: reviewers seal their own signed decisions, and key changes need their signatures. With the real ids.",
       status: 200,
       noindex: false,
     };

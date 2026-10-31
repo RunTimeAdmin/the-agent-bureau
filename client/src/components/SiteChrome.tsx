@@ -25,6 +25,7 @@ const links = [
   { label: "For furnishers", href: "/bureau#furnish" },
   { label: "Rules", href: "/bureau#rules" },
   { label: "How it works", href: "/bureau#how" },
+  { label: "Review log", href: "/review-log" },
 ];
 export function Header() {
   const [open, setOpen] = useState(false);
