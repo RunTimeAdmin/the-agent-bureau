@@ -417,6 +417,7 @@ const LINE_COLUMNS = {
   proofOk: outcomeEvents.proofOk,
   evidenceStatus: outcomeEvents.evidenceStatus,
   evidenceResult: outcomeEvents.evidenceResult,
+  evidenceKey: outcomeEvents.evidenceKey,
   signedEventHash: outcomeEvents.signedEventHash,
   displayState: outcomeEvents.displayState,
   relationType: outcomeEvents.relationType,
@@ -478,18 +479,15 @@ export async function setOutcomeEventDisplayState(
     .where(eq(outcomeEvents.id, id));
 }
 
-// Another stored line whose evidence matched the same settlement log, if any.
+// Another stored line that claims the same settlement log, if any.
 export async function findOtherOutcomeEventWithEvidence(
   evidenceKey: string,
   furnisherId: string,
   eventId: string
-) {
+): Promise<Line | undefined> {
   const db = await requireDb();
   const [row] = await db
-    .select({
-      furnisherId: outcomeEvents.furnisherId,
-      eventId: outcomeEvents.eventId,
-    })
+    .select(LINE_COLUMNS)
     .from(outcomeEvents)
     .where(
       and(
@@ -502,6 +500,21 @@ export async function findOtherOutcomeEventWithEvidence(
     )
     .limit(1);
   return row;
+}
+
+// Hands a line's settlement claim on, for a line that corrects or supersedes
+// it (lineState takesOverClaim). Only clears the claim it was given.
+export async function releaseEvidenceClaim(
+  id: number,
+  evidenceKey: string
+): Promise<void> {
+  const db = await requireDb();
+  await db
+    .update(outcomeEvents)
+    .set({ evidenceKey: null })
+    .where(
+      and(eq(outcomeEvents.id, id), eq(outcomeEvents.evidenceKey, evidenceKey))
+    );
 }
 
 // Records a later evidence check (server/evidence.ts).

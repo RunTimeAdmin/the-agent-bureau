@@ -71,6 +71,13 @@
       "when": 1793418859592,
       "tag": "0009_outcome_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1793422659348,
+      "tag": "0010_unique_settlement_claim",
+      "breakpoints": true
     }
   ]
 }

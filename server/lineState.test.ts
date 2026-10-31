@@ -4,6 +4,7 @@ import {
   lineStates,
   relationProblem,
   releaseFor,
+  takesOverClaim,
   type Line,
   type Review,
 } from "./lineState";
@@ -21,6 +22,7 @@ function line(overrides: Partial<Line> = {}): Line {
     proofOk: true,
     evidenceStatus: null,
     evidenceResult: null,
+    evidenceKey: null,
     signedEventHash: "a".repeat(64),
     displayState: "unverified",
     relationType: null,
@@ -375,5 +377,73 @@ describe("releaseFor: two-person review", () => {
     expect(
       displayStateFor(lineStates(test, [relating("withdraws")], one))
     ).toBe("withdrawn");
+  });
+});
+
+describe("takesOverClaim: one settlement log, one line", () => {
+  const holder = line({ eventId: "charge-8-1" });
+  it.each([
+    ["corrects", {}, true],
+    ["supersedes", {}, true],
+    ["withdraws", {}, false],
+    ["disputes", {}, false],
+    ["corrects", { relationTargetEventId: "another-event" }, false],
+    ["corrects", { furnisherId: "fur_someoneelse1" }, false],
+    ["corrects", { proofOk: false }, false],
+    [
+      "corrects",
+      { subjectRef: { wallet: "0x451567A35648445143768d3D6e9072A50BB2d85F" } },
+      false,
+    ],
+    ["corrects", { dataClass: "live" as const }, false],
+  ] as const)(
+    "a line that %s the holder %j: %s",
+    (type, overrides, expected) => {
+      expect(takesOverClaim(relating(type, overrides), holder)).toBe(expected);
+    }
+  );
+
+  it("never lets a line without a relation take a claim", () => {
+    expect(takesOverClaim(line({ eventId: "charge-8-1-again" }), holder)).toBe(
+      false
+    );
+  });
+});
+
+describe("releaseFor: a line backed by a charge must hold its claim", () => {
+  const charge = {
+    chain_id: 5042002,
+    tx_hash:
+      "0xD6FBAF6EC24B0AE502B0DD4E3360619EB9052652ECBAF51AE5566D86AD6AAFE5",
+    log_index: 14,
+  };
+  const evidence = { status: "verified", reasons: [], charge };
+  const key =
+    "5042002:0xd6fbaf6ec24b0ae502b0dd4e3360619eb9052652ecbaf51ae5566d86ad6aafe5:14";
+  const approval: Review = {
+    id: 1,
+    reviewerId: "rev_alice",
+    decision: "approve",
+    signedEventHash: "a".repeat(64),
+    dataClass: "test",
+    evidenceDigest: evidenceDigest(evidence),
+    decidedAt: new Date("2026-10-31T10:00:00.000Z"),
+  };
+  const backed = (evidenceKey: string | null) =>
+    line({ evidenceStatus: "verified", evidenceResult: evidence, evidenceKey });
+
+  it("releases it while it holds the claim", () => {
+    expect(releaseFor(backed(key), [approval]).released).toBe("solo_test");
+  });
+
+  it.each([
+    ["holds no claim", null],
+    ["holds a different claim", "5042002:0xabc:1"],
+  ])("holds it back when it %s", (_name, evidenceKey) => {
+    expect(releaseFor(backed(evidenceKey), [approval])).toEqual({
+      released: null,
+      holdingBack:
+        "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it",
+    });
   });
 });

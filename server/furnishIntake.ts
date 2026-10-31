@@ -18,11 +18,13 @@ import {
   findOtherOutcomeEventWithEvidence,
   findOutcomeEvent,
   insertOutcomeEvent,
+  releaseEvidenceClaim,
   schemaReady,
   updateOutcomeEventEvidence,
   updateOutcomeEventProof,
 } from "./db";
 import { chargeKey, verifyEvidence, type EvidenceResult } from "./evidence";
+import { takesOverClaim, type Line } from "./lineState";
 import {
   PROOF_CHECKS,
   isRecord,
@@ -31,7 +33,11 @@ import {
   type ProofVerification,
 } from "./outcomeProof";
 import { settleDisplayStates } from "./settleLines";
-import { OUTCOMES, RELATION_TYPES } from "../drizzle/schema";
+import {
+  EVIDENCE_KEY_INDEX,
+  OUTCOMES,
+  RELATION_TYPES,
+} from "../drizzle/schema";
 
 export const TEST_DATA_FLAG = "--test-data";
 
@@ -182,27 +188,73 @@ function claimedCharge(
 }
 
 // What the chain cannot show: whether another stored line already claims the
-// same settlement log. One charge backs one line; a second is not verified.
-async function withSettlementReuse(
-  evidence: EvidenceResult,
-  claim: string | null,
+// same settlement log. One charge backs one line: a second line's evidence
+// fails, which no review can waive (review M-02, 2026-10-31), and it claims
+// nothing. The one exception is a line that corrects or supersedes the
+// holder, which takes the claim over.
+async function settlementHolder(
+  claim: string,
   fields: EventFields
-): Promise<EvidenceResult> {
-  if (!claim) return evidence;
+): Promise<string | null> {
   const other = await findOtherOutcomeEventWithEvidence(
     claim,
     fields.furnisherId,
     fields.eventId
   );
-  if (!other) return evidence;
+  return other ? `${other.furnisherId}/${other.eventId}` : null;
+}
+
+// The new line as lineState sees it, before it is stored.
+function asLine(fields: EventFields, proofOk: boolean): Line {
+  return {
+    id: 0,
+    furnisherId: fields.furnisherId,
+    eventId: fields.eventId,
+    subjectRef: fields.subjectRef,
+    dataClass: "test",
+    proofOk,
+    evidenceStatus: null,
+    evidenceResult: null,
+    evidenceKey: null,
+    signedEventHash: "",
+    displayState: "unverified",
+    relationType: fields.relationType,
+    relationTargetEventId: fields.relationTargetEventId,
+  };
+}
+
+function reusedCharge(
+  evidence: EvidenceResult,
+  holder: string | null
+): EvidenceResult {
   return {
     ...evidence,
-    status: evidence.status === "verified" ? "needs_review" : evidence.status,
+    status: "failed",
     reasons: [
       ...evidence.reasons,
-      `the same charge already backs ${other.furnisherId}/${other.eventId}`,
+      `the same charge already backs ${holder ?? "a line stored at the same time"}`,
     ],
   };
+}
+
+// True when a write failed because another line already holds the same
+// evidenceKey. Drizzle wraps the driver's error, so the causes are searched.
+function isEvidenceKeyConflict(error: unknown): boolean {
+  for (let e = error, depth = 0; e && typeof e === "object" && depth < 5; depth++) {
+    const { code, sqlMessage, cause } = e as {
+      code?: unknown;
+      sqlMessage?: unknown;
+      cause?: unknown;
+    };
+    if (code === "ER_DUP_ENTRY") {
+      // Matched at the end: the message also quotes the duplicated value.
+      return new RegExp(`for key '(?:[^']*\\.)?${EVIDENCE_KEY_INDEX}'$`).test(
+        String(sqlMessage ?? "")
+      );
+    }
+    e = cause;
+  }
+  return false;
 }
 
 // A claim, once stored, is never cleared by a later check, so a later check
@@ -377,15 +429,52 @@ async function intakeLine(
 
   const checked = await verifyEvidence(event);
   const evidenceCheckedAt = io.now();
-  const claim = claimedCharge(checked, proofOk);
+  let claim = claimedCharge(checked, proofOk);
   let evidence = checked;
 
   let stored = false;
   try {
     const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
-    evidence = await withSettlementReuse(checked, claim, fields);
+    const holder = claim
+      ? await findOtherOutcomeEventWithEvidence(
+          claim,
+          fields.furnisherId,
+          fields.eventId
+        )
+      : undefined;
+    // A correction takes the holder's claim over, but only when it is written
+    // (writeEvidence), so a line that is not stored takes nothing.
+    let takeoverFrom: typeof holder = undefined;
+    let takeover: string | null = null;
+    if (holder && claim) {
+      const label = `${holder.furnisherId}/${holder.eventId}`;
+      if (takesOverClaim(asLine(fields, proofOk), holder)) {
+        takeoverFrom = holder;
+      } else {
+        evidence = reusedCharge(checked, label);
+        claim = null;
+      }
+    }
+    // Writes the evidence, and if the unique key shows another run claimed the
+    // same charge in the meantime, writes it again as that run's second line.
+    const writeEvidence = async (
+      write: (columns: ReturnType<typeof evidenceColumns>) => Promise<void>
+    ) => {
+      try {
+        if (takeoverFrom && claim) {
+          await releaseEvidenceClaim(takeoverFrom.id, claim);
+          takeover = `takes over the charge from ${takeoverFrom.furnisherId}/${takeoverFrom.eventId}, which it ${fields.relationType}`;
+        }
+        await write(evidenceColumns(evidence, claim, evidenceCheckedAt));
+      } catch (error) {
+        if (!claim || !isEvidenceKeyConflict(error)) throw error;
+        evidence = reusedCharge(checked, await settlementHolder(claim, fields));
+        claim = null;
+        await write(evidenceColumns(evidence, claim, evidenceCheckedAt));
+      }
+    };
     if (!existing) {
-      await insertOutcomeEvent({
+      await writeEvidence(columns => insertOutcomeEvent({
         furnisherId: fields.furnisherId,
         eventId: fields.eventId,
         keyId: fields.keyId,
@@ -401,13 +490,14 @@ async function intakeLine(
         receivedAt,
         receipt: packet.receipt,
         ...(proofColumns ?? { proofOk: false }),
-        ...evidenceColumns(evidence, claim, evidenceCheckedAt),
+        ...columns,
         displayState: "unverified",
         dataClass: "test",
-      });
+      }));
       tally.stored++;
       stored = true;
       parts.push("stored as unverified test data");
+      if (takeover) parts.push(takeover);
     } else if (existing.packetId !== packet.packet_id) {
       tally.notStored++;
       parts.push(
@@ -430,9 +520,8 @@ async function intakeLine(
       const evidenceReached =
         evidence.status !== "pending" && evidence.status !== "error";
       if (evidenceReached)
-        await updateOutcomeEventEvidence(
-          existing.id,
-          evidenceColumns(evidence, claim, evidenceCheckedAt)
+        await writeEvidence(columns =>
+          updateOutcomeEventEvidence(existing.id, columns)
         );
       tally.alreadyStored++;
       stored = true;
@@ -445,6 +534,7 @@ async function intakeLine(
           ? `already stored; ${updated.join(" and ")} check${updated.length > 1 ? "s" : ""} updated`
           : "already stored; left unchanged"
       );
+      if (takeover) parts.push(takeover);
     }
   } catch (error) {
     tally.notStored++;
