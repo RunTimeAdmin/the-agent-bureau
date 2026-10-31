@@ -160,6 +160,16 @@ describe("replaying the review log", () => {
     expect(log.reviewers!.get("rev_alice")!.publicKey).toBe(people.alice.publicKey);
   });
 
+  it("counts only test-data decisions while the pinned genesis is the operator-held testnet one", () => {
+    const records = chain(...signedGenesis(), decision("alice"), decision("bob", { data_class: "test" }));
+    const testnet = replayReviewLog(records, PIN, PIN);
+    expect(testnet.testnet).toBe(true);
+    expect(testnet.decisions.map(d => d.decision.reviewer_id)).toEqual(["rev_bob"]);
+    const independent = replayReviewLog(records, PIN, null);
+    expect(independent.testnet).toBe(false);
+    expect(independent.decisions.map(d => d.decision.reviewer_id)).toEqual(["rev_alice", "rev_bob"]);
+  });
+
   it("counts a decision sealed before the genesis took effect, once it has", () => {
     const [a, b, c] = signedGenesis();
     expect(counted([a, decision("bob"), b, c])).toEqual(["rev_bob"]);
