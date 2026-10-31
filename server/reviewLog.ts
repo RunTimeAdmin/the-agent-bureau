@@ -33,7 +33,7 @@ export const QUORUM = 2;
 export const REVIEW_GENESIS: string | null = null;
 const SIGNING_CONTEXT = `${REVIEWER_KEY_SCHEMA}\n`;
 const SIGNATURE_PREFIX = "ed25519:";
-const REVIEWER_ID = /^rev_[a-z0-9]{3,32}$/;
+export const REVIEWER_ID = /^rev_[a-z0-9]{3,32}$/;
 const DECIDED_AT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 // A record dated further than this after it was sealed is not taken.
 const MAX_CLOCK_AHEAD_MS = 5 * 60 * 1000;

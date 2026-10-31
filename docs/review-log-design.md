@@ -2,8 +2,8 @@
 
 ```
 Status:     decided by the owner, 2026-10-31: option A, with the governance and disclosure
-            below, and the build choices in "Build design". Being built: build steps 1, 3
-            and 4 written; step 2 not yet.
+            below, and the build choices in "Build design". Built: steps 1 to 4 (step 2
+            on 2026-10-31). Not built: the redacted release bundle (with file assembly).
 Answers:    external review finding M-03 (the operator can suppress a reviewer's rejection)
 Relates to: docs/two-person-review.md, Phase 0 decision 6 (two-person review)
 ```
@@ -113,6 +113,6 @@ The Bureau reads the review chain in sequence order and applies each record as i
 ## Build outline
 
 1. CounterAudit: the connector and its two record forms. Tests that a malformed record, a public proof and the outcome fields are refused.
-2. CounterAudit: signed approvals for the review organization's API keys, checked against the reviewer set its chain establishes. Tests that a key change without a reviewer's signed approval, or with one for another request, is refused.
+2. CounterAudit: signed approvals for the review organization's API keys, checked against the reviewer set its chain establishes. Tests that a key change without a reviewer's signed approval, or with one for another request, is refused. Built 2026-10-31 with the owner's choices: which org is the review organization, and which genesis counts there, is a stored setting in CounterAudit that reviewers must approve changing once a genesis has taken effect; in that org a retention policy and erasure are refused outright; a new key takes one reviewer's approval, and revoking a key or changing the setting takes two different reviewers', so one reviewer and the operator can neither end the governance nor cut another reviewer off. The approval is `agent-bureau/key-approval/v1` (`server/keyApproval.ts`, `pnpm review approve-key`). CounterAudit's port of the rules runs the same shared vectors (`server/fixtures/review-vectors/review-log-v1.json`, built by `pnpm review:vectors`).
 3. Bureau: the reviewer-key records (`pnpm review key`, with `--genesis` for the first reviewers), `pnpm review submit`, `pnpm review sync`, the rules above in release computation, and the chain position in `pnpm review queue`. `pnpm review apply` is retired.
 4. Tests: a decision the operator never relayed still counts; a reviewer's newer rejection holds although the operator does nothing; a gap in the chain is reported, not read past; one vote changes nothing and two do; a suspension holds a line at once; a genesis not signed by everyone it names counts for nothing.

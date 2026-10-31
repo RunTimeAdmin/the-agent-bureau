@@ -79,6 +79,7 @@ vi.mock("./reviewLog", async importOriginal => {
 });
 
 import { evidenceLabel, runReview, type ReviewIO } from "./review";
+import { keyApprovalVerifies, payloadDigest } from "./keyApproval";
 import {
   REVIEW_SCHEMA,
   checkReviewDecision,
@@ -377,6 +378,89 @@ describe("pnpm review keygen, sign and key, on the reviewer's machine", () => {
       const bad = fakeIO(keys());
       expect(await runReview(["key", "--key", "alice.pem", "--signer", "rev_alice", "--out", "k.json", ...args], bad.io)).toBe(2);
       expect(bad.printed()).toMatch(/^Usage:/);
+    }
+  });
+});
+
+describe("pnpm review approve-key, on the reviewer's machine", () => {
+  const REQUEST = {
+    id: "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f",
+    org_id: ORG,
+    operation: "create_key",
+    payload: { label: "rev_dave ingest", expires_in_days: 90, role: "ingest" },
+    required_approvals: 0,
+    status: "pending",
+  };
+  const run = (request: unknown) => {
+    const out = fakeIO({ ...keys(), "request.json": JSON.stringify(request) });
+    return {
+      ...out,
+      code: runReview(
+        ["approve-key", "--key", "alice.pem", "--reviewer", "rev_alice", "--request", "request.json", "--out", "a.json"],
+        out.io
+      ),
+    };
+  };
+
+  it("signs an approval of exactly that request, and says what it approves", async () => {
+    const { code, written, printed } = run(REQUEST);
+    expect(await code).toBe(0);
+    const approval = JSON.parse(written["a.json"]);
+    expect(approval).toMatchObject({
+      schema: "agent-bureau/key-approval/v1",
+      reviewer_id: "rev_alice",
+      org_id: ORG,
+      request_id: REQUEST.id,
+      operation: "create_key",
+      payload_sha256: payloadDigest(REQUEST.payload),
+      decided_at: NOW.toISOString(),
+    });
+    expect(keyApprovalVerifies(approval, people.alice.publicKey)).toBe(true);
+    expect(printed()).toContain(
+      `Approving request ${REQUEST.id} in organization ${ORG}: create a key with role "ingest", labelled "rev_dave ingest", expiring in 90 days.`
+    );
+    expect(printed()).toContain(`POST /v1/admin/keys/requests/${REQUEST.id}/reviewer-approval`);
+    expect(db.schemaReady).not.toHaveBeenCalled();
+  });
+
+  it("names the key a revocation is for, and says when CounterAudit did not find it", async () => {
+    const revoke = {
+      ...REQUEST,
+      reviewer_approvals_required: 2,
+      operation: "revoke_key",
+      payload: { key_id: "9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d", label: "rev_bob ingest", role: "ingest", key_prefix: "ca_live_1234" },
+    };
+    const named = run(revoke);
+    expect(await named.code).toBe(0);
+    expect(named.printed()).toContain(
+      'revoke key "9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d": role "ingest", labelled "rev_bob ingest", prefix "ca_live_1234". It runs once 2 different reviewers approve it.'
+    );
+    const unknown = run({ ...revoke, payload: { key_id: "9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d" } });
+    expect(await unknown.code).toBe(0);
+    expect(unknown.printed()).toContain("which CounterAudit did not find in this organization");
+  });
+
+  it("refuses a request that is not pending, not approvable, not a request, hides characters or is another organization's", async () => {
+    const other = "11111111-2222-4333-8444-000000000000";
+    for (const [request, said] of [
+      [{ ...REQUEST, status: "executed" }, "The request is executed, not pending. Nothing signed."],
+      [{ ...REQUEST, operation: "erase_packet" }, "A reviewer approves only create_key, revoke_key, set_review_org; this request is erase_packet. Nothing signed."],
+      [{ ...REQUEST, payload: "x" }, "request.json is not an approval request as GET /v1/admin/keys/requests/:id returns it. Nothing signed."],
+      // An escape sequence that would redraw the line to read "role read".
+      [
+        { ...REQUEST, payload: { ...REQUEST.payload, role: "admin", label: '[17Dread, labelled "ci' } },
+        "The request holds control or formatting characters, which could hide what it does. Nothing signed; ask the operator for a request without them.",
+      ],
+      [
+        { ...REQUEST, payload: { ...REQUEST.payload, label: "ci‮gnirtsd" } },
+        "The request holds control or formatting characters, which could hide what it does. Nothing signed; ask the operator for a request without them.",
+      ],
+      [{ ...REQUEST, org_id: other }, `The request is for organization "${other}", not the review organization ${ORG}. Nothing signed.`],
+    ] as const) {
+      const { code, written, printed } = run(request);
+      expect(await code).toBe(2);
+      expect(printed()).toBe(said);
+      expect(written["a.json"]).toBeUndefined();
     }
   });
 });
