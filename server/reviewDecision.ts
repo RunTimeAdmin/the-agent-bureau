@@ -1,7 +1,7 @@
 // Signed review decisions (Phase 0 item 6; docs/two-person-review.md). Each
 // reviewer makes an Ed25519 key on their own machine and signs decisions with
-// it there. The Bureau holds only the public keys, listed in REVIEWERS by pull
-// request, and checks every decision before it counts.
+// it there. Who the reviewers are, and which key is each one's, comes from the
+// independent review log (server/reviewLog.ts), not from this code.
 import {
   createHash,
   createPrivateKey,
@@ -27,23 +27,6 @@ const SIGNATURE_PREFIX = "ed25519:";
 export type ReviewDecisionKind = (typeof REVIEW_DECISIONS)[number];
 export type Reviewer = { name: string; publicKey: string };
 
-// The reviewers, by reviewer_id (rev_ and 3 to 32 lowercase letters or
-// digits). publicKey is `ed25519:` and the 43-character base64url key that
-// `pnpm review keygen` prints. Adding, removing or re-keying one is a pull
-// request; decisions signed with a key no longer listed stop counting. None
-// yet: until two are listed, only test data can be approved, by one.
-export const REVIEWERS: Record<string, Reviewer> = {};
-
-/** Throws if two reviewer ids share a key: one person would count twice. */
-export function assertDistinctReviewers(reviewers: Record<string, Reviewer>) {
-  const seen = new Map<string, string>();
-  for (const [id, { publicKey }] of Object.entries(reviewers)) {
-    const other = seen.get(publicKey);
-    if (other) throw new Error(`${other} and ${id} list the same public key`);
-    seen.set(publicKey, id);
-  }
-}
-assertDistinctReviewers(REVIEWERS);
 
 export type ReviewDecision = {
   schema: typeof REVIEW_SCHEMA;
@@ -101,7 +84,7 @@ export function evidenceDigest(evidenceResult: unknown): string {
  */
 export function checkReviewDecision(
   value: unknown,
-  reviewers: Record<string, Reviewer> = REVIEWERS,
+  reviewers: Record<string, Reviewer>,
   now: Date | null = new Date()
 ): CheckedDecision {
   const fail = (reason: string): CheckedDecision => ({ ok: false, reason });
@@ -209,13 +192,6 @@ export function checkReviewDecision(
   return { ok: true, decision: value as ReviewDecision };
 }
 
-/** SHA-256 (hex) of the signed decision's canonical JSON. */
-export function decisionHash(decision: ReviewDecision): string {
-  return createHash("sha256")
-    .update(canonicalizeJson(decision), "utf8")
-    .digest("hex");
-}
-
 /** Signs a decision with a reviewer's private key (PKCS#8 PEM). */
 export function signReviewDecision(
   unsigned: Omit<ReviewDecision, "signature">,
@@ -229,7 +205,7 @@ export function signReviewDecision(
   };
 }
 
-/** The public key, as REVIEWERS lists it, for a private key (PKCS#8 PEM). */
+/** The public key, as a genesis or key record names it, for a private key (PKCS#8 PEM). */
 export function reviewerPublicKey(privateKeyPem: string): string {
   const jwk = createPublicKey(createPrivateKey(privateKeyPem)).export({
     format: "jwk",

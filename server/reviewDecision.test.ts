@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   REVIEW_SCHEMA,
-  REVIEWERS as SHIPPED,
-  assertDistinctReviewers,
   checkReviewDecision,
-  decisionHash,
   newReviewerKey,
   reviewerPublicKey,
   signReviewDecision,
@@ -144,16 +141,6 @@ describe("signed review decisions", () => {
     expect(checkReviewDecision(later, REVIEWERS, null).ok).toBe(true);
   });
 
-  it("refuses a reviewer list where two ids share a key", () => {
-    expect(() => assertDistinctReviewers(SHIPPED)).not.toThrow();
-    expect(() =>
-      assertDistinctReviewers({
-        ...REVIEWERS,
-        rev_alias: { name: "Alias", publicKey: alice.publicKey },
-      })
-    ).toThrow("rev_alice and rev_alias list the same public key");
-  });
-
   it("refuses unexpected fields, even when signed", () => {
     const signed = signReviewDecision(
       { ...unsigned(), note: "extra" } as Omit<ReviewDecision, "signature">,
@@ -174,14 +161,5 @@ describe("signed review decisions", () => {
     );
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.reason).toContain("listed key is unusable");
-  });
-
-  it("hashes a signed decision the same way every time", () => {
-    const signed = signReviewDecision(unsigned(), alice.privateKeyPem);
-    const reordered = Object.fromEntries(
-      Object.entries(signed).reverse()
-    ) as ReviewDecision;
-    expect(decisionHash(reordered)).toBe(decisionHash(signed));
-    expect(decisionHash(signed)).toMatch(/^[0-9a-f]{64}$/);
   });
 });

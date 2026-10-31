@@ -248,6 +248,24 @@ export const outcomeReviews = mysqlTable(
 export type OutcomeReview = typeof outcomeReviews.$inferSelect;
 export type InsertOutcomeReview = typeof outcomeReviews.$inferInsert;
 
+// The independent review log (server/reviewLog.ts, docs/review-log-design.md): each packet of
+// the review organization's CounterAudit chain, as pnpm review sync read it. Release is computed
+// from these alone. record is the signed record, or null for a packet of another connector.
+export const reviewLogRecords = mysqlTable("review_log_records", {
+  id: int("id").autoincrement().primaryKey(),
+  sequence: int("sequence").notNull().unique(),
+  packetId: varchar("packetId", { length: 36 }).notNull().unique(),
+  prevHash: varchar("prevHash", { length: 64 }).notNull(),
+  entryHash: varchar("entryHash", { length: 64 }).notNull(),
+  connectorId: varchar("connectorId", { length: 64 }).notNull(),
+  sealedAt: datetime("sealedAt", { fsp: 3 }).notNull(),
+  record: json("record").$type<Record<string, unknown>>(),
+  readAt: datetime("readAt", { fsp: 3 }).notNull(),
+});
+
+export type ReviewLogRecordRow = typeof reviewLogRecords.$inferSelect;
+export type InsertReviewLogRecord = typeof reviewLogRecords.$inferInsert;
+
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
 export type PlayQuestion = typeof playQuestions.$inferSelect;

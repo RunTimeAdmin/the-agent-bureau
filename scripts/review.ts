@@ -1,5 +1,5 @@
 // Two-person review of stored outcome lines.
-// Usage: pnpm review <keygen|sign|queue|apply|settle> ...
+// Usage: pnpm review <keygen|sign|key|submit|sync|queue|settle> ...
 // See docs/two-person-review.md.
 import "dotenv/config";
 import { closeDb } from "../server/db";

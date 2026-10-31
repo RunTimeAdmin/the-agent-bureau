@@ -45,6 +45,9 @@ export type Review = {
   dataClass: "test" | "live";
   evidenceDigest: string;
   decidedAt: Date;
+  // By a reviewer the review log has suspended: it does not count, and it holds
+  // its line until the other reviewers re-enable, rotate or remove them.
+  suspended?: boolean;
 };
 
 // How reviewers released a line: two different reviewers, or for test data
@@ -165,6 +168,12 @@ export function releaseFor(
     );
   }
   const decisions = currentDecisions(line, reviews);
+  const held = decisions.filter(d => d.suspended).map(d => d.reviewerId);
+  if (held.length > 0) {
+    return hold(
+      `${held.join(", ")} decided on it and ${held.length > 1 ? "are" : "is"} suspended; held until the other reviewers re-enable, rotate or remove them`
+    );
+  }
   const rejected = decisions.filter(d => d.decision === "reject");
   if (rejected.length > 0) {
     return hold(`rejected by ${rejected.map(d => d.reviewerId).join(", ")}`);
