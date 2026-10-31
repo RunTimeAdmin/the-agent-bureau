@@ -26,7 +26,7 @@ Set `DATABASE_URL` to your own database connection string. The server applies pe
 pnpm db:migrate
 ```
 
-On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, and `plays`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
+On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, `plays`, and `review_log_records`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
 
 Rebuild after changing source files or the public origin:
 
@@ -65,7 +65,7 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
 | `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
 
-The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`. The website itself does not need them.
+The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`, and `pnpm review sync` reads `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` (`docs/two-person-review.md`). The website itself does not need them.
 
 ## Operator inbox
 

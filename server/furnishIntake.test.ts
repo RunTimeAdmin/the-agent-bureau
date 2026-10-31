@@ -7,7 +7,7 @@ const db = vi.hoisted(() => ({
   findOtherOutcomeEventWithEvidence: vi.fn(),
   findRelatingOutcomeLines: vi.fn(),
   getOutcomeLine: vi.fn(),
-  listReviewsForLine: vi.fn(),
+  listReviewLogRecords: vi.fn(),
   setOutcomeEventDisplayState: vi.fn(),
   findOutcomeEvent: vi.fn(),
   insertOutcomeEvent: vi.fn(),
@@ -599,7 +599,7 @@ describe("runIntake", () => {
       nextId = 1;
       ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
       db.findOutcomeEvent.mockResolvedValue(undefined);
-      db.listReviewsForLine.mockResolvedValue([]);
+      db.listReviewLogRecords.mockResolvedValue([]);
       db.getOutcomeLine.mockImplementation(async (_f: string, eventId: string) => {
         const found = byId(eventId);
         return found && { ...found };

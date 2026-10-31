@@ -1,11 +1,11 @@
 // Brings stored lines' display states in line with what acts on them: the
-// furnisher's later relations (docs/line-states.md) and the listed reviewers'
-// signed decisions (docs/two-person-review.md). Used by the intake and by
-// pnpm review.
+// furnisher's later relations (docs/line-states.md) and the reviewers' signed
+// decisions in the independent review log (docs/review-log-design.md). Used by
+// the intake and by pnpm review.
 import {
   findRelatingOutcomeLines,
   getOutcomeLine,
-  listReviewsForLine,
+  listReviewLogRecords,
   setOutcomeEventDisplayState,
 } from "./db";
 import {
@@ -16,65 +16,70 @@ import {
   type Line,
   type Review,
 } from "./lineState";
-import {
-  REVIEWERS,
-  checkReviewDecision,
-  type Reviewer,
-} from "./reviewDecision";
+import { replayReviewLog, type ReviewLog } from "./reviewLog";
 
 const MAX_RELATION_HOPS = 10;
 
 /**
- * The line's recorded decisions that still count: each one's signature is
- * checked again against the reviewers listed now, and everything is read from
- * the signed form. An edited row, a reviewer no longer listed, or a key since
- * replaced drops out.
+ * The review log as stored by pnpm review sync, with its rules applied. Only
+ * what reviewers sealed there counts; nothing the operator hands over does.
+ * Only the run of packets linked from sequence 0 is read: a stored packet
+ * missing or out of place stops it there, as a gap stops pnpm review sync.
  */
-export async function reviewsFor(
-  line: Line,
-  reviewers: Record<string, Reviewer> = REVIEWERS
-): Promise<Review[]> {
-  const reviews: Review[] = [];
-  for (const row of await listReviewsForLine(line.id)) {
-    let signed = row.signedDecision;
-    if (typeof signed === "string") {
-      try {
-        signed = JSON.parse(signed);
-      } catch {
-        continue;
-      }
-    }
-    const checked = checkReviewDecision(signed, reviewers, null);
-    if (!checked.ok) continue;
-    const d = checked.decision;
-    if (d.furnisher_id !== line.furnisherId || d.event_id !== line.eventId) {
-      continue;
-    }
-    reviews.push({
-      id: row.id,
-      reviewerId: d.reviewer_id,
-      decision: d.decision,
-      signedEventHash: d.signed_event_hash,
-      dataClass: d.data_class,
-      evidenceDigest: d.evidence_digest,
-      decidedAt: new Date(d.decided_at),
-    });
+export async function loadReviewLog(): Promise<ReviewLog> {
+  const linked: Awaited<ReturnType<typeof listReviewLogRecords>> = [];
+  for (const row of await listReviewLogRecords()) {
+    const before = linked.at(-1);
+    const follows = before
+      ? row.sequence === before.sequence + 1 && row.prevHash === before.entryHash
+      : row.sequence === 0;
+    if (!follows) break;
+    linked.push(row);
   }
-  return reviews;
+  return replayReviewLog(
+    linked.map(row => {
+      // A MariaDB server older than 10.5.2 returns the JSON column as text.
+      let record: unknown = row.record;
+      if (typeof record === "string") {
+        try {
+          record = JSON.parse(record);
+        } catch {
+          record = null;
+        }
+      }
+      return { sequence: row.sequence, packetId: row.packetId, sealedAt: new Date(row.sealedAt), record };
+    })
+  );
+}
+
+/** The decisions on this line that the review log counts, and those that hold it. */
+export function reviewsFor(line: Line, log: ReviewLog): Review[] {
+  return log.decisions
+    .filter(d => d.decision.furnisher_id === line.furnisherId && d.decision.event_id === line.eventId)
+    .map(d => ({
+      id: d.sequence,
+      reviewerId: d.decision.reviewer_id,
+      decision: d.decision.decision,
+      signedEventHash: d.decision.signed_event_hash,
+      dataClass: d.decision.data_class,
+      evidenceDigest: d.decision.evidence_digest,
+      decidedAt: new Date(d.decision.decided_at),
+      suspended: d.suspended,
+    }));
 }
 
 // Recomputes one line's display state from the relations acting on it and
-// the listed reviewers' decisions, and stores it if it changed. Returns the
-// new state, or null if unchanged.
+// the review log's decisions, and stores it if it changed. Returns the new
+// state, or null if unchanged.
 export async function settle(
   line: Line,
-  reviewers: Record<string, Reviewer> = REVIEWERS
+  log?: ReviewLog
 ): Promise<DisplayState | null> {
   const relating = await findRelatingOutcomeLines(
     line.furnisherId,
     line.eventId
   );
-  const reviews = await reviewsFor(line, reviewers);
+  const reviews = reviewsFor(line, log ?? (await loadReviewLog()));
   const state = displayStateFor(lineStates(line, relating, reviews));
   if (state === line.displayState) return null;
   await setOutcomeEventDisplayState(line.id, state);
@@ -90,8 +95,9 @@ export async function settleDisplayStates(
 ): Promise<string[]> {
   const line = await getOutcomeLine(furnisherId, eventId);
   if (!line) return [];
+  const log = await loadReviewLog();
   const notes: string[] = [];
-  const own = await settle(line);
+  const own = await settle(line, log);
   if (own) notes.push(`now shown as ${own}`);
   const targetId = line.relationTargetEventId;
   if (!line.relationType || !targetId) return notes;
@@ -107,7 +113,7 @@ export async function settleDisplayStates(
   // Settled whether or not the relation applies: one that applied before and
   // no longer does (its proof failed on a re-run) must stop acting.
   const problem = relationProblem(line, target);
-  const changed = await settle(target);
+  const changed = await settle(target, log);
   const outcome = problem ? `not applied, ${problem}` : "applied";
   notes.push(
     changed
@@ -128,7 +134,7 @@ export async function settleDisplayStates(
       current.relationTargetEventId
     );
     if (!next) break;
-    const nextChanged = await settle(next);
+    const nextChanged = await settle(next, log);
     if (!nextChanged) break;
     notes.push(
       `${current.relationType} ${next.eventId} by ${current.eventId}: that line is now ${nextChanged}`

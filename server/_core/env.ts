@@ -19,4 +19,10 @@ export const ENV = {
   // Arc testnet's explorer (Blockscout), read by the funding screen
   // (server/fundingScreen.ts) for a payer's transfers. Read calls only.
   get arcTestnetExplorerUrl() { return process.env.ARC_TESTNET_EXPLORER_URL || "https://explorer.testnet.arc.io"; },
+  // The independent review log (docs/review-log-design.md): the CounterAudit organization
+  // reviewers seal their records in, and the Bureau's own read-only key to it, for pnpm review
+  // sync. A reviewer's machine instead holds that reviewer's ingest key, for pnpm review submit.
+  get counterauditReviewOrgId() { return process.env.COUNTERAUDIT_REVIEW_ORG_ID ?? ""; },
+  get counterauditReviewReadKey() { return process.env.COUNTERAUDIT_REVIEW_READ_KEY ?? ""; },
+  get counterauditReviewIngestKey() { return process.env.COUNTERAUDIT_REVIEW_INGEST_KEY ?? ""; },
 };
