@@ -1,9 +1,9 @@
 name: Test
 
 # Typecheck and tests, including the shared outcome event vectors, on pull
-# requests that change code. Actions minutes are pooled across RunTimeAdmin's
-# private repositories and tight, so this runs only for code paths, cancels a
-# superseded run, and stops at 10 minutes (a run takes about a minute).
+# requests that change code. To keep Actions minutes low it runs only for code
+# paths, cancels a superseded run, and stops at 10 minutes (a run takes about a
+# minute). It uses no secrets, so pull requests from forks run it safely.
 on:
   pull_request:
     paths:
