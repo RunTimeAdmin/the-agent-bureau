@@ -4,8 +4,9 @@ Lock the product, data and trust decisions before any public endpoint accepts an
 
 ```
 Owner:      David (RunTimeAdmin)
-Status:     Draft for owner approval
+Status:     Decisions recorded 2026-10-29, refreshed 2026-10-31. Open before outside data: retention (counsel review and CounterAudit expiry) and the Bureau's cross-org intake.
 Created:    2026-10-29
+Decided:    2026-10-29 (decision 5 replaced by the 2026-10-31 baseline)
 Relates to: docs/bureau-spec.md, the Outcome Ingestion and Evidence Verification Implementation Plan (Phase 0, §4 and §15)
 ```
 
@@ -31,19 +32,19 @@ Each decision has a proposed default drawn from the spec. The owner confirms or 
 
 Proposed: accept the six outcomes v0 already defines (`paid`, `refunded`, `delivered`, `payment_failed`, `not_delivered`, `access_revoked`, `policy_violation`), and for each, state whether it is backed by on-chain evidence, a trusted provider log, or human review. A nonempty evidence reference is not, by itself, "verified."
 
-- Decision: ________________________________________________
+- Decision: **Accept the full set above.** Each outcome carries an evidence tier and shows as `verified` only after its evidence check passes; a nonempty evidence reference alone is not verified. `paid`, `refunded` and `delivered` are backed by on-chain settlement or a trusted provider log; `payment_failed`, `not_delivered`, `access_revoked` and `policy_violation` rely on furnisher signed logs or a CounterAudit packet plus human review until a dedicated verifier exists (see item 3 below).
 
 ### 2. Initial chain scope
 
 Proposed: ship one chain adapter first, the one with a verified registry/token map, read-only RPC controls and a written finality/reorg policy. Every other chain is "unsupported" or "unverified" until its verifier exists. (Open question §15.2: which first evidence path, on-chain settlement, furnisher signed logs, or a CounterAudit packet.)
 
-- Decision: ________________________________________________
+- Decision: **Arc first, on-chain settlement via Levy.** Launch one chain adapter, Arc, where Sigvara and Levy already run. The first evidence path is on-chain settlement read from Levy's USDC billing, which records paid and failed charges on-chain (resolves §15.2). Arc gets the verified registry/token map, read-only RPC controls and a written finality/reorg policy; every other chain stays unsupported until its own verifier is ready.
 
 ### 3. Subject scope and matching
 
 Proposed: define how a registry ID, a wallet and a DID each map to one subject, and what proof confirms control. Uncertain matches are stored separately and never merged into a file silently. (Open question §15.4: one key per business, several scoped keys, or an enterprise signer; the Bureau custodies none.)
 
-- Decision: ________________________________________________
+- Decision: **Several scoped keys per furnisher, each tagged with `key_id`.** A furnisher may run keys per system and rotate them without losing attribution, matching the v1 `key_id` design (resolves §15.4). The Bureau custodies no private keys. How registry IDs, wallets and DIDs map to a subject, and what proof confirms control, is written in Phase 3; uncertain matches are stored separately and never merged silently.
 
 ### 4. Publication rule
 
@@ -54,7 +55,7 @@ Proposed: a negative outcome is never displayed as established fact until its si
 - `disputed` (subject contested; shown with the dispute, not hidden)
 - `withdrawn` / `superseded` (a later event in the same scope replaced it; prior line kept in history)
 
-- Decision: ________________________________________________
+- Decision: **Accept as drafted.** The four display states stand, and so does the rule: no negative line is shown as established fact until signature, source packet, evidence policy and any required review pass, and a subject dispute flips the status immediately and stays in the file history.
 
 ### 5. Data policy
 
@@ -62,6 +63,7 @@ Proposed: approve purpose limitation, subject access, correction and dispute, re
 
 - Decision: **provisional baseline, recorded 2026-10-31 by the owner.** Counsel checks the Bureau's legal obligations before launch, and no outside outcome is accepted before then.
   - No law sets a single retention period for this data. Each data category gets its own period, with a stated reason, and data is deleted or anonymized once it is no longer needed. Correction and erasure requests are honoured.
+  - Purpose limitation, subject access, correction and dispute, deletion, backup expiry and access logging are approved in principle (owner, 2026-10-29); counsel signs off these policies with the retention periods.
   - **Active file: at most 24 months** from the Bureau's `received_at`. After that the outcome and its source content are removed from files, APIs and indexes. 24 months is a chosen product policy, not a legal safe harbor.
   - **Backups** expire on a rolling 90 days.
   - **Security logs** are kept 12 months and carry no payloads.
@@ -73,7 +75,7 @@ Proposed: approve purpose limitation, subject access, correction and dispute, re
 
 Proposed: provision a dedicated Bureau organization in CounterAudit. Decide whether CounterAudit adds per-key scopes, and how a furnisher's evidence packet from its own CounterAudit organization is verified without exposing that organization's API key. (Open question §15.1: does CounterAudit seal the full source envelope and offer cross-org proof, or does the Bureau store a separately encrypted envelope with a CounterAudit commitment? The second option changes the spec's claim that CounterAudit alone is the record store.)
 
-- Decision: ________________________________________________
+- Decision: **CounterAudit seals the full envelope and issues a cross-org proof.** This keeps the spec's position that CounterAudit is the record store. CounterAudit's part is built: a dedicated least-privilege Bureau organization with separate ingest, read and admin keys, furnisher keys registered per organization, the full signed event sealed in each packet, and public packet proofs a third party can check without any API key (resolves §15.1). A test event went through it end to end on 2026-10-31. Still to build on the Bureau's side: intake seals each event in the Bureau's own organization and requires the proof to name it, so a packet a furnisher already sealed in its own CounterAudit organization cannot be accepted yet. Intake stays test-data-only until that and decision 5's conditions are met.
 
 ### 7. Receipt semantics
 
@@ -83,7 +85,7 @@ Proposed: keep three timestamps distinct and never present the furnisher's as in
 - `received_at` (Bureau, outside the signed event)
 - `created_at` (CounterAudit seal time)
 
-- Decision: ________________________________________________
+- Decision: **Accept as drafted.** `occurred_at` (furnisher-supplied, inside the signed event), `received_at` (Bureau, outside it) and `created_at` (CounterAudit seal time) stay distinct, and the furnisher's timestamp is never presented as independently trusted.
 
 ## v1 schema: testable rules now drafted
 
@@ -105,15 +107,20 @@ Open from the plan and not yet drafted: evidence field shapes specific enough to
 
 ## Items to resolve before implementation starts
 
-From §15 of the plan. These block the phases that touch external data, not this groundwork.
+From §15 of the plan. Status as of 2026-10-29:
 
-1. CounterAudit sealed source-envelope and cross-org proof, or a Bureau-stored encrypted envelope with a CounterAudit commitment (see decision 6).
-2. The first practical evidence source: on-chain settlement, furnisher signed logs, or a CounterAudit packet (see decision 2).
-3. The exact source evidence for `payment_failed` and `not_delivered`, where there may be no successful on-chain receipt.
-4. The furnisher key model: one key per business, several scoped keys, or an enterprise signer; the Bureau custodies none (see decision 3).
-5. Retention for source envelopes, derived indexes, disputes, backups and operator access logs; confirm with counsel (see decision 5).
-6. Who may approve a furnisher, alter a match, waive an evidence rule or release a negative line. The one-person operator model needs a two-person review plan before any of this affects a third party.
+1. **Resolved; CounterAudit's part built.** CounterAudit seals the full signed event and serves public proofs anyone can check without a key (decision 6). Remaining: the Bureau accepting a packet sealed in a furnisher's own organization. No outside intake before then.
+2. **Resolved.** First evidence source is on-chain settlement on Arc, read via Levy (decision 2).
+3. **Direction set, fields are Phase 2.** `payment_failed` and `not_delivered`, where there may be no successful on-chain receipt, are evidenced by furnisher signed logs or a CounterAudit packet plus human review, and never show as `verified` without a passing check. The exact evidence field shapes are drafted in Phase 2.
+4. **Resolved.** Several scoped keys per furnisher, each with a `key_id`; the Bureau custodies none (decision 3).
+5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs, and CounterAudit must build its expiry and crypto-erasure (designed, not built), before external data is accepted.
+6. **Resolved.** Two-person review is required before any approval, match change, evidence waiver or negative-line release affects a third party. The solo-operator path is limited to test data and internal dry runs.
 
 ## Exit criteria
 
-Sign-off from the product owner on: the v1 outcome scope, the evidence policy, the retention policy, the identity-matching policy, the file-display states, and the CounterAudit extension. No public endpoint accepts an external outcome before these decisions exist.
+Owner sign-off recorded 2026-10-29 on the v1 outcome scope, the publication rule and file-display states, the furnisher key and identity-matching model, and the receipt semantics. Two items stay open before any public endpoint accepts an external outcome:
+
+- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off and CounterAudit's expiry and crypto-erasure, which is designed but not built.
+- **Cross-org intake**: CounterAudit's full-event sealing and keyless public proofs are built; the Bureau's intake of a packet sealed in a furnisher's own organization is not.
+
+No public endpoint accepts an external outcome until both close.
