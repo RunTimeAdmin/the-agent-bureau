@@ -60,7 +60,14 @@ Proposed: a negative outcome is never displayed as established fact until its si
 
 Proposed: approve purpose limitation, subject access, correction and dispute, retention, deletion, backup expiry and access logging. The spec proposes 24-month file retention while CounterAudit keeps the sealed audit history. (Open question §15.5: retention for source envelopes, derived indexes, disputes, backups and operator access logs.) Confirm with counsel before accepting any personal or commercially sensitive data.
 
-- Decision: ________________________________________________
+- Decision: **provisional baseline, recorded 2026-10-31 by the owner.** Counsel checks the Bureau's legal obligations before launch, and no outside outcome is accepted before then.
+  - No law sets a single retention period for this data. Each data category gets its own period, with a stated reason, and data is deleted or anonymized once it is no longer needed. Correction and erasure requests are honoured.
+  - **Active file: at most 24 months** from the Bureau's `received_at`. After that the outcome and its source content are removed from files, APIs and indexes. 24 months is a chosen product policy, not a legal safe harbor.
+  - **Backups** expire on a rolling 90 days.
+  - **Security logs** are kept 12 months and carry no payloads.
+  - **Legal hold** applies only to a specific case, with a reason and a review date.
+  - **CounterAudit** does not keep identifiable source content indefinitely by default: it expires or crypto-erases it after 24 months, and keeps a minimal commitment only if counsel confirms that is appropriate. Today CounterAudit keeps every sealed packet with no expiry, so this is a requirement CounterAudit must meet before outside outcomes are sealed.
+  - **Sigvara's** public outcome sharing and peer import stay off on mainnet until this policy covers copies held by other operators, because those copies cannot be guaranteed deleted.
 
 ### 6. CounterAudit authorization
 
