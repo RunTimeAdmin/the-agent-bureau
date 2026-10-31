@@ -46,6 +46,22 @@ A `verified` result does not change how a line is shown. Showing a line as `veri
 
 On a re-run the intake records a new evidence result only when the event is the one the line stores (same signed-event hash) and the check reached a verdict. A `pending` or `error` result never replaces an earlier one.
 
+## Funding screen
+
+A `paid` line whose charge settled, and did not fail its checks, is also screened for a payer related to the furnisher (review M-04; the rules and limits are in `docs/independent-payer.md`, section 2). Code: `server/fundingScreen.ts`. The result goes in the evidence result as `funding_screen` and never changes its status: `payer_independence_screen` is `clear`, `flagged` with the reasons, or `inconclusive` with what it could not see.
+
+It reads, for the 30 days up to the charge's block:
+
+- USDC transfers into the payer, and into each wallet that paid it (two hops), at most 50 per wallet;
+- USDC transfers out of the payer, and for each that went to a Levy contract, the payouts that follow the payer's own pull in that transaction (another subscriber's charge in the same transaction is not counted). The largest is the merchant's; the other is Levy's fee;
+- the payer's nonce and balance at the block where the window starts.
+
+The transfers come from Arc's explorer (`ARC_TESTNET_EXPLORER_URL`, default `https://explorer.testnet.arc.io`, a Blockscout instance), because Arc's public RPC answers `eth_getLogs` over at most a few thousand blocks and 30 days is about five million. The explorer is a third party's index of the chain, not the chain, so a transfer it leaves out is a transfer the screen does not see; a `clear` result is never proof of independence. The explorer lists each USDC movement once under the ERC-20 address, whichever interface made it, a plain native send included, so nothing is counted twice. One screen makes at most 200 explorer requests, spaced to stay inside the explorer's rate limit; a payer with many funders can take a minute. The nonce and balance come from `ARC_TESTNET_RPC_URL` at a past block, which Arc's public RPC serves.
+
+The screen is `inconclusive` when it could not see everything: a wallet with more than 50 transfers in the window, an explorer that has not finished indexing or does not list the charge yet, a charge transaction with more transfers than one page, USDC minted within two hops (bridged in, with its source untraced), or a read that failed (marked `read_failed`, with a fixed message so a repeated outage stores the same result). The explorer's answers are checked: each transfer must be for the wallet and direction asked, in order, and no later than the charge, and the block it names for the window's start must not be later than that time by the RPC's clock. On a re-run, a screen that could not finish reading and found nothing does not replace a complete one for the same charge, so an explorer outage does not change what reviewers signed for.
+
+A settled payment releases on a plain approval only when its screen is `clear`; otherwise every approval has to waive it (`docs/two-person-review.md`). A merchant payment, for the "no other merchant payment" and "three merchants of one furnisher" flags, is a Levy charge: a payment made outside Levy is not recognised as one.
+
 ## Finality and reorg policy
 
 Arc uses Malachite BFT consensus: a committed block is final and there are no reorgs (Levy `VERIFICATION.md` section 3). The verifier still reads only at or below the `finalized` block, and compares the block hash at the receipt's height with the receipt's own. A mismatch means the RPC answered from inconsistent state (Arc's public RPC is load-balanced), so the check is retried, not decided. A chain added later with probabilistic finality needs its own confirmation depth and reorg handling before it gets a registry entry.

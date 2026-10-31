@@ -27,6 +27,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 | `COUNTERAUDIT_INGEST_KEY` | An API key of that org with the `ingest` role. Secret: the script never prints it.            |
 | `DATABASE_URL`            | The Bureau's MySQL database, as for the server.                                               |
 | `ARC_TESTNET_RPC_URL`     | Arc testnet JSON-RPC for the evidence check, read-only. Default `https://rpc.testnet.arc.io`. |
+| `ARC_TESTNET_EXPLORER_URL` | Arc testnet's explorer for the funding screen, read-only. Default `https://explorer.testnet.arc.io`. |
 
 ## Run
 

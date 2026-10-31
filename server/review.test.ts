@@ -347,7 +347,7 @@ describe("pnpm review queue and settle", () => {
     expect(out).toContain("evidence payment_settlement_verified");
     expect(out).not.toMatch(/evidence verified\b/);
     expect(out).toContain(
-      "subject_control unproven; payer_independence_screen inconclusive (not built yet)"
+      "subject_control unproven; payer_independence_screen not run"
     );
     expect(out).toContain(
       "a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered"

@@ -2,7 +2,7 @@
 
 ```
 Status:     decided by the owner, 2026-10-31 (below). Documents and review prompts use these
-            names; the funding screen and subject control are not built.
+            names, and the funding screen is built (section 2); subject control is not.
 Answers:    external review finding M-04 (chain-confirmed payment is not an independent customer relationship)
 Relates to: docs/evidence-verifier.md, docs/two-person-review.md, docs/bureau-spec.md (market test)
 ```
@@ -61,6 +61,6 @@ Testnet USDC is free, so testnet lines show nothing about wash resistance and ar
 ## Build outline
 
 1. Documents and review prompts use the section 1 names. Done: `pnpm review queue` shows them for payment lines, with the disclosure and the checklist in section 2, layer 5.
-2. Funding screen in `server/evidence.ts`, read-only, with recorded Arc fixtures for each flag.
+2. Funding screen. Done: `server/fundingScreen.ts`, described in `docs/evidence-verifier.md` (Funding screen), with a test for each flag and a recording of Arc's explorer for a real Levy charge.
 3. Subject control, with Phase 3.
 4. File assembly shows the states and the disclosure.

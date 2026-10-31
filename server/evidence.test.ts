@@ -527,3 +527,42 @@ describe.skipIf(!process.env.ARC_LIVE)(
     });
   }
 );
+
+describe("verifyEvidence: the funding screen", () => {
+  const screenReads = (calls: string[]) => () => ({
+    index: {
+      async transfers(_wallet: string, direction: string) {
+        calls.push(direction);
+        return { items: [], complete: true };
+      },
+      async transactionTransfers() {
+        return { items: [], complete: true };
+      },
+      async blockAtOrBefore() {
+        return 1n;
+      },
+      async indexingFinished() {
+        return true;
+      },
+    },
+    state: { nonceAt: async () => 3, balanceAt: async () => 5n, blockTime: async () => 0 },
+  });
+
+  it("screens a settled charge and keeps the evidence status as the chain decided it", async () => {
+    const calls: string[] = [];
+    const result = await verifyEvidence(paidEvent(), { ...deps(), screen: screenReads(calls) });
+    expect(result.status).toBe("verified");
+    expect(result.funding_screen).toMatchObject({ screen: "arc-funding/1", result: "flagged" });
+    expect(result.funding_screen?.flags.join(" ")).toMatch(/no other merchant payment/);
+    expect(calls).toEqual(["in", "out"]);
+  });
+
+  it("does not screen a failed line, or when the test gives a reader and no screen", async () => {
+    const calls: string[] = [];
+    const failed = await verifyEvidence(paidEvent({ amount: { value: "2.00", asset: "USDC", chain: "arc-testnet" } }), { ...deps(), screen: screenReads(calls) });
+    expect(failed.status).toBe("failed");
+    expect(failed.funding_screen).toBeUndefined();
+    expect((await verifyEvidence(paidEvent(), deps())).funding_screen).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+});

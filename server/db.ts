@@ -376,6 +376,7 @@ export async function findOutcomeEvent(furnisherId: string, eventId: string) {
       id: outcomeEvents.id,
       packetId: outcomeEvents.packetId,
       signedEventHash: outcomeEvents.signedEventHash,
+      evidenceResult: outcomeEvents.evidenceResult,
     })
     .from(outcomeEvents)
     .where(

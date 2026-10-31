@@ -65,7 +65,7 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
 | `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
 
-The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, and `ARC_TESTNET_RPC_URL`, described in `docs/counteraudit-intake.md`. The website itself does not need them.
+The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`. The website itself does not need them.
 
 ## Operator inbox
 

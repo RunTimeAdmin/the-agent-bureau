@@ -8,6 +8,7 @@ import {
   type Line,
   type Review,
 } from "./lineState";
+import { chargeKey, type LevyCharge } from "./evidence";
 import { evidenceDigest } from "./reviewDecision";
 
 const WALLET = "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77";
@@ -445,5 +446,65 @@ describe("releaseFor: a line backed by a charge must hold its claim", () => {
       holdingBack:
         "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it",
     });
+  });
+});
+
+describe("releaseFor: a settled payment's funding screen (review M-04)", () => {
+  const charge = {
+    kind: "charged",
+    chain: "arc-testnet",
+    chain_id: 5042002,
+    tx_hash: `0x${"c".repeat(64)}`,
+    log_index: 14,
+  } as unknown as LevyCharge;
+  const screened = (result: string | null) => {
+    const evidenceResult = {
+      status: "verified",
+      reasons: [],
+      charge,
+      ...(result ? { funding_screen: { screen: "arc-funding/1", result, flags: [], gaps: [] } } : {}),
+    };
+    return line({
+      dataClass: "test",
+      evidenceStatus: "verified",
+      evidenceResult,
+      evidenceKey: chargeKey(charge),
+    });
+  };
+  const decide = (l: Line, decision: Review["decision"]): Review => ({
+    id: 900,
+    reviewerId: "rev_alice",
+    decision,
+    signedEventHash: l.signedEventHash,
+    dataClass: "test",
+    evidenceDigest: evidenceDigest(l.evidenceResult),
+    decidedAt: new Date("2026-10-31T10:00:00.000Z"),
+  });
+
+  it("releases on a plain approval only when the screen is clear", () => {
+    const clear = screened("clear");
+    expect(releaseFor(clear, [decide(clear, "approve")]).released).toBe("solo_test");
+    for (const result of ["flagged", "inconclusive", null]) {
+      const l = screened(result);
+      expect(releaseFor(l, [decide(l, "approve")]), String(result)).toEqual({
+        released: null,
+        holdingBack:
+          "needs 2 more approvals that waive the funding screen's result from different reviewers (test data: one is enough)",
+      });
+      expect(releaseFor(l, [decide(l, "approve_with_waiver")]).released, String(result)).toBe("solo_test");
+    }
+  });
+
+  it("reads an evidence result stored as text, and holds one it cannot read", () => {
+    // A MariaDB server older than 10.5.2 returns the JSON column as text.
+    const flagged = screened("flagged");
+    const asText = { ...flagged, evidenceResult: JSON.stringify(flagged.evidenceResult) } as unknown as Line;
+    expect(releaseFor(asText, [decide(asText, "approve")]).released).toBeNull();
+    const clear = screened("clear");
+    const clearText = { ...clear, evidenceResult: JSON.stringify(clear.evidenceResult) } as unknown as Line;
+    expect(releaseFor(clearText, [decide(clearText, "approve")]).released).toBe("solo_test");
+    const garbled = { ...clear, evidenceResult: "{not json" } as unknown as Line;
+    expect(releaseFor(garbled, [decide(garbled, "approve")]).released).toBeNull();
+    expect(releaseFor(garbled, [decide(garbled, "approve_with_waiver")]).released).toBe("solo_test");
   });
 });

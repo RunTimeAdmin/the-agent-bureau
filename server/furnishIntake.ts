@@ -24,7 +24,13 @@ import {
   updateOutcomeEventEvidence,
   updateOutcomeEventProof,
 } from "./db";
-import { chargeKey, verifyEvidence, type EvidenceResult } from "./evidence";
+import {
+  chargeKey,
+  verifyEvidence,
+  type EvidenceResult,
+  type LevyCharge,
+} from "./evidence";
+import { SCREEN, type FundingScreen } from "./fundingScreen";
 import { takesOverClaim, type Line } from "./lineState";
 import {
   PROOF_CHECKS,
@@ -282,7 +288,18 @@ function evidenceColumns(
   };
 }
 
-function describeEvidence({ status, reasons, charge }: EvidenceResult): string {
+function describeEvidence(result: EvidenceResult): string {
+  const screen = result.funding_screen
+    ? `; funding screen ${result.funding_screen.result}${
+        [...result.funding_screen.flags, ...result.funding_screen.gaps].length
+          ? `: ${[...result.funding_screen.flags, ...result.funding_screen.gaps].join("; ")}`
+          : ""
+      }`
+    : "";
+  return describeVerdict(result) + screen;
+}
+
+function describeVerdict({ status, reasons, charge }: EvidenceResult): string {
   if (status === "verified") {
     return charge
       ? `evidence verified (${charge.chain} tx ${charge.tx_hash}, log ${charge.log_index})`
@@ -785,6 +802,24 @@ async function recordLine({
         await updateOutcomeEventProof(existing.id, existingProofColumns);
       const evidenceReached =
         evidence.status !== "pending" && evidence.status !== "error";
+      // A screen that could not finish reading, and found nothing, does not
+      // replace a complete one for the same charge, so an explorer outage cannot
+      // change what reviewers signed for. One that found a flag replaces it.
+      const storedResult = isRecord(existing.evidenceResult) ? existing.evidenceResult : null;
+      const storedScreen =
+        storedResult && isRecord(storedResult.funding_screen) ? storedResult.funding_screen : null;
+      if (
+        evidence.funding_screen?.read_failed &&
+        evidence.funding_screen.flags.length === 0 &&
+        storedScreen &&
+        storedScreen.screen === SCREEN &&
+        !storedScreen.read_failed &&
+        isRecord(storedResult?.charge) &&
+        evidence.charge &&
+        chargeKey(storedResult.charge as LevyCharge) === chargeKey(evidence.charge)
+      ) {
+        evidence = { ...evidence, funding_screen: storedScreen as unknown as FundingScreen };
+      }
       if (evidenceReached)
         await writeEvidence(columns =>
           updateOutcomeEventEvidence(existing.id, columns)

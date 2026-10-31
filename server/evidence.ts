@@ -17,7 +17,14 @@ import {
 } from "viem";
 import { EVIDENCE_STATUSES } from "../drizzle/schema";
 import { ENV } from "./_core/env";
-import { rpcReader } from "./arcReader";
+import { rpcReader, walletState } from "./arcReader";
+import {
+  explorerIndex,
+  screenFunding,
+  type FundingScreen,
+  type TransferIndex,
+  type WalletState,
+} from "./fundingScreen";
 import { isRecord } from "./outcomeProof";
 
 export const VERIFIER = "levy-arc/1";
@@ -59,6 +66,8 @@ export type ChainReader = {
 export type ChainEntry = {
   chainId: number;
   rpcUrl: string;
+  // A Blockscout explorer for the funding screen. Without one, paid lines are not screened.
+  explorerUrl?: string;
   token: { symbol: string; address: Address; decimals: number };
   levyManagers: Address[];
 };
@@ -80,6 +89,9 @@ export const CHAINS: Record<string, ChainEntry> = {
     chainId: 5042002,
     get rpcUrl() {
       return ENV.arcTestnetRpcUrl;
+    },
+    get explorerUrl() {
+      return ENV.arcTestnetExplorerUrl;
     },
     token: {
       symbol: "USDC",
@@ -136,13 +148,30 @@ export type EvidenceResult = {
   // Set with charge: whether its merchant is one of the furnisher's vetted
   // accounts. Only then may the line claim the charge (see chargeKey).
   recipient_confirmed?: boolean;
+  // For a charge that settled: what the funding screen found about the payer
+  // (server/fundingScreen.ts). It never changes status.
+  funding_screen?: FundingScreen;
 };
 
 export type EvidenceDeps = {
   chains?: Record<string, ChainEntry>;
   accounts?: typeof FURNISHER_ACCOUNTS;
   reader?: (chain: ChainEntry) => ChainReader;
+  // The funding screen's reads. null skips the screen. Left out, it reads the
+  // chain's explorer and RPC, except when a reader is given (a test), which
+  // then skips it unless this is given too.
+  screen?:
+    | ((chain: ChainEntry) => { index: TransferIndex; state: WalletState } | null)
+    | null;
 };
+
+function defaultScreen(chain: ChainEntry) {
+  if (!chain.explorerUrl) return null;
+  return {
+    index: explorerIndex(chain.explorerUrl, chain.token.address),
+    state: walletState(chain.rpcUrl),
+  };
+}
 
 // Identifies the settlement log, so one charge cannot back two lines.
 export function chargeKey(charge: LevyCharge): string {
@@ -492,11 +521,26 @@ export async function verifyEvidence(
     : reviews.length
       ? "needs_review"
       : "verified";
+  // A settled charge is screened for a payer related to the furnisher. A
+  // failed line is not: nothing it shows can be released.
+  let fundingScreen: FundingScreen | undefined;
+  const screen =
+    deps.screen !== undefined ? deps.screen : deps.reader ? null : defaultScreen;
+  const reads = status !== "failed" && charge.kind === "charged" && screen ? screen(chain) : null;
+  if (reads) {
+    fundingScreen = await screenFunding({
+      charge,
+      furnisherAccounts: accounts.map(a => a.address),
+      levyManagers: chain.levyManagers,
+      ...reads,
+    });
+  }
   return {
     verifier: VERIFIER,
     status,
     reasons: [...failures, ...reviews],
     charge,
     recipient_confirmed: recipientConfirmed,
+    ...(fundingScreen ? { funding_screen: fundingScreen } : {}),
   };
 }
