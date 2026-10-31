@@ -41,6 +41,7 @@ The game is fiction. No real agent, person or business appears in a case, and ga
 | [`bureau-outcome-service-phase0.md`](docs/bureau-outcome-service-phase0.md) | The decisions recorded before building the outcome service, and what is still open   |
 | [`furnisher-one-pager.md`](docs/furnisher-one-pager.md)                     | The pitch and pilot terms for a business that reports outcomes                       |
 | [`counteraudit-intake.md`](docs/counteraudit-intake.md)                     | Operator guide to the intake script                                                  |
+| [`cross-org-intake.md`](docs/cross-org-intake.md)                           | Taking packets a furnisher sealed in its own CounterAudit organization               |
 | [`evidence-verifier.md`](docs/evidence-verifier.md)                         | What the Arc testnet payment check proves, and what it does not                      |
 | [`line-states.md`](docs/line-states.md)                                     | Line states, relations between lines, and how a line is displayed                    |
 | [`two-person-review.md`](docs/two-person-review.md)                         | Signed review decisions and the release rule                                         |

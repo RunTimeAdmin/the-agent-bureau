@@ -4,7 +4,7 @@ Lock the product, data and trust decisions before any public endpoint accepts an
 
 ```
 Owner:      David (RunTimeAdmin)
-Status:     Decisions recorded 2026-10-29, refreshed 2026-10-31. Open before outside data: retention (counsel review and CounterAudit expiry) and the Bureau's cross-org intake.
+Status:     Decisions recorded 2026-10-29, refreshed 2026-10-31. Open before outside data: counsel's retention review and the retention rollout on CounterAudit's server. CounterAudit's expiry and erasure and the Bureau's cross-org intake are built.
 Created:    2026-10-29
 Decided:    2026-10-29 (decision 5 replaced by the 2026-10-31 baseline)
 Relates to: docs/bureau-spec.md, the Outcome Ingestion and Evidence Verification Implementation Plan (Phase 0, §4 and §15)
@@ -75,7 +75,7 @@ Proposed: approve purpose limitation, subject access, correction and dispute, re
 
 Proposed: provision a dedicated Bureau organization in CounterAudit. Decide whether CounterAudit adds per-key scopes, and how a furnisher's evidence packet from its own CounterAudit organization is verified without exposing that organization's API key. (Open question §15.1: does CounterAudit seal the full source envelope and offer cross-org proof, or does the Bureau store a separately encrypted envelope with a CounterAudit commitment? The second option changes the spec's claim that CounterAudit alone is the record store.)
 
-- Decision: **CounterAudit seals the full envelope and issues a cross-org proof.** This keeps the spec's position that CounterAudit is the record store. CounterAudit's part is built: a dedicated least-privilege Bureau organization with separate ingest, read and admin keys, furnisher keys registered per organization, the full signed event sealed in each packet, and public packet proofs a third party can check without any API key (resolves §15.1). A test event went through it end to end on 2026-10-31. Still to build on the Bureau's side: intake seals each event in the Bureau's own organization and requires the proof to name it, so a packet a furnisher already sealed in its own CounterAudit organization cannot be accepted yet. Intake stays test-data-only until that and decision 5's conditions are met.
+- Decision: **CounterAudit seals the full envelope and issues a cross-org proof.** This keeps the spec's position that CounterAudit is the record store. CounterAudit's part is built: a dedicated least-privilege Bureau organization with separate ingest, read and admin keys, furnisher keys registered per organization, the full signed event sealed in each packet, and public packet proofs a third party can check without any API key (resolves §15.1). A test event went through it end to end on 2026-10-31. The Bureau's side was built on 2026-10-31 (`docs/cross-org-intake.md`): `pnpm furnish:intake --sealed` accepts a packet a furnisher sealed in its own organization, checked against the organization and keys the Bureau lists for that furnisher by pull request, and only when the proof shows the packet expires within the 24-month baseline. Intake stays test-data-only until decision 5's conditions are met.
 
 ### 7. Receipt semantics
 
@@ -109,18 +109,18 @@ Open from the plan and not yet drafted: evidence field shapes specific enough to
 
 From §15 of the plan. Status as of 2026-10-29:
 
-1. **Resolved; CounterAudit's part built.** CounterAudit seals the full signed event and serves public proofs anyone can check without a key (decision 6). Remaining: the Bureau accepting a packet sealed in a furnisher's own organization. No outside intake before then.
+1. **Resolved and built.** CounterAudit seals the full signed event and serves public proofs anyone can check without a key (decision 6), and the Bureau accepts a packet sealed in a furnisher's own organization (`docs/cross-org-intake.md`).
 2. **Resolved.** First evidence source is on-chain settlement on Arc, read via Levy (decision 2).
 3. **Direction set, fields are Phase 2.** `payment_failed` and `not_delivered`, where there may be no successful on-chain receipt, are evidenced by furnisher signed logs or a CounterAudit packet plus human review, and never show as `verified` without a passing check. The exact evidence field shapes are drafted in Phase 2.
 4. **Resolved.** Several scoped keys per furnisher, each with a `key_id`; the Bureau custodies none (decision 3).
-5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs, and CounterAudit must build its expiry and crypto-erasure (designed, not built), before external data is accepted.
+5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs, and CounterAudit's expiry and crypto-erasure (built and deployed 2026-10-31, no organization has a policy yet) must be rolled out, before external data is accepted.
 6. **Resolved.** Two-person review is required before any approval, match change, evidence waiver or negative-line release affects a third party. The solo-operator path is limited to test data and internal dry runs.
 
 ## Exit criteria
 
 Owner sign-off recorded 2026-10-29 on the v1 outcome scope, the publication rule and file-display states, the furnisher key and identity-matching model, and the receipt semantics. Two items stay open before any public endpoint accepts an external outcome:
 
-- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off and CounterAudit's expiry and crypto-erasure, which is designed but not built.
-- **Cross-org intake**: CounterAudit's full-event sealing and keyless public proofs are built; the Bureau's intake of a packet sealed in a furnisher's own organization is not.
+- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off. CounterAudit's expiry and crypto-erasure are built and deployed; its server rollout (backup expiry, the daily job, the Bureau organization's policy) is not done.
+- **Cross-org intake**: closed 2026-10-31. CounterAudit's full-event sealing and keyless public proofs, and the Bureau's sealed intake (`docs/cross-org-intake.md`), are built.
 
-No public endpoint accepts an external outcome until both close.
+No public endpoint accepts an external outcome until the retention item closes.

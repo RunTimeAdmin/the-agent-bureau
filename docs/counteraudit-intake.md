@@ -36,6 +36,8 @@ From a checkout with dependencies installed:
 pnpm furnish:intake --test-data signed.jsonl
 ```
 
+A furnisher that seals its events in its own CounterAudit organization sends packet ids with them instead; `--sealed` takes those, checks their public proofs against the furnisher's listed organization and key, and seals nothing. See `docs/cross-org-intake.md`.
+
 For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
 
 Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
