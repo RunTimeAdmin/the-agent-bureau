@@ -253,7 +253,7 @@ function signingPayloadV1(unsignedEvent: Json): Buffer {
   );
 }
 
-function verifySignatureV1(event: Json, publicKeyText: unknown): boolean {
+export function verifySignatureV1(event: Json, publicKeyText: unknown): boolean {
   const { signature: sig, ...unsigned } = event;
   // CounterAudit's schema check guarantees the prefix before this runs. The
   // Bureau holds the event without that schema, so it checks here.
