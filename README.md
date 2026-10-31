@@ -21,7 +21,6 @@ The Bureau's aim is one dated, evidence-backed file per agent operator, built mo
 | `drizzle/`                    | The MySQL schema and migrations. The server applies pending migrations each time it starts.                                                                                                                                    |
 | `server/fixtures/`            | Recorded CounterAudit proofs and the shared outcome event v1 test vectors, pinned by SHA-256.                                                                                                                                  |
 | `docs/`                       | The specification, decisions and operator guides listed below.                                                                                                                                                                 |
-| `x-branding/`                 | The 512 by 512 profile image, the 1500 by 500 banner, and a 2688 by 1152 master for future crops.                                                                                                                              |
 | `Dockerfile`, `DEPLOYMENT.md` | How to run the site in production.                                                                                                                                                                                             |
 
 The game is fiction. No real agent, person or business appears in a case, and game results never go into a Bureau file.
