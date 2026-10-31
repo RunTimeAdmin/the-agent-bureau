@@ -37,7 +37,7 @@ A new line is stored only once its proof passes every check, since there is no s
 
 A line the Bureau already holds is re-checked against CounterAudit's own proof checks only. The listing and retention checks decide whether a new line is stored, and do not undo one: a packet past its expiry by the time of a re-run, or a key revoked since, leaves the line as it was. A proof that names another organization than the one the line came from changes nothing, so a sealed file cannot touch a line the Bureau holds from its own organization.
 
-The run seals nothing. It fetches each packet's public proof and CounterAudit's export keys, without a key, and needs only `DATABASE_URL` (and `COUNTERAUDIT_API_URL` if not the default).
+The run seals nothing. It fetches each packet's public proof, without a key, and checks its signature against CounterAudit's export key as pinned in `server/counterauditKeys.ts`. It needs only `DATABASE_URL` (and `COUNTERAUDIT_API_URL` if not the default).
 
 ## Limits
 
@@ -53,5 +53,4 @@ A pull request to `server/furnishers.ts` with its `furnisher_id`, its CounterAud
 
 - A `seal` command in agent-bureau-furnish that seals events in the furnisher's organization and writes the sealed lines.
 - Checking a furnisher's chain for gaps between the packets it sends (its signed checkpoints would allow it).
-- Pinning CounterAudit's export key in the Bureau. The proof's signature is checked against keys fetched from the same server as the proof, so it adds nothing beyond TLS to `COUNTERAUDIT_API_URL`. This predates cross-org intake but matters more for organizations the Bureau does not control.
 - Any intake of outside data: the test-data limit applies here as everywhere.

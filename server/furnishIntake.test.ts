@@ -16,16 +16,19 @@ const db = vi.hoisted(() => ({
   updateOutcomeEventProof: vi.fn(),
 }));
 const ca = vi.hoisted(() => ({
-  fetchJwks: vi.fn(),
   fetchProof: vi.fn(),
   ingestSignedEvent: vi.fn(),
 }));
+// The keys the intake checks proofs against, pinned in counterauditKeys.ts;
+// each test sets them.
+const pinned = vi.hoisted(() => ({ keys: [] as Record<string, unknown>[] }));
 // The real evidence check unless a test says otherwise. The fixture event is a
 // "delivered" line, which it sends to review without reading any chain.
 const evidence = vi.hoisted(() => ({ verifyEvidence: vi.fn() }));
 
 vi.mock("./db", () => db);
 vi.mock("./counteraudit", () => ca);
+vi.mock("./counterauditKeys", () => ({ COUNTERAUDIT_EXPORT_KEYS: pinned }));
 vi.mock("./evidence", async importOriginal => {
   const actual = await importOriginal<typeof import("./evidence")>();
   evidence.verifyEvidence.mockImplementation(actual.verifyEvidence);
@@ -103,7 +106,7 @@ beforeEach(() => {
   vi.stubEnv("DATABASE_URL", `mysql://bureau:${DB_PASSWORD}@127.0.0.1/bureau`);
   db.schemaReady.mockResolvedValue(true);
   ca.fetchProof.mockResolvedValue({ ok: true, proof });
-  ca.fetchJwks.mockResolvedValue({ ok: true, jwks });
+  pinned.keys = [...jwks.keys];
 });
 
 afterEach(() => {
@@ -737,7 +740,7 @@ describe("runIntake --sealed", () => {
     // A sealed run needs no Bureau CounterAudit key.
     vi.stubEnv("COUNTERAUDIT_ORG_ID", "");
     vi.stubEnv("COUNTERAUDIT_INGEST_KEY", "");
-    ca.fetchJwks.mockResolvedValue({ ok: true, jwks: testJwks });
+    pinned.keys = [...jwks.keys, ...testJwks.keys];
     ca.fetchProof.mockResolvedValue({ ok: true, proof: sealedProof() });
     db.findOutcomeEvent.mockResolvedValue(undefined);
   });
@@ -771,6 +774,14 @@ describe("runIntake --sealed", () => {
     expect(printed()).toContain("proof verified");
   });
 
+  it("fails a proof signed with an export key the Bureau does not pin", async () => {
+    pinned.keys = [...jwks.keys];
+    const { code, printed } = await run();
+    expect(code).toBe(1);
+    expect(printed()).toContain("proof FAILED (proof_signature");
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+  });
+
   it("refuses a furnisher or key the Bureau does not list, before fetching anything", async () => {
     for (const furnishers of [{}, registry("revoked")]) {
       ca.fetchProof.mockClear();
@@ -797,7 +808,6 @@ describe("runIntake --sealed", () => {
     // The real fixture packet, sealed in the Bureau's organization, and the
     // line already stored from it.
     db.findOutcomeEvent.mockResolvedValue(stored);
-    ca.fetchJwks.mockResolvedValue({ ok: true, jwks });
     ca.fetchProof.mockResolvedValue({ ok: true, proof });
     const { code, printed } = await run();
     expect(code).toBe(1);
