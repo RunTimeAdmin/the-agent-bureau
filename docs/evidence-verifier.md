@@ -38,6 +38,8 @@ The intake adds one check the chain cannot answer: no other stored line already 
 | `pending`      | The transaction is not found yet, or its block is not finalized yet. A load-balanced RPC node can lag, so not found is not a verdict.                                                                                                                                           | Run the intake again     |
 | `error`        | The chain could not be read, or the RPC was inconsistent (wrong chain, block hash mismatch).                                                                                                                                                                                    | Run the intake again     |
 
+Documents and review prompts name a `verified` result by what it proves (`docs/independent-payer.md`): `payment_settlement_verified` for a `paid` or `refunded` line, a transfer that settled; `payment_failure_verified` for `payment_failed`, a charge that failed on chain. Neither shows who controls the payer wallet or that the service was delivered.
+
 Every result keeps its reasons and, when a charge was found, what the chain showed: chain, transaction, log index, block number, hash and time, contract, token, subscription, payer, recipient and amount.
 
 A `verified` result does not change how a line is shown. Showing a line as `verified` needs a passing proof, a `verified` evidence result, and (Phase 0 decision 4) the review states and two-person review, which also come before any negative line affects anyone. Those are the next build items. Until then every line stays `unverified`, and intake stays test-data only.

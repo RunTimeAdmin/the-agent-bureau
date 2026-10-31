@@ -56,7 +56,7 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock("./db", () => db);
 
-import { runReview, type ReviewIO } from "./review";
+import { evidenceLabel, runReview, type ReviewIO } from "./review";
 import {
   REVIEW_SCHEMA,
   checkReviewDecision,
@@ -339,6 +339,30 @@ describe("pnpm review apply", () => {
 });
 
 describe("pnpm review queue and settle", () => {
+  it("names what a payment line's evidence proved, and what it does not", async () => {
+    store.rows.push(row({ evidenceStatus: "verified", outcome: "paid" }));
+    const { io, printed } = fakeIO();
+    expect(await runReview(["queue"], io, REVIEWERS)).toBe(0);
+    const out = printed();
+    expect(out).toContain("evidence payment_settlement_verified");
+    expect(out).not.toMatch(/evidence verified\b/);
+    expect(out).toContain(
+      "subject_control unproven; payer_independence_screen inconclusive (not built yet)"
+    );
+    expect(out).toContain(
+      "a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered"
+    );
+  });
+
+  it("labels evidence by outcome", () => {
+    expect(evidenceLabel("paid", "verified")).toBe("payment_settlement_verified");
+    expect(evidenceLabel("refunded", "verified")).toBe("payment_settlement_verified");
+    expect(evidenceLabel("payment_failed", "verified")).toBe("payment_failure_verified");
+    expect(evidenceLabel("delivered", "verified")).toBe("verified");
+    expect(evidenceLabel("paid", "needs_review")).toBe("needs_review");
+    expect(evidenceLabel("paid", null)).toBe("not checked");
+  });
+
   it("lists each open line with its hash and what holds it back", async () => {
     store.rows.push(
       row({

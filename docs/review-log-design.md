@@ -1,7 +1,8 @@
 # Independent review log
 
 ```
-Status:     proposed, 2026-10-31. Design only; nothing here is built.
+Status:     decided by the owner, 2026-10-31: option A, with the governance and disclosure
+            below. Not built.
 Answers:    external review finding M-03 (the operator can suppress a reviewer's rejection)
 Relates to: docs/two-person-review.md, Phase 0 decision 6 (two-person review)
 ```
@@ -37,7 +38,7 @@ What this gives:
 
 What it still needs:
 
-- **Who administers the review organization.** Its admin can register or revoke reviewer keys. That must not be the Bureau operator alone: at least one reviewer, or a second admin under CounterAudit's approval rules, has to agree to each change.
+- **Who administers the review organization.** Its admin can register or revoke reviewer keys. That must not be the Bureau operator alone. Decided: two of three independent reviewers for each key change, and any one reviewer may suspend a key at once (below).
 - **A rule for decisions sealed while the Bureau's reader is behind.** Release is computed from the chain up to a stated sequence, and a file says which.
 - **A CounterAudit connector and signer registry for reviewers**, in the style of the outcome-event path.
 
@@ -53,12 +54,14 @@ Each decision is committed to a public Git repository, and the Bureau derives re
 
 Option A. It removes the operator from the path, reuses CounterAudit's proofs and checkpoints, and keeps the decision format unchanged. Until it exists, the limits in `docs/two-person-review.md` stand, and no live line is released.
 
-## Decisions for the owner
+## Decisions (owner, 2026-10-31)
 
-1. Option A, B or C.
-2. For A: who administers the review organization, and whether key changes need a reviewer's approval.
-3. For A: whether reviewers get a `read` key to the review organization, or the Bureau publishes the list of review packet proofs.
-4. Whether a file line shows the review packets that released it to subscribers, or only to the subject and reviewers.
+1. **Option A**: a dedicated CounterAudit review organization.
+2. **Governance.** The Bureau operator may run the service but cannot administer reviewer keys alone. Adding, rotating or re-enabling a reviewer key needs two of three independent reviewers. One reviewer may suspend a key they suspect is compromised, at once; release states that rest on that key are held until the quorum resolves it.
+3. **Read keys.** Each reviewer has an individual `read` key to the review organization, and the Bureau service a separate read-only key of its own. Nothing is published for reviewers to check against.
+4. **Disclosure.** Subscribers receive a verifiable, redacted release bundle for a line. The full review packets, and reviewers' private notes, go only to the line's subject and the reviewers.
+
+None of this is built. Beyond the outline below it needs: a two-of-three reviewer quorum for key changes, which CounterAudit's admin approvals do not provide today; immediate single-reviewer suspension, with release held until the quorum decides; and the redacted release bundle and its verification.
 
 ## Build outline (option A)
 
