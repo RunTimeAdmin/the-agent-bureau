@@ -7,7 +7,7 @@ import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
 import { BUREAU_FILE_KEYS } from "../bureauFileKeys";
 import { pingDb, runMigrations, schemaReady } from "../db";
-import { startDisputeSettling } from "../disputeSchedule";
+import { startSchedules } from "../schedules";
 import { parsePublicKey } from "../outcomeProof";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -141,8 +141,8 @@ async function startServer() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
   server.on("error", error => { console.error("Server failed:", error.message); process.exit(1); });
   server.listen(port, "0.0.0.0", () => console.log(`Server listening on port ${port}`));
-  // Lapsed subject disputes take their lines down without a hand-run command.
-  if (process.env.NODE_ENV === "production" && ENV.databaseUrl) startDisputeSettling();
+  // Lapsed disputes and expired sources take their lines down without a hand-run command.
+  if (process.env.NODE_ENV === "production" && ENV.databaseUrl) startSchedules();
 }
 
 startServer().catch(error => { console.error(error); process.exit(1); });
