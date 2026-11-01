@@ -440,10 +440,19 @@ const LINE_COLUMNS = {
 // CounterAudit's event ids do not, so the two lookups below also match exactly.
 
 // The subject dispute records on these lines (server/dispute.ts), each line
-// with its own.
+// with its own. A line with records also gets its signed event and receipt, which
+// name the key a furnisher's record is checked against.
 async function withDisputeRecords<T extends { id: number }>(
   rows: T[]
-): Promise<Array<T & { disputeRecords: DisputeRecordRow[] }>> {
+): Promise<
+  Array<
+    T & {
+      disputeRecords: DisputeRecordRow[];
+      signedEvent?: unknown;
+      receipt?: unknown;
+    }
+  >
+> {
   if (rows.length === 0) return [];
   const db = await requireDb();
   const records = await db
@@ -451,10 +460,25 @@ async function withDisputeRecords<T extends { id: number }>(
     .from(disputeRecords)
     .where(inArray(disputeRecords.outcomeEventId, rows.map(r => r.id)))
     .orderBy(asc(disputeRecords.id));
-  return rows.map(row => ({
-    ...row,
-    disputeRecords: records.filter(r => r.outcomeEventId === row.id),
-  }));
+  const disputed = [...new Set(records.map(r => r.outcomeEventId))];
+  const keys = disputed.length
+    ? await db
+        .select({
+          id: outcomeEvents.id,
+          signedEvent: outcomeEvents.signedEvent,
+          receipt: outcomeEvents.receipt,
+        })
+        .from(outcomeEvents)
+        .where(inArray(outcomeEvents.id, disputed))
+    : [];
+  return rows.map(row => {
+    const keyed = keys.find(k => k.id === row.id);
+    return {
+      ...row,
+      disputeRecords: records.filter(r => r.outcomeEventId === row.id),
+      ...(keyed ? { signedEvent: keyed.signedEvent, receipt: keyed.receipt } : {}),
+    };
+  });
 }
 
 // A stored line with what its states depend on (server/lineState.ts),

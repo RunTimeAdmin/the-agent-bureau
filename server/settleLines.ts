@@ -10,7 +10,7 @@ import {
   listReviewLogRecords,
   setOutcomeEventDisplayState,
 } from "./db";
-import { disputeOf } from "./dispute";
+import { checkLineDisputes, disputeOf } from "./dispute";
 import {
   displayStateFor,
   lineStates,
@@ -118,8 +118,9 @@ export function reviewsFor(line: Line, log: ReviewLog): Review[] {
 }
 
 // Recomputes one line's display state from the relations acting on it, the
-// review log's decisions and the subject's dispute on it as of now, and stores
-// it if it changed. Returns the new state, or null if unchanged.
+// review log's decisions and the subject's dispute on it as of now, its records
+// checked again, and stores it if it changed. Returns the new state, or null if
+// unchanged.
 export async function settle(
   line: Line,
   log?: ReviewLog,
@@ -131,7 +132,12 @@ export async function settle(
   );
   const reviewLog = log ?? (await loadReviewLog());
   const reviews = reviewsFor(line, reviewLog);
-  const dispute = disputeOf(line, relating, l => reviewsFor(l, reviewLog), now);
+  const dispute = disputeOf(
+    await checkLineDisputes(line),
+    relating,
+    l => reviewsFor(l, reviewLog),
+    now
+  );
   const state = displayStateFor(
     lineStates(line, relating, reviews, dispute?.state ?? null)
   );

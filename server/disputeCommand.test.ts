@@ -160,8 +160,23 @@ function line(overrides: Partial<Row> = {}): Row {
       event_id: EVENT,
       key_id: "levy-key-1",
     },
+    // CounterAudit's ingest receipt, built from the same fields as the public proof.
     receipt: {
-      outcome_claim: { signer: { public_key: furnisherKey.publicKey } },
+      receipt_type: "counteraudit.packet_receipt",
+      receipt_version: 1,
+      packet_id: idOf(500),
+      sequence: 500,
+      outcome_claim: {
+        outcome: "paid",
+        asserted_by: "signature",
+        event_id: EVENT,
+        signed_event_hash: HASH,
+        signer: {
+          furnisher_id: FURNISHER,
+          key_id: "levy-key-1",
+          public_key: furnisherKey.publicKey,
+        },
+      },
     },
     expiredAt: null,
     ...overrides,
@@ -333,6 +348,7 @@ async function submit(record: Record<string, unknown>, sealedAt: Date) {
 }
 
 beforeEach(() => {
+  store.rows = [];
   store.rows = [line()];
   store.disputes = [];
   pin.genesis = genesisHash(TEAM);
@@ -518,6 +534,66 @@ describe("pnpm dispute submit", () => {
       `It counts for nothing: the signature does not verify with ${FURNISHER}'s key levy-key-1.`
     );
     expect(printed).toContain(`Dispute ${DISPUTE_1} is open`);
+  });
+});
+
+describe("settling checks every stored record again", () => {
+  it("counts nothing for a stored row whose flags were edited, as review decisions are checked again", async () => {
+    // A dispute under the subject's name signed by another wallet, written straight into the
+    // table as if it had checked when it was submitted.
+    store.disputes.push({
+      id: 1,
+      disputeId: DISPUTE_1,
+      kind: "dispute",
+      outcomeEventId: 1,
+      record: await filing({}, OTHER_KEY),
+      packetId: idOf(1),
+      sequence: 1,
+      sealedAt: T0,
+      receipt: null,
+      signatureOk: true,
+      subjectControlOk: true,
+      checkProblem: null,
+      controllerAddress: null,
+    });
+    const reviewIO: ReviewIO = {
+      readText: async () => "",
+      writeNewPrivateFile: async () => {},
+      writeNewFile: async () => {},
+      log: () => {},
+      now: () => at(1),
+      fetch: vi.fn(),
+    };
+    await runReview(["settle"], reviewIO);
+    expect(store.rows[0].displayState).toBe("released");
+    clock.now = at(20);
+    const f = disputeIO();
+    await runDispute(["settle"], f.io);
+    expect(store.rows[0].displayState).toBe("released");
+
+    // The same row with the subject's own signature counts, whatever its flags say.
+    store.disputes[0] = {
+      ...store.disputes[0],
+      record: await filing(),
+      signatureOk: false,
+      subjectControlOk: false,
+    };
+    await runReview(["settle"], reviewIO);
+    expect(store.rows[0].displayState).toBe("disputed");
+  });
+
+  it("checks a confirmation against the key CounterAudit's receipt names for the line", async () => {
+    await submit(await filing(), T0);
+    expect((await submit(confirm(), at(2))).code).toBe(0);
+    clock.now = at(20);
+    const f = disputeIO();
+    await runDispute(["settle"], f.io);
+    expect(store.rows[0].displayState).toBe("disputed");
+    // Without that receipt, and with no key listed for the furnisher, the confirmation counts
+    // for nothing and the dispute lapses.
+    store.rows[0].receipt = null;
+    await runDispute(["settle"], disputeIO().io);
+    expect(store.rows[0].displayState).toBe("removed");
   });
 });
 

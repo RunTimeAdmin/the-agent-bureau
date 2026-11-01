@@ -5,6 +5,8 @@ import {
   RESPONSE_DAYS,
   checkDisputeForm,
   checkFurnisherRecord,
+  checkLineDisputes,
+  checkStoredRecord,
   checkSubjectControl,
   currentDispute,
   deriveDisputes,
@@ -53,6 +55,33 @@ const LINE: Line = {
   displayState: "released",
   relationType: null,
   relationTargetEventId: null,
+  signedEvent: {
+    furnisher_id: FURNISHER,
+    event_id: "levy-sub8-charge1",
+    key_id: "levy-key-1",
+    subject_ref: { wallet: SUBJECT },
+  },
+  // CounterAudit's ingest receipt, built from the same fields as the public proof.
+  receipt: {
+    receipt_type: "counteraudit.packet_receipt",
+    receipt_version: 1,
+    packet_id: "29879d36-0000-4000-8000-000000000001",
+    org_id: "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1",
+    sequence: 7,
+    entry_hash: "e".repeat(64),
+    created_at: "2026-10-20T11:00:01.000Z",
+    outcome_claim: {
+      outcome: "paid",
+      asserted_by: "signature",
+      event_id: "levy-sub8-charge1",
+      signed_event_hash: HASH,
+      signer: {
+        furnisher_id: FURNISHER,
+        key_id: "levy-key-1",
+        public_key: furnisherKey.publicKey,
+      },
+    },
+  },
 };
 const signer = { type: "eip191", address: SUBJECT };
 
@@ -187,16 +216,25 @@ const review = (
   sealedAt,
 });
 
-function derive(
+// Derived as every settle does: each stored record checked again first.
+async function derive(
   records: StoredDisputeRecord[],
   now: Date,
-  options: { relating?: Line[]; reviews?: Map<string, Review[]> } = {}
+  options: {
+    relating?: Line[];
+    reviews?: Map<string, Review[]>;
+    line?: Line;
+  } = {}
 ) {
+  const line = await checkLineDisputes(
+    { ...(options.line ?? LINE), disputeRecords: records },
+    {}
+  );
   return deriveDisputes({
-    line: LINE,
-    records,
+    line,
+    records: line.checkedDisputes,
     relating: options.relating ?? [],
-    reviewsOf: line => options.reviews?.get(line.eventId) ?? [],
+    reviewsOf: l => options.reviews?.get(l.eventId) ?? [],
     now,
   });
 }
@@ -218,13 +256,11 @@ describe("dispute records' signatures", () => {
 
   const keyed = {
     furnisherId: FURNISHER,
-    signedEvent: { key_id: "levy-key-1", furnisher_id: FURNISHER },
-    receipt: {
-      outcome_claim: { signer: { public_key: furnisherKey.publicKey } },
-    },
+    signedEvent: LINE.signedEvent,
+    receipt: LINE.receipt,
   };
 
-  it("checks the furnisher's Ed25519 signature against the key that signed the line", () => {
+  it("checks the furnisher's Ed25519 signature against the key that signed the line, from CounterAudit's receipt", () => {
     const record = response() as FurnisherRecord;
     expect(checkFurnisherRecord(record, keyed, {})).toEqual({
       ok: true,
@@ -235,9 +271,22 @@ describe("dispute records' signatures", () => {
       ok: false,
       problem: `the signature does not verify with ${FURNISHER}'s key levy-key-1`,
     });
+    // The receipt's key counts only for the key id and furnisher it names.
+    const receipt = LINE.receipt as { outcome_claim: { signer: object } };
+    const renamed = {
+      ...keyed,
+      receipt: {
+        ...receipt,
+        outcome_claim: {
+          ...receipt.outcome_claim,
+          signer: { ...receipt.outcome_claim.signer, key_id: "levy-key-9" },
+        },
+      },
+    };
+    expect(checkFurnisherRecord(record, renamed, {}).ok).toBe(false);
   });
 
-  it("or a key server/furnishers.ts lists for the furnisher, while active", () => {
+  it("or a key server/furnishers.ts lists for the furnisher: active when submitted, and still once revoked", () => {
     const record = response({ key_id: "levy-key-2" }) as FurnisherRecord;
     const listed = (status: "active" | "revoked") => ({
       [FURNISHER]: {
@@ -245,10 +294,23 @@ describe("dispute records' signatures", () => {
         keys: { "levy-key-2": { publicKey: furnisherKey.publicKey, status } },
       },
     });
-    expect(checkFurnisherRecord(record, keyed, listed("active")).ok).toBe(true);
-    expect(checkFurnisherRecord(record, keyed, listed("revoked"))).toEqual({
+    const submitting = { activeKeysOnly: true };
+    expect(
+      checkFurnisherRecord(record, keyed, listed("active"), submitting).ok
+    ).toBe(true);
+    expect(
+      checkFurnisherRecord(record, keyed, listed("revoked"), submitting)
+    ).toEqual({
       ok: false,
       problem: `levy-key-2 is neither the key that signed the line nor an active key server/furnishers.ts lists for ${FURNISHER}`,
+    });
+    // A stored record keeps checking with a key revoked since it was submitted.
+    expect(checkFurnisherRecord(record, keyed, listed("revoked")).ok).toBe(
+      true
+    );
+    expect(checkFurnisherRecord(record, keyed, {})).toMatchObject({
+      ok: false,
+      problem: `levy-key-2 is neither the key that signed the line nor a key server/furnishers.ts lists for ${FURNISHER}`,
     });
   });
 
@@ -308,7 +370,7 @@ describe("control of the subject", () => {
     expect(chain.identity).toHaveBeenCalledWith(expect.any(String), 1234n);
     expect(await checkSubjectControl(did, OTHER, chain)).toEqual({
       ok: false,
-      problem: `signed by ${OTHER}, not the agent address SigvaraIdentity holds at block 1234 (${SUBJECT})`,
+      problem: `signed by ${OTHER}, not the agent address SigvaraIdentity holds for the did:sigvara (${SUBJECT})`,
       controller: SUBJECT,
     });
     expect(
@@ -339,7 +401,7 @@ describe("control of the subject", () => {
 describe("what a dispute's records add up to", () => {
   it("is open until 15 days after the dispute was sealed, and lapsed from that moment", async () => {
     const records = [stored(await filing(), T0)];
-    const open = derive(records, at(RESPONSE_DAYS, -1));
+    const open = await derive(records, at(RESPONSE_DAYS, -1));
     expect(open).toEqual([
       {
         disputeId: ID,
@@ -351,33 +413,33 @@ describe("what a dispute's records add up to", () => {
         appeal: null,
       },
     ]);
-    expect(derive(records, at(15))[0].state).toBe("lapsed");
+    expect((await derive(records, at(15)))[0].state).toBe("lapsed");
   });
 
   it("shows the line disputed while open, and removed for good once lapsed", async () => {
     const records = [stored(await filing(), T0)];
-    const states = (now: Date, relating: Line[] = []) =>
+    const states = async (now: Date, relating: Line[] = []) =>
       lineStates(
         LINE,
         relating,
         [review(LINE, "approve", at(-1))],
-        currentDispute(derive(records, now, { relating }))?.state ?? null
+        currentDispute(await derive(records, now, { relating }))?.state ?? null
       );
-    expect(displayStateFor(states(at(1)))).toBe("disputed");
-    expect(states(at(1)).released).toBe("solo_test");
-    const lapsed = states(at(15));
+    expect(displayStateFor(await states(at(1)))).toBe("disputed");
+    expect((await states(at(1))).released).toBe("solo_test");
+    const lapsed = await states(at(15));
     expect(lapsed).toMatchObject({ removed: true, released: null });
     expect(displayStateFor(lapsed)).toBe("removed");
     // The furnisher's route back, a correction after the lapse, never brings the line back.
-    const corrected = states(at(20), [relatingLine("corrects", at(16))]);
+    const corrected = await states(at(20), [relatingLine("corrects", at(16))]);
     expect(displayStateFor(corrected)).toBe("removed");
   });
 
-  it("leaves a line without a subject dispute exactly as before", () => {
+  it("leaves a line without a subject dispute exactly as before", async () => {
     const states = lineStates(LINE, [], [], null);
     expect(Object.keys(states)).not.toContain("subject_dispute");
     expect(Object.keys(states)).not.toContain("removed");
-    expect(currentDispute(derive([], at(1)))).toBeNull();
+    expect(currentDispute(await derive([], at(1)))).toBeNull();
   });
 
   it("is confirmed by the furnisher's answer within the 15 days, and then takes one statement", async () => {
@@ -389,7 +451,7 @@ describe("what a dispute's records add up to", () => {
       stored(await statement(), at(4)),
       stored(await statement("a second one"), at(5)),
     ];
-    const [dispute] = derive(records, at(30));
+    const [dispute] = await derive(records, at(30));
     expect(dispute).toMatchObject({
       state: "confirmed",
       confirmedAt: at(3),
@@ -402,21 +464,23 @@ describe("what a dispute's records add up to", () => {
 
   it("lapses when the furnisher answers after the deadline", async () => {
     const records = [stored(await filing(), T0), stored(response(), at(15, 1))];
-    expect(derive(records, at(16))[0].state).toBe("lapsed");
+    expect((await derive(records, at(16)))[0].state).toBe("lapsed");
   });
 
   it("closes as corrected or withdrawn by a later line sealed within the 15 days, which outranks a confirmation", async () => {
     const records = [stored(await filing(), T0), stored(response(), at(2))];
-    const corrected = derive(records, at(30), {
+    const corrected = await derive(records, at(30), {
       relating: [relatingLine("corrects", at(5))],
     });
     expect(corrected[0].state).toBe("corrected");
     expect(
-      derive(records, at(30), {
-        relating: [relatingLine("supersedes", at(5))],
-      })[0].state
+      (
+        await derive(records, at(30), {
+          relating: [relatingLine("supersedes", at(5))],
+        })
+      )[0].state
     ).toBe("corrected");
-    const withdrawn = derive([stored(await filing(), T0)], at(30), {
+    const withdrawn = await derive([stored(await filing(), T0)], at(30), {
       relating: [
         relatingLine("corrects", at(4)),
         relatingLine("withdraws", at(5)),
@@ -430,35 +494,96 @@ describe("what a dispute's records add up to", () => {
     ).toBe("withdrawn");
   });
 
-  it("counts nothing whose checks failed, or that names another version of the line", async () => {
-    const records = [
-      stored(await filing(), T0, { signatureOk: false }),
-      stored(
-        await filing({ dispute_id: "11111111-2222-4333-8444-555555555555" }),
-        T0,
+  it("checks every stored record again, whatever was stored about it", async () => {
+    // Signed by another wallet while naming the subject's, stored as if it had checked.
+    const forged = stored(await filing({}, OTHER_KEY), T0, {
+      signatureOk: true,
+      subjectControlOk: true,
+    });
+    // Signed by another wallet naming itself: not the line's subject.
+    const stranger = stored(
+      await filing(
         {
-          subjectControlOk: false,
-        }
+          dispute_id: "11111111-2222-4333-8444-555555555555",
+          signer: { type: "eip191", address: OTHER },
+        },
+        OTHER_KEY
       ),
-      stored(
-        await filing({
-          dispute_id: "22222222-2222-4333-8444-555555555555",
-          line: {
-            furnisher_id: FURNISHER,
-            event_id: LINE.eventId,
-            signed_event_hash: "cd".repeat(32),
-          },
-        }),
-        T0
-      ),
-    ];
-    expect(derive(records, at(30))).toEqual([]);
-    // A response whose signature failed confirms nothing.
+      T0,
+      { signatureOk: true, subjectControlOk: true }
+    );
+    // Edited after it was stored.
+    const edited = stored(
+      {
+        ...(await filing({
+          dispute_id: "33333333-2222-4333-8444-555555555555",
+        })),
+        reason: "edited",
+      },
+      T0
+    );
+    const otherVersion = stored(
+      await filing({
+        dispute_id: "22222222-2222-4333-8444-555555555555",
+        line: {
+          furnisher_id: FURNISHER,
+          event_id: LINE.eventId,
+          signed_event_hash: "cd".repeat(32),
+        },
+      }),
+      T0
+    );
+    const erased = stored(
+      await filing({ dispute_id: "44444444-2222-4333-8444-555555555555" }),
+      T0
+    );
+    erased.record = null;
+    expect(
+      await derive([forged, stranger, edited, otherVersion, erased], at(30))
+    ).toEqual([]);
+    const keyed = {
+      furnisherId: FURNISHER,
+      subjectRef: LINE.subjectRef,
+      signedEvent: LINE.signedEvent,
+      receipt: LINE.receipt,
+    };
+    expect(await checkStoredRecord(forged, keyed, {})).toEqual({
+      ok: false,
+      problem: `the signature does not verify as ${SUBJECT}'s`,
+      signatureOk: false,
+      subjectControlOk: true,
+    });
+    expect(await checkStoredRecord(erased, keyed, {})).toMatchObject({
+      ok: false,
+      problem: "the record was erased with the line's source",
+    });
+    // A response signed with another key confirms nothing, whatever its stored flag says.
     const unconfirmed = [
       stored(await filing(), T0),
-      stored(response(), at(2), { signatureOk: false }),
+      stored(response({}, strangerKey.privateKeyPem), at(2), {
+        signatureOk: true,
+      }),
     ];
-    expect(derive(unconfirmed, at(30))[0].state).toBe("lapsed");
+    expect((await derive(unconfirmed, at(30)))[0].state).toBe("lapsed");
+    // And a record that checks counts, whatever its stored flags say.
+    const flagged = [stored(await filing(), T0, { signatureOk: false })];
+    expect((await derive(flagged, at(1)))[0].state).toBe("open");
+  });
+
+  it("checks a did:sigvara subject's records against the agent address stored when each was submitted", async () => {
+    const did = { did: `did:sigvara:5042002:${SUBJECT.toLowerCase()}` };
+    const line = {
+      ...LINE,
+      subjectRef: did,
+      signedEvent: { ...(LINE.signedEvent as object), subject_ref: did },
+    };
+    const record = await filing({ subject_ref: did });
+    const as = (controllerAddress: string | null) =>
+      derive([stored(record, T0, { controllerAddress })], at(1), { line });
+    expect((await as(SUBJECT))[0].state).toBe("open");
+    // Another address, or none read, counts for nothing.
+    expect(await as(OTHER)).toEqual([]);
+    expect(await as(null)).toEqual([]);
   });
 });
 
@@ -472,7 +597,7 @@ describe("appeals", () => {
   it("by the subject: open until reviewers decide after it", async () => {
     // A decision sealed before the appeal does not decide it.
     const reviews = new Map([[LINE.eventId, [review(LINE, "approve", at(1))]]]);
-    const [dispute] = derive(await confirmed(), at(6), { reviews });
+    const [dispute] = await derive(await confirmed(), at(6), { reviews });
     expect(dispute.appeal).toEqual({
       party: "subject",
       state: "open",
@@ -490,7 +615,7 @@ describe("appeals", () => {
         [review(LINE, "approve", at(1)), review(LINE, "reject", at(6))],
       ],
     ]);
-    const [upheld] = derive(records, at(7), { reviews: rejected });
+    const [upheld] = await derive(records, at(7), { reviews: rejected });
     expect(upheld.appeal?.state).toBe("upheld");
     // The rejection holds the line off every file, as any current rejection does.
     expect(
@@ -501,9 +626,9 @@ describe("appeals", () => {
     const approved = new Map([
       [LINE.eventId, [review(LINE, "approve", at(6))]],
     ]);
-    expect(derive(records, at(7), { reviews: approved })[0].appeal?.state).toBe(
-      "dismissed"
-    );
+    expect(
+      (await derive(records, at(7), { reviews: approved }))[0].appeal?.state
+    ).toBe("dismissed");
   });
 
   it("by the furnisher, after a lapse: upheld when reviewers release its correction, dismissed when one rejects it", async () => {
@@ -518,7 +643,9 @@ describe("appeals", () => {
     ];
     const decide = (decision: Review["decision"]) =>
       new Map([[corrective.eventId, [review(corrective, decision, at(22))]]]);
-    const open = derive(records, at(21, 1), { relating: [corrective] })[0];
+    const open = (
+      await derive(records, at(21, 1), { relating: [corrective] })
+    )[0];
     expect(open).toMatchObject({
       state: "lapsed",
       appeal: {
@@ -527,16 +654,20 @@ describe("appeals", () => {
         correctiveEventId: corrective.eventId,
       },
     });
-    const upheld = derive(records, at(23), {
-      relating: [corrective],
-      reviews: decide("approve"),
-    })[0];
+    const upheld = (
+      await derive(records, at(23), {
+        relating: [corrective],
+        reviews: decide("approve"),
+      })
+    )[0];
     expect(upheld.appeal?.state).toBe("upheld");
     expect(
-      derive(records, at(23), {
-        relating: [corrective],
-        reviews: decide("reject"),
-      })[0].appeal?.state
+      (
+        await derive(records, at(23), {
+          relating: [corrective],
+          reviews: decide("reject"),
+        })
+      )[0].appeal?.state
     ).toBe("dismissed");
     // The removed line stays removed either way.
     expect(
@@ -549,6 +680,6 @@ describe("appeals", () => {
       stored(await filing(), T0),
       stored(furnisherAppeal("no-such-line"), at(21)),
     ];
-    expect(derive(records, at(22))[0].appeal).toBeNull();
+    expect((await derive(records, at(22)))[0].appeal).toBeNull();
   });
 });

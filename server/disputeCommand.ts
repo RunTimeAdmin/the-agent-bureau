@@ -19,11 +19,13 @@ import {
 } from "./db";
 import {
   checkDisputeForm,
-  checkFurnisherRecord,
-  checkSubjectControl,
+  checkLineDisputes,
+  checkStoredRecord,
   currentDispute,
   deriveDisputes,
   furnisherSignatureVerifies,
+  lineSubject,
+  readController,
   readWalletKey,
   signWithFurnisherKey,
   signWithWallet,
@@ -397,28 +399,24 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
       );
       return 2;
     }
-    if (!sameJson(parsed(line.subjectRef), record.subject_ref)) {
+    const subject = parsed(lineSubject(line));
+    if (!sameJson(subject, record.subject_ref)) {
       io.log(
-        `Not sealed: subject_ref is not exactly the line's (${canonicalizeJson(parsed(line.subjectRef) ?? null)}).`
+        `Not sealed: subject_ref is not exactly the line's (${canonicalizeJson(subject ?? null)}).`
       );
       return 2;
     }
   } else {
-    const filing = stored.find(
-      r => r.kind === "dispute" && r.signatureOk && r.subjectControlOk === true
-    );
+    // Whether the dispute counts is decided below, from its records checked again.
+    const filing = stored.find(r => r.kind === "dispute");
     if (!filing) {
-      io.log(
-        stored.length > 0
-          ? `Not sealed: dispute ${record.dispute_id} counts for nothing; its own record did not check.`
-          : `Not sealed: the Bureau holds no dispute ${record.dispute_id}.`
-      );
+      io.log(`Not sealed: the Bureau holds no dispute ${record.dispute_id}.`);
       return 2;
     }
     line = await getDisputeLine(filing.outcomeEventId);
-    if (!line) {
+    if (!line || line.expiredAt) {
       io.log(
-        `Not sealed: the line of dispute ${record.dispute_id} is not held.`
+        `Not sealed: the line of dispute ${record.dispute_id} is ${line ? "expired with its source" : "not held"}.`
       );
       return 2;
     }
@@ -430,9 +428,10 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
     line.furnisherId,
     line.eventId
   );
+  const checked = await checkLineDisputes(line, io.furnishers);
   const before = deriveDisputes({
-    line,
-    records: line.disputeRecords,
+    line: checked,
+    records: checked.checkedDisputes,
     relating,
     reviewsOf,
     now,
@@ -443,39 +442,45 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
     return 2;
   }
 
-  // The Bureau's own checks. A record that fails them is still sealed and kept, and counts for
-  // nothing (docs/disputes.md, "Sealing and checking").
-  const problems: string[] = [];
-  let signatureOk: boolean;
-  let subjectControlOk: boolean | null = null;
+  // The Bureau's own checks, as every settle repeats them, with the agent address read from
+  // SigvaraIdentity now for a did:sigvara: the one result kept for later checks. A record that
+  // fails them is still sealed and kept, and counts for nothing (docs/disputes.md).
+  const subject = parsed(lineSubject(line));
   let controller: string | null = null;
+  let unread: string | null = null;
   if (signedByWallet(record)) {
-    signatureOk = await walletSignatureVerifies(record);
-    if (!signatureOk) {
-      problems.push(
-        `the signature does not verify as ${record.signer.address}'s`
-      );
-    }
     try {
-      const control = await checkSubjectControl(
-        parsed(line.subjectRef),
-        record.signer.address,
-        io.sigvara
-      );
-      subjectControlOk = control.ok;
-      controller = control.controller;
-      if (control.problem) problems.push(control.problem);
+      const read = await readController(subject, io.sigvara);
+      controller = read?.controller ?? null;
+      unread = read && !read.ok ? read.problem : null;
     } catch (error) {
       io.log(
         `Not sealed: Sigvara could not be read to check who controls the subject: ${describeError(error)}.`
       );
       return 1;
     }
-  } else {
-    const check = checkFurnisherRecord(record, line, io.furnishers);
-    signatureOk = check.ok;
-    if (check.problem) problems.push(check.problem);
   }
+  const check = await checkStoredRecord(
+    {
+      disputeId: record.dispute_id,
+      kind: record.kind,
+      record,
+      controllerAddress: controller,
+    },
+    {
+      furnisherId: line.furnisherId,
+      subjectRef: subject,
+      signedEvent: line.signedEvent,
+      receipt: line.receipt,
+    },
+    io.furnishers,
+    { activeKeysOnly: true }
+  );
+  const { signatureOk, subjectControlOk } = check;
+  const problems = [
+    ...(check.problem ? [check.problem] : []),
+    ...(unread && subjectControlOk === false ? [unread] : []),
+  ];
 
   let sealed: DisputeIngestResult;
   try {
@@ -495,7 +500,7 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
     return 1;
   }
   const { packet } = sealed;
-  const counts = signatureOk && subjectControlOk !== false;
+  const counts = check.ok;
   const added = await insertDisputeRecord({
     disputeId: record.dispute_id,
     kind: record.kind,
@@ -522,9 +527,10 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
   const after = await getDisputeLine(line.id);
   if (!after) return counts ? 0 : 1;
   const changed = await settle(after, log, now);
+  const afterChecked = await checkLineDisputes(after, io.furnishers);
   const dispute = deriveDisputes({
-    line: after,
-    records: after.disputeRecords,
+    line: afterChecked,
+    records: afterChecked.checkedDisputes,
     relating,
     reviewsOf,
     now,
@@ -561,9 +567,10 @@ async function settleCommand(io: DisputeIO): Promise<number> {
       line.furnisherId,
       line.eventId
     );
+    const checked = await checkLineDisputes(line, io.furnishers);
     const why = deriveDisputes({
-      line,
-      records: line.disputeRecords,
+      line: checked,
+      records: checked.checkedDisputes,
       relating,
       reviewsOf: l => reviewsFor(l, log),
       now,

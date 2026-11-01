@@ -11,7 +11,11 @@ import type {
   RELATION_TYPES,
   REVIEW_DECISIONS,
 } from "../drizzle/schema";
-import type { DisputeState, StoredDisputeRecord } from "./dispute";
+import type {
+  CheckedDisputeRecord,
+  DisputeState,
+  StoredDisputeRecord,
+} from "./dispute";
 import { chargeKey, type LevyCharge } from "./evidence";
 import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
@@ -39,6 +43,11 @@ export type Line = Pick<
   caCreatedAt?: Date | string;
   /** The subject disputes on the line (server/dispute.ts), when they were read with it. */
   disputeRecords?: StoredDisputeRecord[];
+  /** Those records, each checked again (checkLineDisputes in server/dispute.ts). */
+  checkedDisputes?: CheckedDisputeRecord[];
+  /** The line's signed event and CounterAudit's receipt, which name the key that signed it. */
+  signedEvent?: unknown;
+  receipt?: unknown;
 };
 
 // A recorded decision, read from its re-checked signed form

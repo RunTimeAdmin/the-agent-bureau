@@ -11,8 +11,8 @@ import {
   RESPONSE_DAYS,
   currentDispute,
   deriveDisputes,
+  type CheckedDisputeRecord,
   type Dispute,
-  type StoredDisputeRecord,
 } from "./dispute";
 import type { Furnisher } from "./furnishers";
 import {
@@ -85,8 +85,9 @@ function everReleased(line: Line, reviews: Review[]): boolean {
   );
 }
 
-// Each dispute on the line, counted or not, with its records.
-function disputeEntries(records: StoredDisputeRecord[], derived: Dispute[]) {
+// Each dispute on the line, counted or not, with its records and what checking
+// each again found.
+function disputeEntries(records: CheckedDisputeRecord[], derived: Dispute[]) {
   const ids = [...new Set(records.map(r => r.disputeId))];
   return ids.map(id => {
     const dispute = derived.find(d => d.disputeId === id);
@@ -116,14 +117,14 @@ function disputeEntries(records: StoredDisputeRecord[], derived: Dispute[]) {
             },
           }
         : {}),
-      records: rows.map((r: StoredDisputeRecord) => ({
+      records: rows.map(r => ({
         kind: r.kind,
         packet_id: r.packetId,
         sequence: r.sequence,
         sealed_at: iso(r.sealedAt),
-        signature_checked: r.signatureOk,
-        subject_control_checked: r.subjectControlOk,
-        problem: r.checkProblem ?? null,
+        signature_checked: r.check.signatureOk,
+        subject_control_checked: r.check.subjectControlOk,
+        problem: r.check.problem,
         ...(r.controllerAddress
           ? { sigvara_agent_address: r.controllerAddress }
           : {}),
@@ -138,7 +139,8 @@ export type SubjectView = ReturnType<typeof assembleSubjectView>;
 /**
  * The subject's view of every line about exactly this subject that reviewers
  * ever released, or that the subject disputed, which needs a release first.
- * Pure: the caller reads the lines from their signed events, and the review log.
+ * Pure: the caller reads the lines from their signed events, with their dispute
+ * records checked again (checkLineDisputes), and the review log.
  */
 export function assembleSubjectView(
   subjectRef: Record<string, unknown>,
@@ -158,7 +160,12 @@ export function assembleSubjectView(
         r.relationTargetEventId === line.eventId
     );
     const reviews = reviewsOf(line);
-    const records = line.disputeRecords ?? [];
+    if (!line.checkedDisputes && line.disputeRecords?.length) {
+      throw new Error(
+        `${line.furnisherId}/${line.eventId}: its dispute records were not checked`
+      );
+    }
+    const records = line.checkedDisputes ?? [];
     const derived = deriveDisputes({
       line,
       records,

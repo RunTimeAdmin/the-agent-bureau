@@ -23,7 +23,12 @@ import {
   signKeyApproval,
   type ApprovableOperation,
 } from "./keyApproval";
-import { currentDispute, deriveDisputes, type Dispute } from "./dispute";
+import {
+  checkLineDisputes,
+  currentDispute,
+  deriveDisputes,
+  type Dispute,
+} from "./dispute";
 import { lineStates, releaseFor, type Line } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import {
@@ -642,9 +647,10 @@ async function queue(io: ReviewIO) {
       line.eventId
     );
     const reviews = reviewsFor(line, log);
+    const checked = await checkLineDisputes(line);
     const disputes = deriveDisputes({
       line,
-      records: line.disputeRecords ?? [],
+      records: checked.checkedDisputes,
       relating,
       reviewsOf: l => reviewsFor(l, log),
       now,

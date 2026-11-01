@@ -40,6 +40,7 @@ vi.mock("./reviewLog", async importOriginal => {
 });
 
 import {
+  NOT_ON_FILE,
   assembleFile,
   runFile,
   type FileIO,
@@ -47,6 +48,7 @@ import {
 } from "./agentFile";
 import {
   DISPUTE_SCHEMA,
+  checkLineDisputes,
   signWithFurnisherKey,
   signWithWallet,
   walletAddress,
@@ -130,6 +132,20 @@ function stored(
     entryHash: hashOf(500 + n),
     sequence: 500 + n,
     signedEvent: event,
+    // CounterAudit's ingest receipt, which names the key that signed the event.
+    receipt: {
+      receipt_type: "counteraudit.packet_receipt",
+      receipt_version: 1,
+      outcome_claim: {
+        outcome: event.outcome,
+        asserted_by: "signature",
+        signer: {
+          furnisher_id: FURNISHER,
+          key_id: "pilot-2026-10",
+          public_key: furnisherKey.publicKey,
+        },
+      },
+    },
     expiredAt: null,
     ...(options.disputes ? { disputeRecords: options.disputes } : {}),
   };
@@ -223,8 +239,11 @@ const approvals = (line: Line): Review[] => [
   },
 ];
 
-const assemble = (rows: StoredLine[], now: Date) =>
-  assembleFile({ wallet: SUBJECT }, rows, approvals, {
+// As pnpm file assemble does it: each line's dispute records checked again first.
+async function assemble(rows: StoredLine[], now: Date) {
+  const checked: StoredLine[] = [];
+  for (const row of rows) checked.push(await checkLineDisputes(row, {}));
+  return assembleFile({ wallet: SUBJECT }, checked, approvals, {
     now,
     bureauOrgId: BUREAU_ORG,
     testnetReviewers: false,
@@ -232,12 +251,55 @@ const assemble = (rows: StoredLine[], now: Date) =>
     proofBase: API,
     furnishers: {},
   }).file;
+}
 
 describe("a subject dispute on an agent's file", () => {
-  it("leaves a file without disputes as it was: no dispute field, no new disclosure", () => {
+  it("says on every file how a subject disputes a line", () => {
+    expect(NOT_ON_FILE).toContain(
+      "Inquiries are not built yet. A subject disputes a line through the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built."
+    );
+    expect(NOT_ON_FILE.join(" ")).not.toContain("Disputes and statements");
+  });
+
+  it("never assembles a line whose dispute records were not checked", async () => {
+    const line = stored(1);
+    line.disputeRecords = await disputeRecords(line, [
+      { kind: "dispute", at: T0 },
+    ]);
+    expect(() =>
+      assembleFile({ wallet: SUBJECT }, [line], approvals, {
+        now: at(1),
+        bureauOrgId: BUREAU_ORG,
+        testnetReviewers: false,
+        furnishers: {},
+      })
+    ).toThrow("its dispute records were not checked");
+  });
+
+  it("counts nothing for a stored record whose flags were edited", async () => {
+    const line = stored(1);
+    const [forged] = await disputeRecords(line, [{ kind: "dispute", at: T0 }]);
+    // Another wallet's signature under the subject's name, stored as if it had checked.
+    line.disputeRecords = [
+      {
+        ...forged,
+        record: {
+          ...(forged.record as Record<string, unknown>),
+          reason: "edited after it was sealed",
+        },
+        signatureOk: true,
+        subjectControlOk: true,
+      },
+    ];
+    const [entry] = (await assemble([line], at(1))).furnished_outcomes;
+    expect(entry.display_state).toBe("released");
+    expect(entry.dispute).toBeUndefined();
+  });
+
+  it("leaves a file without disputes as it was: no dispute field, no new disclosure", async () => {
     const rows = [stored(1), stored(2)];
-    const without = assemble(rows, at(1));
-    const empty = assemble(
+    const without = await assemble(rows, at(1));
+    const empty = await assemble(
       rows.map(r => ({ ...r, disputeRecords: [] })),
       at(1)
     );
@@ -253,7 +315,7 @@ describe("a subject dispute on an agent's file", () => {
     line.disputeRecords = await disputeRecords(line, [
       { kind: "dispute", at: T0 },
     ]);
-    const file = assemble([line], at(1));
+    const file = await assemble([line], at(1));
     expect(file.furnished_outcomes[0]).toMatchObject({
       display_state: "disputed",
       released: "solo_test",
@@ -281,7 +343,7 @@ describe("a subject dispute on an agent's file", () => {
         text: "The wallet that paid is not mine.",
       },
     ]);
-    const [entry] = assemble([line], at(30)).furnished_outcomes;
+    const [entry] = (await assemble([line], at(30))).furnished_outcomes;
     expect(entry.display_state).toBe("disputed");
     expect(entry.dispute).toEqual({
       state: "confirmed",
@@ -301,20 +363,20 @@ describe("a subject dispute on an agent's file", () => {
       relation: { type: "corrects", target_event_id: "event-1" },
       sealedAt: at(16),
     });
-    const before = assemble([disputed], at(14));
+    const before = await assemble([disputed], at(14));
     expect(
       before.furnished_outcomes.map(l => l.counteraudit.packet_id)
     ).toEqual([disputed.packetId]);
-    expect(assemble([disputed], at(15)).furnished_outcomes).toEqual([]);
+    expect((await assemble([disputed], at(15))).furnished_outcomes).toEqual([]);
 
-    const after = assemble([disputed, correction], at(20));
+    const after = await assemble([disputed, correction], at(20));
     const shown = [...after.furnished_outcomes, ...after.history].map(
       l => l.counteraudit.packet_id
     );
     expect(shown).toEqual([correction.packetId]);
     expect(after.history).toEqual([]);
     // Without the lapse the corrected line would sit in history.
-    const undisputed = assemble([stored(1), correction], at(20));
+    const undisputed = await assemble([stored(1), correction], at(20));
     expect(undisputed.history.map(l => l.counteraudit.packet_id)).toEqual([
       disputed.packetId,
     ]);
@@ -329,7 +391,7 @@ describe("a subject dispute on an agent's file", () => {
       relation: { type: "corrects", target_event_id: "event-1" },
       sealedAt: at(5),
     });
-    const file = assemble([disputed, correction], at(20));
+    const file = await assemble([disputed, correction], at(20));
     expect(file.history).toHaveLength(1);
     expect(file.history[0]).toMatchObject({
       display_state: "superseded",

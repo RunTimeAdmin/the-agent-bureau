@@ -6,12 +6,14 @@
 // did:sigvara the agent address SigvaraIdentity holds, and the furnisher's key
 // (Ed25519) against the key that signed the disputed line or one listed for it.
 // A record whose checks fail is sealed and stored, and counts for nothing.
-// deriveDisputes turns a line's stored records into each dispute's state.
+// Every settle checks each stored record again from the record itself
+// (checkLineDisputes), and deriveDisputes turns the records that check into
+// each dispute's state.
 import { createPrivateKey, sign, verify } from "node:crypto";
 import { recoverMessageAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { DISPUTE_KINDS } from "../drizzle/schema";
-import type { Furnisher } from "./furnishers";
+import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
   currentDecisions,
   relationProblem,
@@ -522,9 +524,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-/** The disputed line as the furnisher's checks need it: its furnisher, signed event and receipt. */
+/** The disputed line as the checks need it: its furnisher and subject, and its signed event and receipt, which name the key that signed it. */
 export type KeyedLine = {
   furnisherId: string;
+  subjectRef: unknown;
   signedEvent: unknown;
   receipt: unknown;
 };
@@ -534,13 +537,17 @@ export type Check = { ok: boolean; problem: string | null };
 /**
  * Checks a furnisher's record against the key that signed the disputed line
  * (the key_id in the line's signed event, with the public key CounterAudit's
- * receipt names for it) or an active key server/furnishers.ts lists for that
- * furnisher. A record from another furnisher than the line's never checks.
+ * receipt for the line names for that furnisher and key) or a key
+ * server/furnishers.ts lists for that furnisher. A record being submitted
+ * needs a listed key to be active (activeKeysOnly); a stored record keeps
+ * checking with a listed key revoked since, as stored lines keep their checks.
+ * A record from another furnisher than the line's never checks.
  */
 export function checkFurnisherRecord(
   record: FurnisherRecord,
-  line: KeyedLine,
-  furnishers: Record<string, Furnisher>
+  line: Pick<KeyedLine, "furnisherId" | "signedEvent" | "receipt">,
+  furnishers: Record<string, Furnisher>,
+  options: { activeKeysOnly?: boolean } = {}
 ): Check {
   const fail = (problem: string): Check => ({ ok: false, problem });
   if (record.furnisher_id !== line.furnisherId) {
@@ -555,7 +562,10 @@ export function checkFurnisherRecord(
   if (
     event?.key_id === record.key_id &&
     isRecord(signer) &&
-    typeof signer.public_key === "string"
+    typeof signer.public_key === "string" &&
+    (signer.key_id === undefined || signer.key_id === record.key_id) &&
+    (signer.furnisher_id === undefined ||
+      signer.furnisher_id === line.furnisherId)
   ) {
     keys.push(signer.public_key);
   }
@@ -566,10 +576,12 @@ export function checkFurnisherRecord(
     listed && Object.hasOwn(listed.keys, record.key_id)
       ? listed.keys[record.key_id]
       : undefined;
-  if (key?.status === "active") keys.push(key.publicKey);
+  if (key && (key.status === "active" || !options.activeKeysOnly)) {
+    keys.push(key.publicKey);
+  }
   if (keys.length === 0) {
     return fail(
-      `${record.key_id} is neither the key that signed the line nor an active key server/furnishers.ts lists for ${record.furnisher_id}`
+      `${record.key_id} is neither the key that signed the line nor ${options.activeKeysOnly ? "an active key" : "a key"} server/furnishers.ts lists for ${record.furnisher_id}`
     );
   }
   return keys.some(k => furnisherSignatureVerifies(record, k))
@@ -585,43 +597,20 @@ export type SubjectControl = Check & {
 };
 
 /**
- * Whether the wallet that signed a subject's record controls the line's
- * subject: the wallet the line names, or for a did:sigvara the agent address
- * SigvaraIdentity holds at the latest finalized block. Other subjects cannot be
- * matched to a key yet (Phase 3). Throws when Sigvara cannot be read.
+ * For a did:sigvara subject, the agent address SigvaraIdentity holds at the
+ * latest finalized block on the pinned chain, or why there is none; null for
+ * any other subject. Throws when Sigvara cannot be read.
  */
-export async function checkSubjectControl(
+export async function readController(
   subjectRef: unknown,
-  signerAddress: string,
   sigvara: SigvaraClient
-): Promise<SubjectControl> {
-  const fail = (problem: string, controller: string | null = null) => ({
-    ok: false,
-    problem,
-    controller,
-  });
+): Promise<SubjectControl | null> {
   const ref = asRecord(subjectRef);
-  const signer = signerAddress.toLowerCase();
-  if (ref && Object.keys(ref).length === 1 && typeof ref.wallet === "string") {
-    if (!ADDRESS.test(ref.wallet)) {
-      return fail(
-        "the line names a wallet that is not an EVM address, which no EIP-191 signature can show control of"
-      );
-    }
-    return ref.wallet.toLowerCase() === signer
-      ? { ok: true, problem: null, controller: null }
-      : fail(
-          `signed by ${signerAddress}, not the wallet the line names (${ref.wallet})`
-        );
-  }
   const did = ref ? parseSigvaraDid(ref) : null;
-  if (!did) {
-    return fail(
-      "only a line about an EVM wallet or a did:sigvara can be disputed yet; matching other subjects to a key is Phase 3"
-    );
-  }
+  if (!did) return null;
+  const none = (problem: string) => ({ ok: false, problem, controller: null });
   if (did.chainId !== SIGVARA_ARC_TESTNET.chainId) {
-    return fail(
+    return none(
       `the did names chain ${did.chainId}; the Bureau reads Sigvara on chain ${SIGVARA_ARC_TESTNET.chainId} only`
     );
   }
@@ -637,22 +626,132 @@ export async function checkSubjectControl(
     block.number
   );
   if (identity.registeredAt === 0n) {
-    return fail(
+    return none(
       `the agent is not registered in SigvaraIdentity at block ${block.number}`
     );
   }
-  const controller = identity.agentAddress;
+  return { ok: true, problem: null, controller: identity.agentAddress };
+}
+
+/**
+ * Why the wallet that signed a subject's record does not control the line's
+ * subject, or null. The subject is the wallet the line names, or for a
+ * did:sigvara the agent address read from SigvaraIdentity when the record was
+ * submitted (controller). Other subjects cannot be matched to a key yet
+ * (Phase 3).
+ */
+export function subjectControlProblem(
+  subjectRef: unknown,
+  signerAddress: string,
+  controller: string | null
+): string | null {
+  const ref = asRecord(subjectRef);
+  const signer = signerAddress.toLowerCase();
+  if (ref && Object.keys(ref).length === 1 && typeof ref.wallet === "string") {
+    if (!ADDRESS.test(ref.wallet)) {
+      return "the line names a wallet that is not an EVM address, which no EIP-191 signature can show control of";
+    }
+    return ref.wallet.toLowerCase() === signer
+      ? null
+      : `signed by ${signerAddress}, not the wallet the line names (${ref.wallet})`;
+  }
+  if (!ref || !parseSigvaraDid(ref)) {
+    return "only a line about an EVM wallet or a did:sigvara can be disputed yet; matching other subjects to a key is Phase 3";
+  }
+  if (controller === null) {
+    return "no agent address was read from SigvaraIdentity for the did:sigvara when the record was submitted";
+  }
   return controller.toLowerCase() === signer
-    ? { ok: true, problem: null, controller }
-    : fail(
-        `signed by ${signerAddress}, not the agent address SigvaraIdentity holds at block ${block.number} (${controller})`,
-        controller
-      );
+    ? null
+    : `signed by ${signerAddress}, not the agent address SigvaraIdentity holds for the did:sigvara (${controller})`;
+}
+
+/**
+ * Whether the wallet that signed a subject's record controls the line's
+ * subject, reading SigvaraIdentity for a did:sigvara, as pnpm dispute submit
+ * checks it. Throws when Sigvara cannot be read.
+ */
+export async function checkSubjectControl(
+  subjectRef: unknown,
+  signerAddress: string,
+  sigvara: SigvaraClient
+): Promise<SubjectControl> {
+  const read = await readController(subjectRef, sigvara);
+  if (read && !read.ok) return read;
+  const controller = read?.controller ?? null;
+  const problem = subjectControlProblem(subjectRef, signerAddress, controller);
+  return { ok: problem === null, problem, controller };
+}
+
+export type RecordCheck = Check & {
+  signatureOk: boolean;
+  /** Null for a furnisher's record. */
+  subjectControlOk: boolean | null;
+};
+
+/**
+ * Checks one stored record from the record itself, as every settle does: its
+ * form, that it belongs to the dispute and kind it is stored under, and its
+ * signature: the subject's against the line's subject (for a did:sigvara, the
+ * agent address stored when it was submitted, the one stored value trusted
+ * here), the furnisher's against the line's furnisher's key. What the checks
+ * found when it was submitted is not read: an edited flag changes nothing, and a
+ * record erased with its line's source counts for nothing.
+ */
+export async function checkStoredRecord(
+  row: Pick<
+    StoredDisputeRecord,
+    "disputeId" | "kind" | "record" | "controllerAddress"
+  >,
+  line: KeyedLine,
+  furnishers: Record<string, Furnisher>,
+  options: { activeKeysOnly?: boolean } = {}
+): Promise<RecordCheck> {
+  const fail = (problem: string): RecordCheck => ({
+    ok: false,
+    problem,
+    signatureOk: false,
+    subjectControlOk: null,
+  });
+  const value = asRecord(row.record);
+  if (!value) return fail("the record was erased with the line's source");
+  const form = checkDisputeForm(value);
+  if (!form.ok) return fail(form.reason);
+  const record = form.record;
+  if (record.dispute_id !== row.disputeId || record.kind !== row.kind) {
+    return fail("the record is stored under another dispute or kind");
+  }
+  if (!signedByWallet(record)) {
+    const check = checkFurnisherRecord(record, line, furnishers, options);
+    return { ...check, signatureOk: check.ok, subjectControlOk: null };
+  }
+  const signatureOk = await walletSignatureVerifies(record);
+  const control = subjectControlProblem(
+    line.subjectRef,
+    record.signer.address,
+    row.controllerAddress ?? null
+  );
+  const problems = [
+    ...(signatureOk
+      ? []
+      : [`the signature does not verify as ${record.signer.address}'s`]),
+    ...(control ? [control] : []),
+  ];
+  return {
+    ok: problems.length === 0,
+    problem: problems.length ? problems.join("; ") : null,
+    signatureOk,
+    subjectControlOk: control === null,
+  };
 }
 
 // ---- What the records add up to ----
 
-/** A stored record (dispute_records), with what the Bureau's checks found when it was submitted. */
+/**
+ * A stored record (dispute_records). signatureOk, subjectControlOk and
+ * checkProblem say what the checks found when it was submitted; nothing reads
+ * them to decide a dispute (checkStoredRecord checks the record again).
+ */
 export type StoredDisputeRecord = {
   id: number;
   disputeId: string;
@@ -708,27 +807,58 @@ function sealOrder(a: Counted, b: Counted): number {
   );
 }
 
-// The records that count: their form holds, they belong to the dispute and kind
-// they were stored under, their signature checked, and a subject's record was
-// signed by the wallet that controls the subject.
-function countedRecords(rows: StoredDisputeRecord[], line: Line): Counted[] {
+/** The line's subject as its signed event names it, or the stored copy where it has none. */
+export function lineSubject(line: {
+  subjectRef: unknown;
+  signedEvent?: unknown;
+}): unknown {
+  const event = asRecord(line.signedEvent);
+  return event && isRecord(event.subject_ref)
+    ? event.subject_ref
+    : line.subjectRef;
+}
+
+/** A stored record with the result of checking it again (checkStoredRecord). */
+export type CheckedDisputeRecord = StoredDisputeRecord & { check: RecordCheck };
+
+/**
+ * The line with each of its stored dispute records checked again from the
+ * record itself (checkStoredRecord), as deriveDisputes needs them. The subject
+ * is read from the line's signed event where the line has one, as a file reads
+ * it. Every settle, file, queue and subject view checks them so.
+ */
+export async function checkLineDisputes<T extends Line>(
+  line: T,
+  furnishers: Record<string, Furnisher> = FURNISHERS
+): Promise<T & { checkedDisputes: CheckedDisputeRecord[] }> {
+  const keyed: KeyedLine = {
+    furnisherId: line.furnisherId,
+    subjectRef: lineSubject(line),
+    signedEvent: line.signedEvent,
+    receipt: line.receipt,
+  };
+  const checkedDisputes: CheckedDisputeRecord[] = [];
+  for (const row of line.disputeRecords ?? []) {
+    checkedDisputes.push({
+      ...row,
+      check: await checkStoredRecord(row, keyed, furnishers),
+    });
+  }
+  return { ...line, checkedDisputes };
+}
+
+// The records that count: they checked again just now, so their form holds,
+// they belong to the dispute and kind they were stored under, and their
+// signature is the line's subject's or furnisher's.
+function countedRecords(rows: CheckedDisputeRecord[]): Counted[] {
   const counted: Counted[] = [];
   for (const row of rows) {
+    if (!row.check.ok) continue;
     const form = checkDisputeForm(asRecord(row.record));
-    if (!form.ok || !row.signatureOk) continue;
-    const record = form.record;
-    if (record.dispute_id !== row.disputeId || record.kind !== row.kind)
-      continue;
-    if (
-      signedByWallet(record)
-        ? row.subjectControlOk !== true
-        : record.furnisher_id !== line.furnisherId
-    ) {
-      continue;
-    }
+    if (!form.ok) continue;
     const at = time(row.sealedAt);
     if (!Number.isFinite(at)) continue;
-    counted.push({ row, record, at });
+    counted.push({ row, record: form.record, at });
   }
   return counted.sort(sealOrder);
 }
@@ -741,9 +871,10 @@ function decidedAfter(reviews: Review[], at: number): Review[] {
 }
 
 export type DisputeInput = {
-  /** The disputed line, with its stored dispute records. */
+  /** The disputed line. */
   line: Line;
-  records: StoredDisputeRecord[];
+  /** Its stored dispute records, each checked again (checkLineDisputes). */
+  records: CheckedDisputeRecord[];
   /** The same furnisher's lines whose relation points at it, with their seal times. */
   relating: Line[];
   /** The review log's decisions on a line. */
@@ -771,7 +902,7 @@ export type DisputeInput = {
  */
 export function deriveDisputes(input: DisputeInput): Dispute[] {
   const { line, relating, now } = input;
-  const counted = countedRecords(input.records, line);
+  const counted = countedRecords(input.records);
   const ids = [...new Set(counted.map(c => c.row.disputeId))];
   const disputes: Dispute[] = [];
   for (const id of ids) {
@@ -895,18 +1026,30 @@ export function currentDispute(disputes: Dispute[]): Dispute | null {
   );
 }
 
-/** The dispute a line shows, from the records it carries (Line.disputeRecords). */
+/**
+ * The dispute a line shows, from its records as checkLineDisputes checked them.
+ * A line read with dispute records that were not checked is an error, never a
+ * line without a dispute: that would put a removed line back on a file.
+ */
 export function disputeOf(
   line: Line,
   relating: Line[],
   reviewsOf: (line: Line) => Review[],
   now: Date
 ): Dispute | null {
-  if (!line.disputeRecords || line.disputeRecords.length === 0) return null;
+  if (!line.checkedDisputes) {
+    if (line.disputeRecords && line.disputeRecords.length > 0) {
+      throw new Error(
+        `${line.furnisherId}/${line.eventId}: its dispute records were not checked`
+      );
+    }
+    return null;
+  }
+  if (line.checkedDisputes.length === 0) return null;
   return currentDispute(
     deriveDisputes({
       line,
-      records: line.disputeRecords,
+      records: line.checkedDisputes,
       relating,
       reviewsOf,
       now,

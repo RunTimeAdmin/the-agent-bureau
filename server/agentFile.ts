@@ -12,7 +12,12 @@ import { BUREAU_FILE_KEYS } from "./bureauFileKeys";
 import { fetchProof } from "./counteraudit";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { listFileLines, schemaReady } from "./db";
-import { disputeOf, type Dispute, type DisputeState } from "./dispute";
+import {
+  checkLineDisputes,
+  disputeOf,
+  type Dispute,
+  type DisputeState,
+} from "./dispute";
 import { readEventFields } from "./furnishIntake";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
@@ -80,7 +85,7 @@ export const NOT_ON_FILE = [
   "Subject matching: only lines naming exactly this subject reference are here (an EVM address, in a wallet or a did:sigvara, compares without case). Other spellings, registrations, wallets or DIDs of the same operator are not matched (Phase 3).",
   "Lines reviewers have not released are held and not shown, whatever their outcome.",
   "Public record and payment history are not assembled into files yet. Third-party standing comes only from Sigvara, and only for a did:sigvara agent on Arc testnet.",
-  "Disputes and statements from the subject, and inquiries, are not built yet.",
+  "Inquiries are not built yet. A subject disputes a line through the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built.",
 ];
 
 // Subscribers see a furnisher's category, not its name (bureau-spec.md). Listed
@@ -340,7 +345,8 @@ export type LineSource =
 /**
  * The file for one subject: its lines that reviewers released, newest first,
  * with what the Bureau knows of each. Pure: the caller reads the lines, the
- * review log and the lines' sources. Lines are read from their signed events;
+ * review log and the lines' sources, and checks each line's dispute records again
+ * (checkLineDisputes). Lines are read from their signed events;
  * one that cannot be is left off, and listed in `skipped` for the operator, not
  * on the file. A line whose source CounterAudit has erased is left off too, and
  * listed in `expired`.
@@ -792,7 +798,11 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     io.log(`Not signed: Sigvara could not be read: ${describeError(error)}`);
     return 1;
   }
-  const rows = (await listFileLines()) as StoredLine[];
+  // Each line's dispute records are checked again from the records themselves.
+  const rows: StoredLine[] = [];
+  for (const row of (await listFileLines()) as StoredLine[]) {
+    rows.push(await checkLineDisputes(row, io.furnishers));
+  }
   const reviewsOf = (line: Line) => reviewsFor(line, log);
   const assembleOptions: AssembleOptions = {
     now: io.now(),
@@ -1310,7 +1320,7 @@ async function subjectCommand(args: string[], io: FileIO): Promise<number> {
   const skipped: string[] = [];
   for (const row of (await listFileLines()) as StoredLine[]) {
     if (row.expiredAt) continue;
-    const line = fromSignedEvent(row);
+    const line = fromSignedEvent(await checkLineDisputes(row, io.furnishers));
     if (typeof line === "string") skipped.push(line);
     else lines.push(line);
   }
