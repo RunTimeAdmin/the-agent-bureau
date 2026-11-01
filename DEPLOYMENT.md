@@ -79,11 +79,11 @@ The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_
 
 Website images are in `client/public/images/` and copied into `dist/public/images/`. Google Fonts load from Google's public font service. The favicon and social-preview image are local.
 
-The build emits real HTML for `/`, `/privacy`, and `/terms`, with a public-only sitemap and robots policy. The private inbox is `noindex`. Connect DNS using your hosting provider's instructions.
+The build emits real HTML for `/`, `/bureau`, `/review-log`, `/agents`, each case (`/play` and `/play/002`), `/privacy`, `/terms`, `/inbox` and `/404`, with a public-only sitemap and robots policy. The private inbox is `noindex`. Connect DNS using your hosting provider's instructions.
 
 ## Operating boundaries
 
-A successful contact submission means an inquiry was stored, not that an email was sent, an agent was booked, or payment was taken. No email delivery provider is configured. Service examples are illustrative. No token, wallet checkout, or Solana escrow is live.
+A successful contact submission means an inquiry was stored, not that an email was sent, an agent was booked, or payment was taken. No email delivery provider is configured. The example file and network graphic on `/bureau` are illustrative. No token, wallet checkout, or Solana escrow is live.
 
 The rate limiters are in-memory and keyed by the visitor's IP. Express trusts `X-Forwarded-For` only when the request arrives from a loopback or private-network address, which covers a reverse proxy on the same server or internal network (as on Hostinger). If your proxy connects from a public address, every visitor will share one limit; adjust `trust proxy` in `server/_core/index.ts` for that host.
 

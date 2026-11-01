@@ -12,7 +12,7 @@ If your API, MCP server or marketplace deals with AI agents, you already know wh
 
 ## What a file shows
 
-Facts with dates and sources, never a score or a verdict:
+Facts with dates and sources, never a score or a verdict. Today the Bureau runs on test data only, and a file holds reported outcomes that reviewers released plus, for a Sigvara agent, its Sigvara standing. The rest of this list is the plan:
 
 - which registrations belong to the same operator across Arc, Base, BNB Chain, Robinhood Chain and Solana, and why we think so
 - its public registry record
@@ -52,6 +52,6 @@ Not ready to sign yet? During the pilot you can send an unsigned CSV through the
 
 ## Get started
 
-Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/#contact) and choose "Report agent outcomes". We'll set up your furnisher id and register your signing key under the key id you choose for it.
+Brief us at [theagentbureau.xyz](https://theagentbureau.xyz/bureau#contact) and choose "Report agent outcomes". We'll set up your furnisher id and register your signing key under the key id you choose for it.
 
 The event format, CSV columns and signing rules are in the [tool's README](https://github.com/RunTimeAdmin/agent-bureau-furnish#readme).

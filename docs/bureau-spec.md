@@ -214,7 +214,7 @@ Only arm's-length parties count. Our own projects, and anyone we pay, don't.
 4. **Testnet scores.** Sigvara runs on Arc testnet with no external audit, and mainnet is planned for Q1 2027 behind one (AgentClear Phase 0, decision 3). Proposed: show the score, labeled with its network.
 5. **Known blind spots.** Sigvara's scanner can't see Circle Gateway-batched x402 settlement, and Levy charges show the SubscriptionManager as payer (AgentClear F3). Both go under "Not on file" until fixed.
 6. **Legal review.** Who, and when. Proposed: before the first paying subscriber.
-7. **The website.** Should theagentbureau.xyz switch from the services pitch to this? Proposed: yes. The furnisher one-pager (`docs/furnisher-one-pager.md`) now exists and becomes the main page.
+7. **The website.** Should theagentbureau.xyz switch from the services pitch to this? Done: the services pitch is gone. The Bureau's page, built from the furnisher one-pager (`docs/furnisher-one-pager.md`), is at `/bureau`, and the home page is the BUREAU game.
 
 ## Resolved issues
 

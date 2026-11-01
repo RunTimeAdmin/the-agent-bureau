@@ -3,7 +3,8 @@
 ```
 Status:     decided by the owner, 2026-10-31: option A, with the governance and disclosure
             below, and the build choices in "Build design". Built: steps 1 to 4 (step 2
-            on 2026-10-31). Not built: the redacted release bundle (with file assembly).
+            on 2026-10-31). Not built: the redacted release bundle (files are assembled
+            now, docs/agent-file.md, but do not carry it yet).
 Answers:    external review finding M-03 (the operator can suppress a reviewer's rejection)
 Relates to: docs/two-person-review.md, Phase 0 decision 6 (two-person review)
 ```
@@ -62,7 +63,7 @@ Option A. It removes the operator from the path, reuses CounterAudit's proofs an
 3. **Read keys.** Each reviewer has an individual `read` key to the review organization, and the Bureau service a separate read-only key of its own. Nothing is published for reviewers to check against.
 4. **Disclosure.** Subscribers receive a verifiable, redacted release bundle for a line. The full review packets, and reviewers' private notes, go only to the line's subject and the reviewers.
 
-Beyond the outline below it needs: a two-of-three reviewer quorum for key changes, which CounterAudit's admin approvals do not provide today; immediate single-reviewer suspension, with release held until the quorum decides; and the redacted release bundle and its verification.
+Beyond the outline below it needs: a two-of-three reviewer quorum for key changes, which CounterAudit's admin approvals did not provide before this build; immediate single-reviewer suspension, with release held until the quorum decides; and the redacted release bundle and its verification.
 
 ## Build design (owner's choices, 2026-10-31)
 
@@ -107,7 +108,7 @@ The Bureau reads the review chain in sequence order and applies each record as i
 
 ### Not in this build
 
-- The redacted release bundle for subscribers, which comes with file assembly; the files the Bureau assembles do not exist yet. The chain position a file's release rests on is recorded with it then.
+- The redacted release bundle for subscribers. Files are assembled now (`docs/agent-file.md`), but a file does not yet cite the review packets that released a line or the review-log position its release rests on.
 - A reviewer-side command that replays the chain with the reviewer's own read key.
 
 ## Build outline

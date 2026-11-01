@@ -134,7 +134,7 @@ const parties = [
     label: "01 / FURNISHERS",
     name: "Report outcomes, get files",
     state: "PILOT OPEN",
-    copy: "Vetted businesses send signed outcome reports, and each one is sealed in a tamper-evident log before it can reach a file. During the pilot, a business that hasn't set up signing can send a CSV through a channel agreed when it joins; those lines are labeled unsigned.",
+    copy: "Vetted businesses send signed outcome reports, and each one is sealed in a tamper-evident log before it can reach a file. During the pilot, a business that hasn't set up signing will be able to send a CSV through a channel agreed when it joins, with those lines labeled unsigned; that route is not built yet.",
   },
   {
     label: "02 / SUBSCRIBERS",
@@ -146,7 +146,7 @@ const parties = [
     label: "03 / AGENT OWNERS",
     name: "See and dispute your file",
     state: "FREE",
-    copy: "Prove control by signing one message with the wallet that owns the registration. Dispute any line: the business that reported it has 15 days to back it up, or the line comes off. You can also add a statement to your file.",
+    copy: "Not built yet. An owner will prove control by signing one message with the wallet that owns the registration, then dispute any line: the business that reported it has 15 days to back it up, or the line comes off. Owners will also be able to add a statement to their file.",
   },
   {
     label: "04 / LIMITS",
@@ -339,15 +339,21 @@ export default function Bureau() {
           <p className="catalog-note">
             <span className="status-dot" />
             <span>
-              Files draw on{" "}
-              <a href="https://nooscape.si" target="_blank" rel="noreferrer">
-                Nooscape
-              </a>
-              's public agent atlas and{" "}
+              <b>Status: test data only.</b> Built: signed reports sealed in
+              CounterAudit, payment checks on Arc testnet, two-person review
+              through the <a href="/review-log">review log</a>, and signed files
+              with the released outcomes and{" "}
               <a href="https://sigvara.xyz" target="_blank" rel="noreferrer">
                 Sigvara
               </a>
-              's on-chain standing, alongside outcomes businesses report.
+              's on-chain standing. Not built yet: matching registrations to one
+              operator, the public record from{" "}
+              <a href="https://nooscape.si" target="_blank" rel="noreferrer">
+                Nooscape
+              </a>
+              's agent atlas, payment history, and owners' disputes and
+              statements. Outside reports wait on a legal review of retention
+              and on independent reviewers.
             </span>
           </p>
         </section>

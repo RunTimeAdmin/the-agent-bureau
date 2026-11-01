@@ -41,7 +41,7 @@ When a relation cannot act, the intake reports why, and the target is settled wi
 
 **Withdrawing a relating line** (owner decision, 2026-10-31). If a furnisher withdraws its own dispute, the dispute ends and the disputed line goes back to `unverified`. A withdrawn correction, replacement or withdrawal stays in force: to bring an earlier line back, the furnisher sends a new line that supersedes the withdrawn one. For a line backed by a charge, that is also how the new line takes the charge over; a new line without that relation is a second line on the charge and fails (`docs/evidence-verifier.md`). The file only ever narrows, apart from a dispute ending. The intake carries such a change along the chain of relations, up to 10 lines.
 
-A withdrawal, a replacement or a furnisher's own dispute takes effect without review, since each only narrows what the file says. A correction's new line goes through every check like any other line. The relating line is kept as its own line; showing it in the file's history is part of assembling files, which is not built.
+A withdrawal, a replacement or a furnisher's own dispute takes effect without review, since each only narrows what the file says. A correction's new line goes through every check like any other line. The relating line is kept as its own line. On an agent's file (`docs/agent-file.md`) it appears like any other line once reviewers release it, and a released line it withdrew or replaced moves to the file's `history`.
 
 ## Not covered yet
 

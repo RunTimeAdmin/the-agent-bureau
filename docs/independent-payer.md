@@ -11,7 +11,7 @@ Relates to: docs/evidence-verifier.md, docs/two-person-review.md, docs/bureau-sp
 
 The Arc/Levy evidence check proves that a payer wallet paid a vetted merchant account of the furnisher, in a final block, for the stated amount. It refuses a payer that is the merchant or one of the furnisher's listed accounts. It cannot tell whether the payer wallet belongs to the furnisher through an account it never listed. A furnisher can pay itself from such a wallet, report the payer as the subject, and pass every check. On testnet the USDC is free, so this costs nothing.
 
-That is not an attack on a file today: the Bureau assembles no files, and wallets are not yet matched to agents (Phase 3). It becomes one the moment a file presents such a line as independent payment history.
+It becomes an attack on a file the moment a file presents such a line as independent payment history. The Bureau assembles files now (`docs/agent-file.md`), and each payment line on one carries `subject_control: unproven` and the funding screen's result rather than any claim of independence. Wallets are not yet matched to agents (Phase 3).
 
 ## 1. Name what each check proves
 
@@ -22,10 +22,10 @@ Keep each result granular, and never let one word stand for more than its check 
 | `payment_settlement_verified` (today's evidence `verified` for `paid`)        | A transfer of this amount from this payer wallet to the furnisher's vetted merchant account settled in a final block | That the payer is an independent customer, who controls the wallet, or that the service was delivered |
 | `payment_failure_verified` (today's evidence `verified` for `payment_failed`) | A Levy charge for this amount failed on chain                                                                        | Why it failed, or that the payer owed it                                                              |
 | reviewed (`two_person`, `solo_test`)                                          | Listed reviewers released the line                                                                                   | Anything beyond what they were shown                                                                  |
-| `subject_control: proven \| unproven` (new, not built)                        | The subject proved control of the payer wallet, or of a registry identity that lists it (section 2, layer 2)         | That the payer is independent of the furnisher                                                        |
-| `payer_independence_screen: clear \| flagged \| inconclusive` (new, not built) | The funding screen's result (section 2, layer 3)                                                                     | That the payer is independent: `clear` means the screen found nothing, within its limits              |
+| `subject_control: proven \| unproven` (new; `unproven` until Phase 3)         | The subject proved control of the payer wallet, or of a registry identity that lists it (section 2, layer 2)         | That the payer is independent of the furnisher                                                        |
+| `payer_independence_screen: clear \| flagged \| inconclusive` (new, built)     | The funding screen's result (section 2, layer 3)                                                                     | That the payer is independent: `clear` means the screen found nothing, within its limits              |
 
-There is no state that confirms a payer is independent: no check here can prove who owns a wallet or that a relationship is arm's length, so each layer reports only what it saw. The evidence code keeps its `verified` status for compatibility, but documents, review prompts and any future file use these names. They become the user-facing states in code before any external file or API goes live. A file line shows each state it has and labels what it lacks.
+There is no state that confirms a payer is independent: no check here can prove who owns a wallet or that a relationship is arm's length, so each layer reports only what it saw. The evidence code keeps its `verified` status for compatibility, but documents, review prompts and files use these names. They become the user-facing states in code before any external file or API goes live. A file line shows each state it has and labels what it lacks.
 
 ## 2. What makes a payer independent
 

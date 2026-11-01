@@ -4,7 +4,7 @@ Lock the product, data and trust decisions before any public endpoint accepts an
 
 ```
 Owner:      David (RunTimeAdmin)
-Status:     Decisions recorded 2026-10-29, refreshed 2026-10-31. Open before outside data: counsel's retention review and the retention rollout on CounterAudit's server. CounterAudit's expiry and erasure and the Bureau's cross-org intake are built.
+Status:     Decisions recorded 2026-10-29, refreshed 2026-11-01. Open before outside data: counsel's retention review, and independent reviewers for the review log (its pinned genesis is a testnet one, docs/two-person-review.md). CounterAudit's expiry and erasure are built and rolled out on its server, and the Bureau's cross-org intake is built.
 Created:    2026-10-29
 Decided:    2026-10-29 (decision 5 replaced by the 2026-10-31 baseline)
 Relates to: docs/bureau-spec.md, the Outcome Ingestion and Evidence Verification Implementation Plan (Phase 0, §4 and §15)
@@ -16,7 +16,7 @@ Turn the ideas the spec already states (CounterAudit is the system of record, ne
 
 ## What this groundwork already settled in code
 
-Three no-dependency pieces are in review now. None accepts external data; each only prepares the decisions this doc asks for.
+Three no-dependency pieces were in review on 2026-10-29. None accepts external data; each only prepares the decisions this doc asks for. All three have since merged, and v1 is now the only format the Bureau's intake accepts.
 
 - **Draft `outcome-event-v1`** in `agent-bureau-furnish`, kept beside v0 and not yet accepted. It adds `key_id` (which signing key produced the signature, so a furnisher can rotate keys) and an optional `relation` to an earlier event with an explicit type (`disputes`, `corrects`, `supersedes`, `withdraws`). It signs over a distinct `agent-bureau/outcome-event/v1\n` domain prefix, so a v0 signature can never be replayed as v1 or the reverse. The schema is published to `schema/outcome-event-v1.json`.
 - **Readiness that checks the schema**, not just the connection. `/api/ready` now returns not-ready when the Bureau tables are missing, so a boot migration that failed (the server keeps serving) is kept out of rotation.
@@ -68,7 +68,7 @@ Proposed: approve purpose limitation, subject access, correction and dispute, re
   - **Backups** expire on a rolling 90 days.
   - **Security logs** are kept 12 months and carry no payloads.
   - **Legal hold** applies only to a specific case, with a reason and a review date.
-  - **CounterAudit** does not keep identifiable source content indefinitely by default: it expires or crypto-erases it after 24 months, and keeps a minimal commitment only if counsel confirms that is appropriate. Today CounterAudit keeps every sealed packet with no expiry, so this is a requirement CounterAudit must meet before outside outcomes are sealed.
+  - **CounterAudit** does not keep identifiable source content indefinitely by default: it expires or crypto-erases it after 24 months, and keeps a minimal commitment only if counsel confirms that is appropriate. CounterAudit now meets the expiry part: per-organization retention policies, a daily expiry job, erasure and legal holds, and the Bureau's organization has a 24-month policy.
   - **Sigvara's** public outcome sharing and peer import stay off on mainnet until this policy covers copies held by other operators, because those copies cannot be guaranteed deleted.
 
 ### 6. CounterAudit authorization
@@ -113,14 +113,14 @@ From §15 of the plan. Status as of 2026-10-29:
 2. **Resolved.** First evidence source is on-chain settlement on Arc, read via Levy (decision 2).
 3. **Direction set, fields are Phase 2.** `payment_failed` and `not_delivered`, where there may be no successful on-chain receipt, are evidenced by furnisher signed logs or a CounterAudit packet plus human review, and never show as `verified` without a passing check. The exact evidence field shapes are drafted in Phase 2.
 4. **Resolved.** Several scoped keys per furnisher, each with a `key_id`; the Bureau custodies none (decision 3).
-5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs, and CounterAudit's expiry and crypto-erasure (built and deployed 2026-10-31, no organization has a policy yet) must be rolled out, before external data is accepted.
+5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs before external data is accepted. CounterAudit's expiry and crypto-erasure (built and deployed 2026-10-31) are rolled out: the daily expiry job runs, and the Bureau's organization has a 24-month policy.
 6. **Resolved.** Two-person review is required before any approval, match change, evidence waiver or negative-line release affects a third party. The solo-operator path is limited to test data and internal dry runs.
 
 ## Exit criteria
 
 Owner sign-off recorded 2026-10-29 on the v1 outcome scope, the publication rule and file-display states, the furnisher key and identity-matching model, and the receipt semantics. Two items stay open before any public endpoint accepts an external outcome:
 
-- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off. CounterAudit's expiry and crypto-erasure are built and deployed; its server rollout (backup expiry, the daily job, the Bureau organization's policy) is not done.
+- **Retention and data policy**: provisional baseline recorded 2026-10-31, awaiting counsel sign-off. CounterAudit's expiry and crypto-erasure are built, deployed and rolled out on its server: backups expire (local copies after 30 days, off-site after 90), the expiry job runs daily, and the Bureau's organization has a 24-month policy.
 - **Cross-org intake**: closed 2026-10-31. CounterAudit's full-event sealing and keyless public proofs, and the Bureau's sealed intake (`docs/cross-org-intake.md`), are built.
 
 No public endpoint accepts an external outcome until the retention item closes.
