@@ -29,6 +29,7 @@ import {
   parsePublicKey,
   signedEventHash,
   verifyLineProof,
+  verifyLineTombstone,
   type CheckResult,
   type Jwks,
 } from "./outcomeProof";
@@ -64,6 +65,8 @@ const TEST_DATA_DISCLOSURE =
   "Every line on this file is test data: furnished to test the Bureau, not about real dealings.";
 const TESTNET_REVIEWERS_DISCLOSURE =
   "The reviewers who released these lines are testnet keys the Bureau's operator holds, not independent reviewers, so two_person here does not mean two independent people.";
+const EXPIRY_DISCLOSURE =
+  "A line can be checked against CounterAudit until its counteraudit.checkable_until, when CounterAudit erases its source under its retention policy. After that its proof URL answers with CounterAudit's signed record of the erasure, which still shows where the packet sat in its chain but no longer its outcome, and the line rests on the Bureau's signature alone. Lines whose source is erased are left off new files.";
 const HISTORY_DISCLOSURE =
   "history lists released lines the same furnisher later withdrew or replaced. They are kept as a record of what was reported, not as current facts.";
 
@@ -116,6 +119,12 @@ export type FileLine = {
     entry_hash: string;
     signed_event_hash: string;
     proof_url: string;
+    /**
+     * When CounterAudit erases the packet under its retention policy, as its proof said just
+     * before the file was assembled, or null when it set no date. The line can be checked
+     * against the proof until then. Absent on a file assembled before this was recorded.
+     */
+    checkable_until?: string | null;
   };
 };
 
@@ -281,26 +290,40 @@ export type AssembleOptions = {
   standing?: SigvaraStanding | null;
   /** The review organization and how far its log was read, for the file to state. */
   reviewLog?: { orgId: string; position: ReviewLogPosition | null };
+  /**
+   * Each line's source, by packet id, as CounterAudit's proof stated it just before assembling
+   * (readSources). A line whose source is erased or past its retention date is left off and
+   * listed in `expired`; one with no entry is skipped. Without this the file states no
+   * checkable_until.
+   */
+  sources?: Record<string, LineSource>;
 };
+
+/** What CounterAudit says of a line's source: until when it can be checked, or why it cannot. */
+export type LineSource =
+  { checkableUntil: string | null } | { expired: string };
 
 /**
  * The file for one subject: its lines that reviewers released, newest first,
- * with what the Bureau knows of each. Pure: the caller reads the lines and the
- * review log. Lines are read from their signed events; one that cannot be is
- * left off, and listed in `skipped` for the operator, not on the file.
+ * with what the Bureau knows of each. Pure: the caller reads the lines, the
+ * review log and the lines' sources. Lines are read from their signed events;
+ * one that cannot be is left off, and listed in `skipped` for the operator, not
+ * on the file. A line whose source CounterAudit has erased is left off too, and
+ * listed in `expired`.
  */
 export function assembleFile(
   subjectRef: Record<string, unknown>,
   rows: StoredLine[],
   reviewsOf: (line: Line) => Review[],
   options: AssembleOptions
-): { file: AgentFile; skipped: string[] } {
+): { file: AgentFile; skipped: string[]; expired: string[] } {
   const furnishers = options.furnishers ?? FURNISHERS;
   const proofBase = (options.proofBase ?? ENV.counterauditApiUrl).replace(
     /\/+$/,
     ""
   );
   const skipped: string[] = [];
+  const expired: string[] = [];
   const lines: StoredLine[] = [];
   for (const row of rows) {
     const line = fromSignedEvent(row);
@@ -324,6 +347,20 @@ export function assembleFile(
     if (!states.released) continue;
     const display = displayStateFor(states);
     if (display === "unverified") continue;
+    const source =
+      options.sources && Object.hasOwn(options.sources, line.packetId)
+        ? options.sources[line.packetId]
+        : undefined;
+    if (options.sources && !source) {
+      skipped.push(
+        `${line.packetId}: its source was not read from CounterAudit`
+      );
+      continue;
+    }
+    if (source && "expired" in source) {
+      expired.push(`${line.packetId}: ${source.expired}`);
+      continue;
+    }
     const listed = Object.hasOwn(furnishers, line.furnisherId)
       ? furnishers[line.furnisherId].counterauditOrgId
       : undefined;
@@ -367,6 +404,7 @@ export function assembleFile(
         entry_hash: line.entryHash,
         signed_event_hash: line.signedEventHash,
         proof_url: `${proofBase}/v1/proofs/${encodeURIComponent(line.packetId)}`,
+        ...(source ? { checkable_until: source.checkableUntil } : {}),
       },
     };
     (display === "withdrawn" || display === "superseded"
@@ -382,6 +420,8 @@ export function assembleFile(
   const all = [...standing, ...history];
   const disclosures = [FACTS_DISCLOSURE, PAYMENT_DISCLOSURE];
   if (history.length > 0) disclosures.push(HISTORY_DISCLOSURE);
+  if (all.some(l => typeof l.counteraudit.checkable_until === "string"))
+    disclosures.push(EXPIRY_DISCLOSURE);
   if (all.some(l => l.released === "solo_test"))
     disclosures.push(SOLO_TEST_DISCLOSURE);
   if (options.testnetReviewers) disclosures.push(TESTNET_REVIEWERS_DISCLOSURE);
@@ -415,6 +455,7 @@ export function assembleFile(
       not_on_file: NOT_ON_FILE,
     },
     skipped,
+    expired,
   };
 }
 
@@ -453,6 +494,14 @@ export function signFile(
 
 const pass: CheckResult = { ok: true };
 const fail = (detail: string): CheckResult => ({ ok: false, detail });
+
+/** The checks that failed, by name and why, for one line of output. */
+function failedChecks(checks: Record<string, CheckResult>): string {
+  return Object.entries(checks)
+    .filter(([, c]) => !c.ok)
+    .map(([name, c]) => `${name}${c.detail ? `: ${printable(c.detail)}` : ""}`)
+    .join("; ");
+}
 
 /** Whether a pinned Bureau key signed this file, unchanged. */
 export function checkFileSignature(
@@ -702,28 +751,47 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     io.log(`Not signed: Sigvara could not be read: ${describeError(error)}`);
     return 1;
   }
-  const { file, skipped } = assembleFile(
-    subjectRef,
-    (await listFileLines()) as StoredLine[],
-    line => reviewsFor(line, log),
-    {
-      now: io.now(),
-      bureauOrgId: ENV.counterauditOrgId,
-      testnetReviewers: log.testnet,
-      furnishers: io.furnishers,
-      standing,
-      reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
-    }
-  );
+  const rows = (await listFileLines()) as StoredLine[];
+  const reviewsOf = (line: Line) => reviewsFor(line, log);
+  const assembleOptions: AssembleOptions = {
+    now: io.now(),
+    bureauOrgId: ENV.counterauditOrgId,
+    testnetReviewers: log.testnet,
+    furnishers: io.furnishers,
+    standing,
+    reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
+  };
+  const draft = assembleFile(subjectRef, rows, reviewsOf, assembleOptions);
   // A stored line whose signed event does not check means the store was
   // changed or damaged; a withdrawal that stops acting that way could put a
   // line back on a file, so nothing is signed until it is fixed.
-  if (skipped.length > 0) {
-    for (const reason of skipped) io.log(printable(reason));
+  if (draft.skipped.length > 0) {
+    for (const reason of draft.skipped) io.log(printable(reason));
     io.log(
       "Not signed: these lines' signed events do not check. Re-run the intake for them, or find out who changed them."
     );
     return 1;
+  }
+  // Each line is checkable until its source's retention date, and no longer on a file after.
+  const sources = await readSources(
+    [...draft.file.furnished_outcomes, ...draft.file.history],
+    io
+  );
+  if ("problem" in sources) {
+    io.log(`Not signed: ${printable(sources.problem)}`);
+    return 1;
+  }
+  const { file, skipped, expired } = assembleFile(subjectRef, rows, reviewsOf, {
+    ...assembleOptions,
+    sources: sources.sources,
+  });
+  if (skipped.length > 0) {
+    for (const reason of skipped) io.log(printable(reason));
+    io.log("Not signed: these lines' sources were not read.");
+    return 1;
+  }
+  for (const reason of expired) {
+    io.log(`Left off, its source has expired: ${printable(reason)}`);
   }
   let signed: SignedAgentFile;
   try {
@@ -753,6 +821,79 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     );
   }
   return 0;
+}
+
+/**
+ * Reads each line's source from CounterAudit just before a file is signed: its proof, checked
+ * against the line as verify checks it, and its retention date. A line whose source is erased,
+ * or past that date, comes back expired. Fails closed: a proof that cannot be read or does not
+ * check stops the file, so none is signed that its own verify would fail.
+ */
+async function readSources(
+  lines: FileLine[],
+  io: FileIO
+): Promise<{ sources: Record<string, LineSource> } | { problem: string }> {
+  const sources: Record<string, LineSource> = {};
+  for (const line of lines) {
+    const ca = line.counteraudit;
+    const fetched = await io.fetchProof(ca.packet_id);
+    if (fetched.ok) {
+      const result = verifyLineProof({
+        proof: fetched.proof,
+        jwks: io.jwks,
+        furnishers: io.furnishers,
+        packetId: ca.packet_id,
+        orgId: ca.org_id,
+        sequence: ca.sequence,
+        entryHash: ca.entry_hash,
+        signedEventHash: ca.signed_event_hash,
+        outcome: line.outcome,
+        sealedAt: line.sealed_at,
+      });
+      if (!result.ok) {
+        return {
+          problem: `${ca.packet_id}: its proof does not check: ${failedChecks(result.checks)}`,
+        };
+      }
+      const until = fetched.proof.expires_at;
+      if (until === undefined || until === null) {
+        sources[ca.packet_id] = { checkableUntil: null };
+        continue;
+      }
+      const at = typeof until === "string" ? new Date(until).getTime() : NaN;
+      if (!Number.isFinite(at)) {
+        return {
+          problem: `${ca.packet_id}: its proof's expires_at is not a time`,
+        };
+      }
+      sources[ca.packet_id] =
+        at <= io.now().getTime()
+          ? { expired: `it reached its retention date, ${String(until)}` }
+          : { checkableUntil: String(until) };
+    } else if (fetched.tombstone) {
+      const result = verifyLineTombstone({
+        tombstone: fetched.tombstone,
+        jwks: io.jwks,
+        packetId: ca.packet_id,
+        orgId: ca.org_id,
+        sequence: ca.sequence,
+        entryHash: ca.entry_hash,
+      });
+      if (!result.ok) {
+        return {
+          problem: `${ca.packet_id}: CounterAudit's record of erasing it does not check: ${failedChecks(result.checks)}`,
+        };
+      }
+      sources[ca.packet_id] = {
+        expired: `CounterAudit erased it at ${String(fetched.tombstone.expired_at)}`,
+      };
+    } else {
+      return {
+        problem: `${ca.packet_id}: its proof could not be read: ${fetched.message}`,
+      };
+    }
+  }
+  return { sources };
 }
 
 async function verifyCommand(args: string[], io: FileIO): Promise<number> {
@@ -899,6 +1040,38 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
     const fetched = packetId
       ? await io.fetchProof(packetId)
       : { ok: false as const, status: null, message: "no packet id" };
+    // Erased under CounterAudit's retention policy: the line has expired with its source, as the
+    // file said it would. Only CounterAudit's signed record of the erasure counts.
+    if (!fetched.ok && fetched.tombstone) {
+      const erased = verifyLineTombstone({
+        tombstone: fetched.tombstone,
+        jwks: io.jwks,
+        packetId,
+        orgId: String(ca.org_id ?? ""),
+        sequence: typeof ca.sequence === "number" ? ca.sequence : null,
+        entryHash: String(ca.entry_hash ?? ""),
+      });
+      if (erased.ok) {
+        const at = String(fetched.tombstone.expired_at);
+        const until = ca.checkable_until;
+        const early =
+          typeof until === "string" &&
+          new Date(at).getTime() < new Date(until).getTime();
+        const stated =
+          typeof until === "string"
+            ? `, ${early ? "before" : "after"} the file's checkable_until (${printable(until)})`
+            : "";
+        io.log(
+          `${printable(packetId)}: expired: CounterAudit erased its source at ${printable(at)}${stated}; the line rests on the Bureau's signature alone`
+        );
+      } else {
+        failed++;
+        io.log(
+          `${printable(packetId)}: erasure record FAILED: ${failedChecks(erased.checks)}`
+        );
+      }
+      continue;
+    }
     if (!fetched.ok) {
       failed++;
       io.log(
@@ -924,12 +1097,9 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
       );
     } else {
       failed++;
-      const bad = Object.entries(result.checks)
-        .filter(([, c]) => !c.ok)
-        .map(
-          ([name, c]) => `${name}${c.detail ? `: ${printable(c.detail)}` : ""}`
-        );
-      io.log(`${printable(packetId)}: proof FAILED: ${bad.join("; ")}`);
+      io.log(
+        `${printable(packetId)}: proof FAILED: ${failedChecks(result.checks)}`
+      );
     }
   }
   failed += await checkReviewLog(signed, entries, io);

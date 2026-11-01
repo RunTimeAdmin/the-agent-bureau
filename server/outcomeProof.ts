@@ -541,3 +541,79 @@ export function verifyLineProof(input: LineProofInput): LineProofVerification {
   };
   return { ok: LINE_PROOF_CHECKS.every(name => checks[name].ok), checks };
 }
+
+export const LINE_TOMBSTONE_CHECKS = [
+  "tombstone_signature",
+  "tombstone_type",
+  "org_id",
+  "packet_id",
+  "sequence",
+  "entry_hash",
+  "expired_at",
+] as const;
+
+export type LineTombstoneCheckName = (typeof LINE_TOMBSTONE_CHECKS)[number];
+export type LineTombstoneVerification = {
+  ok: boolean;
+  checks: Record<LineTombstoneCheckName, CheckResult>;
+};
+
+export type LineTombstoneInput = {
+  /** The body of a 410 from GET /v1/proofs/{packet_id}, as fetched. */
+  tombstone: unknown;
+  jwks: Jwks;
+  /** What the file says about the line. */
+  packetId: string;
+  orgId: string;
+  sequence: number | null;
+  entryHash: string;
+};
+
+/**
+ * What a reader can still check about a line once CounterAudit has erased its
+ * source under its retention policy, when the proof URL answers 410 with this
+ * record: that CounterAudit signed a record of erasing the packet the line
+ * names, at the same place in the same organization's chain, and when. It no
+ * longer shows the outcome or the signed event's hash: that content is gone.
+ */
+export function verifyLineTombstone(
+  input: LineTombstoneInput
+): LineTombstoneVerification {
+  const tombstone = isRecord(input.tombstone) ? input.tombstone : {};
+  const checks: Record<LineTombstoneCheckName, CheckResult> = {
+    tombstone_signature: check(() => {
+      const { signature, ...payload } = tombstone;
+      const result = verifyExportSignature(payload, signature, input.jwks);
+      if (result.valid) return pass;
+      return fail(
+        result.key_id
+          ? `${result.reason} (key ${result.key_id})`
+          : result.reason
+      );
+    }),
+    tombstone_type:
+      tombstone.tombstone_type === "counteraudit.packet_tombstone" &&
+      tombstone.tombstone_version === 1
+        ? pass
+        : fail("not a version 1 counteraudit.packet_tombstone"),
+    org_id: equalsExpected(tombstone.org_id, input.orgId),
+    packet_id: equalsExpected(tombstone.packet_id, input.packetId),
+    sequence:
+      typeof tombstone.sequence === "number" &&
+      tombstone.sequence === input.sequence
+        ? pass
+        : fail(
+            `expected ${JSON.stringify(input.sequence)}, record has ${JSON.stringify(tombstone.sequence ?? null)}`
+          ),
+    entry_hash: equalsExpected(tombstone.entry_hash, input.entryHash),
+    expired_at: Number.isFinite(
+      new Date(String(tombstone.expired_at)).getTime()
+    )
+      ? pass
+      : fail("no time of erasure"),
+  };
+  return {
+    ok: LINE_TOMBSTONE_CHECKS.every(name => checks[name].ok),
+    checks,
+  };
+}
