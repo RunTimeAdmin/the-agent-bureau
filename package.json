@@ -18,6 +18,8 @@
     "file": "tsx scripts/file.ts",
     "lines": "tsx scripts/lines.ts",
     "review:vectors": "tsx scripts/review-vectors.ts",
+    "dispute": "tsx scripts/dispute.ts",
+    "dispute:vectors": "tsx scripts/dispute-vectors.ts",
     "dev:static": "vite --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
     "build:static": "vite build"
   },

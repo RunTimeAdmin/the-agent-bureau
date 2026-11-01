@@ -11,6 +11,11 @@ import type {
   RELATION_TYPES,
   REVIEW_DECISIONS,
 } from "../drizzle/schema";
+import type {
+  CheckedDisputeRecord,
+  DisputeState,
+  StoredDisputeRecord,
+} from "./dispute";
 import { chargeKey, type LevyCharge } from "./evidence";
 import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
@@ -33,7 +38,17 @@ export type Line = Pick<
   | "displayState"
   | "relationType"
   | "relationTargetEventId"
->;
+> & {
+  /** When CounterAudit sealed it: a relating line answers a subject dispute only if sealed before its deadline. */
+  caCreatedAt?: Date | string;
+  /** The subject disputes on the line (server/dispute.ts), when they were read with it. */
+  disputeRecords?: StoredDisputeRecord[];
+  /** Those records, each checked again (checkLineDisputes in server/dispute.ts). */
+  checkedDisputes?: CheckedDisputeRecord[];
+  /** The line's signed event and CounterAudit's receipt, which name the key that signed it. */
+  signedEvent?: unknown;
+  receipt?: unknown;
+};
 
 // A recorded decision, read from its re-checked signed form
 // (server/settleLines.ts), never from the table's own columns.
@@ -50,6 +65,8 @@ export type Review = {
   suspended?: boolean;
   // The review-log packet that holds the decision, when it came from the review log.
   packetId?: string;
+  // When CounterAudit sealed that packet: an appeal is decided by decisions sealed after it.
+  sealedAt?: Date;
 };
 
 // How reviewers released a line: two different reviewers, or for test data
@@ -64,6 +81,10 @@ export type LineStates = {
   withdrawn: boolean;
   superseded: boolean;
   released: Release | null;
+  // Only for a line with a subject dispute (docs/disputes.md): the dispute's
+  // state, and whether it lapsed, which removes the line for good.
+  subject_dispute?: DisputeState;
+  removed?: boolean;
 };
 
 // A Sigvara DID: its chain id written plainly, then an EVM address.
@@ -119,7 +140,7 @@ export function relationProblem(relating: Line, target: Line): string | null {
 
 // Each reviewer's latest decision about this exact event and data class, by
 // the time they signed it (ties go to the later record).
-function currentDecisions(line: Line, reviews: Review[]): Review[] {
+export function currentDecisions(line: Line, reviews: Review[]): Review[] {
   const latest = new Map<string, Review>();
   for (const review of reviews) {
     if (review.signedEventHash !== line.signedEventHash) continue;
@@ -239,16 +260,18 @@ export function takesOverClaim(relating: Line, holder: Line): boolean {
 }
 
 /**
- * The line's states, given the later lines whose relation targets it and the
- * listed reviewers' decisions. A dispute the furnisher has since withdrawn
- * stops acting (owner decision, 2026-10-31). A withdrawn correction or
- * withdrawal stays in force: to bring a line back, the furnisher sends a new
- * one.
+ * The line's states, given the later lines whose relation targets it, the
+ * listed reviewers' decisions and the state of the subject's dispute on it, if
+ * any (server/dispute.ts). A dispute the furnisher has since withdrawn stops
+ * acting (owner decision, 2026-10-31). A withdrawn correction or withdrawal
+ * stays in force: to bring a line back, the furnisher sends a new one. A line
+ * whose subject dispute lapsed is removed, and never released again.
  */
 export function lineStates(
   line: Line,
   relating: Line[],
-  reviews: Review[] = []
+  reviews: Review[] = [],
+  subjectDispute: DisputeState | null = null
 ): LineStates {
   const acting = relating.filter(
     r =>
@@ -257,6 +280,7 @@ export function lineStates(
   );
   const has = (...types: RelationType[]) =>
     acting.some(r => r.relationType !== null && types.includes(r.relationType));
+  const removed = subjectDispute === "lapsed";
   return {
     sealed: true,
     source_signed: line.proofOk,
@@ -264,19 +288,29 @@ export function lineStates(
     disputed: has("disputes"),
     withdrawn: has("withdraws"),
     superseded: has("supersedes", "corrects"),
-    released: releaseFor(line, reviews).released,
+    released: removed ? null : releaseFor(line, reviews).released,
+    ...(subjectDispute ? { subject_dispute: subjectDispute, removed } : {}),
   };
 }
 
 /**
- * How the line may be shown (Phase 0 decision 4). A withdrawal outranks a
- * replacement, which outranks a dispute, which outranks a release: a dispute
- * shows at once, even on a released line.
+ * How the line may be shown (Phase 0 decision 4). A removal after a lapsed
+ * subject dispute outranks everything. Then a withdrawal outranks a
+ * replacement, which outranks a dispute, the furnisher's or the subject's while
+ * open or confirmed, which outranks a release: a dispute shows at once, even on
+ * a released line.
  */
 export function displayStateFor(states: LineStates): DisplayState {
+  if (states.removed) return "removed";
   if (states.withdrawn) return "withdrawn";
   if (states.superseded) return "superseded";
-  if (states.disputed) return "disputed";
+  if (
+    states.disputed ||
+    states.subject_dispute === "open" ||
+    states.subject_dispute === "confirmed"
+  ) {
+    return "disputed";
+  }
   if (states.released) return "released";
   return "unverified";
 }

@@ -10,6 +10,7 @@ import {
   listReviewLogRecords,
   setOutcomeEventDisplayState,
 } from "./db";
+import { checkLineDisputes, disputeOf } from "./dispute";
 import {
   displayStateFor,
   lineStates,
@@ -112,22 +113,34 @@ export function reviewsFor(line: Line, log: ReviewLog): Review[] {
       decidedAt: new Date(d.decision.decided_at),
       suspended: d.suspended,
       packetId: d.packetId,
+      sealedAt: d.sealedAt,
     }));
 }
 
-// Recomputes one line's display state from the relations acting on it and
-// the review log's decisions, and stores it if it changed. Returns the new
-// state, or null if unchanged.
+// Recomputes one line's display state from the relations acting on it, the
+// review log's decisions and the subject's dispute on it as of now, its records
+// checked again, and stores it if it changed. Returns the new state, or null if
+// unchanged.
 export async function settle(
   line: Line,
-  log?: ReviewLog
+  log?: ReviewLog,
+  now: Date = new Date()
 ): Promise<DisplayState | null> {
   const relating = await findRelatingOutcomeLines(
     line.furnisherId,
     line.eventId
   );
-  const reviews = reviewsFor(line, log ?? (await loadReviewLog()));
-  const state = displayStateFor(lineStates(line, relating, reviews));
+  const reviewLog = log ?? (await loadReviewLog());
+  const reviews = reviewsFor(line, reviewLog);
+  const dispute = disputeOf(
+    await checkLineDisputes(line),
+    relating,
+    l => reviewsFor(l, reviewLog),
+    now
+  );
+  const state = displayStateFor(
+    lineStates(line, relating, reviews, dispute?.state ?? null)
+  );
   if (state === line.displayState) return null;
   await setOutcomeEventDisplayState(line.id, state);
   return state;

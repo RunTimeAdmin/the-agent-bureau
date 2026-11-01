@@ -532,6 +532,25 @@ describe("a line and its source's retention date", () => {
     );
   });
 
+  it("says how many lines were left off as expired, not that no line names the subject", async () => {
+    source.answer = () => gone();
+    const erased = fileIO(counterAudit(records()));
+    expect(await assemble(erased.io, "one.json")).toBe(0);
+    const printed = erased.out.join("\n");
+    expect(printed).toContain(
+      "No line is on the file: 1 released line naming this subject was left off because its source has expired."
+    );
+    expect(printed).not.toContain("check the spelling");
+
+    // With nothing left off, a file with no line still suggests the spelling.
+    store.lines = [];
+    const none = fileIO(counterAudit(records()));
+    expect(await assemble(none.io, "two.json")).toBe(0);
+    expect(none.out.join("\n")).toContain(
+      "No released line names exactly this subject."
+    );
+  });
+
   it("signs nothing when a line's proof cannot be read, or it or the erasure record does not check", async () => {
     const cases: [() => ProofResult, string][] = [
       [

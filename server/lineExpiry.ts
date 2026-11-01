@@ -6,11 +6,18 @@
 // proof's expires_at has passed. The row stays, holding ids, hashes, the
 // outcome and times but nothing about the subject, so the event cannot be
 // stored again as a new line and the review log's decisions keep their line.
+// The subject's dispute records on the line lose what they say about the
+// subject at the same time (docs/disputes.md).
 // See docs/agent-file.md, "When a line's source expires".
 import { ENV } from "./_core/env";
 import { fetchProof } from "./counteraudit";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
-import { eraseOutcomeEventContent, listExpiryLines, schemaReady } from "./db";
+import {
+  eraseDisputeRecordContent,
+  eraseOutcomeEventContent,
+  listExpiryLines,
+  schemaReady,
+} from "./db";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import { relationProblem, type Line } from "./lineState";
 import {
@@ -179,6 +186,28 @@ export function erasedColumns(at: Date, reason: string) {
 }
 
 /**
+ * What an expired line's dispute records keep: their ids, kind, packet,
+ * sequence, seal time and what the checks found when each was submitted. The
+ * record itself (the subject's reasons, wallet and evidence), CounterAudit's
+ * receipt, the agent address read for a did:sigvara and the text of why a check
+ * failed, which names wallets, go. A record erased so counts for nothing.
+ */
+export function erasedDisputeColumns() {
+  return {
+    record: null,
+    receipt: null,
+    controllerAddress: null,
+    checkProblem: null,
+  };
+}
+
+// Whether a line still holds dispute records that say something about the subject.
+const holdsDisputeContent = (line: ExpiryLine) =>
+  (line.disputeRecords ?? []).some(
+    r => r.record !== null && r.record !== undefined
+  );
+
+/**
  * The line this one still acts on, if erasing it now would stop that: a
  * withdrawal or replacement whose target still stands would put the target
  * back, and a dispute would vanish from it. Such a line waits until its target
@@ -245,6 +274,7 @@ export async function runLines(
 
   let erased = 0;
   let held = 0;
+  const erasedNow = new Set<number>();
   for (const line of live) {
     const reason = due.get(line.id);
     if (!reason) continue;
@@ -265,8 +295,31 @@ export async function runLines(
       await eraseOutcomeEventContent(line.id, erasedColumns(io.now(), reason))
     ) {
       erased++;
+      erasedNow.add(line.id);
       io.log(`${label(line)}: erased: ${reason}`);
     }
+  }
+
+  // The subject's dispute records on every line erased now or before, if a run stopped between
+  // the two.
+  for (const line of rows) {
+    if (!holdsDisputeContent(line)) continue;
+    const erasedBefore = Boolean(line.expiredAt);
+    if (!erasedBefore && (!due.has(line.id) || heldBy(line, rows, due))) {
+      continue;
+    }
+    if (dryRun) {
+      io.log(`${label(line)}: its dispute records would be erased with it`);
+      continue;
+    }
+    if (!erasedBefore && !erasedNow.has(line.id)) continue;
+    const records = await eraseDisputeRecordContent(
+      line.id,
+      erasedDisputeColumns()
+    );
+    io.log(
+      `${label(line)}: ${records} dispute record${records === 1 ? "" : "s"} erased with it`
+    );
   }
 
   io.log(

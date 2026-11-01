@@ -12,6 +12,12 @@ import { BUREAU_FILE_KEYS } from "./bureauFileKeys";
 import { fetchProof } from "./counteraudit";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { listFileLines, schemaReady } from "./db";
+import {
+  checkLineDisputes,
+  disputeOf,
+  type Dispute,
+  type DisputeState,
+} from "./dispute";
 import { readEventFields } from "./furnishIntake";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
@@ -36,6 +42,7 @@ import {
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { newReviewerKey, reviewerPublicKey } from "./reviewDecision";
 import { readReviewPacket, type Fetch } from "./reviewLogSync";
+import { assembleSubjectView } from "./subjectView";
 import {
   loadCurrentReviewLog,
   reviewsFor,
@@ -69,6 +76,8 @@ const EXPIRY_DISCLOSURE =
   "A line can be checked against CounterAudit until its counteraudit.checkable_until, when CounterAudit erases its source under its retention policy. After that its proof URL answers with CounterAudit's signed record of the erasure, which still shows where the packet sat in its chain but no longer its outcome, and the line rests on the Bureau's signature alone. Lines whose source is erased are left off new files.";
 const HISTORY_DISCLOSURE =
   "history lists released lines the same furnisher later withdrew or replaced. They are kept as a record of what was reported, not as current facts.";
+const DISPUTE_DISCLOSURE =
+  "A line with a dispute was disputed by its subject, who signed the dispute with the wallet the line names. While a dispute is open the furnisher has until respond_by to confirm the line with evidence, correct it or withdraw it, and a line it does not answer by then is removed from every file. A line the furnisher confirmed stays and may carry the subject's statement. A dispute records that the subject contests the line, not which side is right.";
 
 // What a file cannot show yet, said rather than left out (bureau-spec.md,
 // "What a file contains").
@@ -76,7 +85,7 @@ export const NOT_ON_FILE = [
   "Subject matching: only lines naming exactly this subject reference are here (an EVM address, in a wallet or a did:sigvara, compares without case). Other spellings, registrations, wallets or DIDs of the same operator are not matched (Phase 3).",
   "Lines reviewers have not released are held and not shown, whatever their outcome.",
   "Public record and payment history are not assembled into files yet. Third-party standing comes only from Sigvara, and only for a did:sigvara agent on Arc testnet.",
-  "Disputes and statements from the subject, and inquiries, are not built yet.",
+  "Inquiries are not built yet. A subject disputes a line through the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built.",
 ];
 
 // Subscribers see a furnisher's category, not its name (bureau-spec.md). Listed
@@ -94,7 +103,9 @@ export type FileLine = {
   sealed_at: string;
   data_class: "test" | "live";
   furnisher_category: string;
-  display_state: Exclude<DisplayState, "unverified">;
+  display_state: Exclude<DisplayState, "unverified" | "removed">;
+  /** The subject's dispute on the line (docs/disputes.md). Absent when there is none. */
+  dispute?: FileDispute;
   released: Release;
   /**
    * The review-log decisions on this line, by their packets in the review organization, so a
@@ -127,6 +138,32 @@ export type FileLine = {
     checkable_until?: string | null;
   };
 };
+
+export type FileDispute = {
+  state: Exclude<DisputeState, "lapsed">;
+  /** When CounterAudit sealed the subject's dispute. */
+  filed_at: string;
+  /** The furnisher's deadline, while the dispute is open. */
+  respond_by?: string;
+  /** When CounterAudit sealed the furnisher's confirmation. */
+  confirmed_at?: string;
+  /** The subject's statement beside a confirmed line. */
+  statement?: string;
+};
+
+function fileDispute(dispute: Dispute): FileDispute {
+  return {
+    state: dispute.state as FileDispute["state"],
+    filed_at: dispute.filedAt.toISOString(),
+    ...(dispute.state === "open"
+      ? { respond_by: dispute.respondBy.toISOString() }
+      : {}),
+    ...(dispute.confirmedAt
+      ? { confirmed_at: dispute.confirmedAt.toISOString() }
+      : {}),
+    ...(dispute.statement !== null ? { statement: dispute.statement } : {}),
+  };
+}
 
 export type AgentFile = {
   schema: typeof FILE_SCHEMA;
@@ -308,7 +345,8 @@ export type LineSource =
 /**
  * The file for one subject: its lines that reviewers released, newest first,
  * with what the Bureau knows of each. Pure: the caller reads the lines, the
- * review log and the lines' sources. Lines are read from their signed events;
+ * review log and the lines' sources, and checks each line's dispute records again
+ * (checkLineDisputes). Lines are read from their signed events;
  * one that cannot be is left off, and listed in `skipped` for the operator, not
  * on the file. A line whose source CounterAudit has erased is left off too, and
  * listed in `expired`.
@@ -347,10 +385,12 @@ export function assembleFile(
         r.relationTargetEventId === line.eventId
     );
     const reviews = reviewsOf(line);
-    const states = lineStates(line, relating, reviews);
+    // A lapsed subject dispute removes the line from every file, history included.
+    const dispute = disputeOf(line, relating, reviewsOf, options.now);
+    const states = lineStates(line, relating, reviews, dispute?.state ?? null);
     if (!states.released) continue;
     const display = displayStateFor(states);
-    if (display === "unverified") continue;
+    if (display === "unverified" || display === "removed") continue;
     const source =
       options.sources && Object.hasOwn(options.sources, line.packetId)
         ? options.sources[line.packetId]
@@ -378,6 +418,7 @@ export function assembleFile(
         ? FURNISHER_CATEGORIES[line.furnisherId]
         : UNLISTED_CATEGORY,
       display_state: display,
+      ...(dispute ? { dispute: fileDispute(dispute) } : {}),
       released: states.released,
       ...(reviews.length > 0 && reviews.every(r => r.packetId)
         ? {
@@ -424,6 +465,7 @@ export function assembleFile(
   const all = [...standing, ...history];
   const disclosures = [FACTS_DISCLOSURE, PAYMENT_DISCLOSURE];
   if (history.length > 0) disclosures.push(HISTORY_DISCLOSURE);
+  if (all.some(l => l.dispute)) disclosures.push(DISPUTE_DISCLOSURE);
   if (all.some(l => typeof l.counteraudit.checkable_until === "string"))
     disclosures.push(EXPIRY_DISCLOSURE);
   if (all.some(l => l.released === "solo_test"))
@@ -599,6 +641,7 @@ export const USAGE = [
   "  pnpm file keygen <private-key-file>",
   "  pnpm file assemble --subject <subject_ref JSON> --key <private-key-file> --key-id <key id> --out <file>",
   "  pnpm file verify <file> [--subject <subject_ref JSON>] [--max-age-days <days>] [--offline]",
+  "  pnpm file subject --subject <subject_ref JSON> --out <file>",
 ].join("\n");
 
 export type FileIO = {
@@ -755,7 +798,11 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     io.log(`Not signed: Sigvara could not be read: ${describeError(error)}`);
     return 1;
   }
-  const rows = (await listFileLines()) as StoredLine[];
+  // Each line's dispute records are checked again from the records themselves.
+  const rows: StoredLine[] = [];
+  for (const row of (await listFileLines()) as StoredLine[]) {
+    rows.push(await checkLineDisputes(row, io.furnishers));
+  }
   const reviewsOf = (line: Line) => reviewsFor(line, log);
   const assembleOptions: AssembleOptions = {
     now: io.now(),
@@ -816,7 +863,9 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   );
   if (count + signed.history.length === 0) {
     io.log(
-      "No released line names exactly this subject. Matching is exact apart from EVM addresses in a wallet or a did:sigvara, so check the spelling."
+      expired.length > 0
+        ? `No line is on the file: ${expired.length} released line${expired.length === 1 ? "" : "s"} naming this subject ${expired.length === 1 ? "was" : "were"} left off because ${expired.length === 1 ? "its source has" : "their sources have"} expired.`
+        : "No released line names exactly this subject. Matching is exact apart from EVM addresses in a wallet or a did:sigvara, so check the spelling."
     );
   }
   if (log.testnet) {
@@ -1214,6 +1263,101 @@ async function checkReviewLog(
   return failed;
 }
 
+/**
+ * pnpm file subject: the subject's view (docs/disputes.md), every line the Bureau holds on one
+ * subject that was ever released, with what a file leaves out, written for the operator to send
+ * them. Read against the review log as CounterAudit holds it now, as a file is.
+ */
+async function subjectCommand(args: string[], io: FileIO): Promise<number> {
+  const flags = readFlags(args);
+  if (
+    !flags ||
+    !flags.subject ||
+    !flags.out ||
+    Object.keys(flags).length !== 2
+  ) {
+    io.log(USAGE);
+    return 2;
+  }
+  const subjectRef = parseSubjectFlag(flags.subject);
+  if (typeof subjectRef === "string") {
+    io.log(`--subject: ${subjectRef}.`);
+    return 2;
+  }
+  const missing = [
+    ["DATABASE_URL", ENV.databaseUrl],
+    ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
+    ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],
+    ["COUNTERAUDIT_REVIEW_READ_KEY", ENV.counterauditReviewReadKey],
+  ].filter(([, value]) => !value);
+  if (missing.length > 0) {
+    io.log(
+      `Not set: ${missing.map(([name]) => name).join(", ")}. See docs/disputes.md.`
+    );
+    return 2;
+  }
+  if (!(await schemaReady())) {
+    io.log("The database is not reachable or lacks the outcome tables.");
+    return 1;
+  }
+  let current: Awaited<ReturnType<typeof loadCurrentReviewLog>>;
+  try {
+    current = await loadCurrentReviewLog({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReviewReadKey,
+      orgId: ENV.counterauditReviewOrgId,
+      fetch: io.fetch,
+      now: io.now(),
+    });
+  } catch (error) {
+    current = { problem: describeError(error) };
+  }
+  if ("problem" in current) {
+    io.log(
+      `Not written: the review log could not be brought up to date: ${printable(current.problem)}`
+    );
+    return 1;
+  }
+  const lines: StoredLine[] = [];
+  const skipped: string[] = [];
+  for (const row of (await listFileLines()) as StoredLine[]) {
+    if (row.expiredAt) continue;
+    const line = fromSignedEvent(await checkLineDisputes(row, io.furnishers));
+    if (typeof line === "string") skipped.push(line);
+    else lines.push(line);
+  }
+  if (skipped.length > 0) {
+    for (const reason of skipped) io.log(printable(reason));
+    io.log(
+      "Not written: these lines' signed events do not check. Re-run the intake for them, or find out who changed them."
+    );
+    return 1;
+  }
+  const view = assembleSubjectView(subjectRef, lines, current.log, {
+    now: io.now(),
+    bureauOrgId: ENV.counterauditOrgId,
+    proofBase: ENV.counterauditApiUrl,
+    furnishers: io.furnishers,
+    categories: FURNISHER_CATEGORIES,
+    unlistedCategory: UNLISTED_CATEGORY,
+    reviewLog: {
+      orgId: ENV.counterauditReviewOrgId,
+      position: current.position,
+    },
+  });
+  try {
+    await io.writeNewFile(flags.out, `${JSON.stringify(view, null, 2)}\n`);
+  } catch (error) {
+    io.log(`Could not write ${flags.out}: ${describeError(error)}`);
+    return 1;
+  }
+  const disputes = view.lines.reduce((n, l) => n + l.disputes.length, 0);
+  io.log(
+    `Subject view for ${canonicalize(subjectRef)}: ${view.lines.length} line${view.lines.length === 1 ? "" : "s"} ever released and ${disputes} dispute${disputes === 1 ? "" : "s"}, written to ${flags.out}. It is not signed; send it to the subject.`
+  );
+  return 0;
+}
+
 export async function runFile(
   argv: string[],
   io: FileIO = defaultIO
@@ -1226,6 +1370,8 @@ export async function runFile(
       return assemble(args, io);
     case "verify":
       return verifyCommand(args, io);
+    case "subject":
+      return subjectCommand(args, io);
     default:
       io.log(USAGE);
       return 2;

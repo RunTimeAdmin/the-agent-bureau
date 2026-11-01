@@ -1,0 +1,1356 @@
+{
+  "description": "Shared test vectors for the Agent Bureau's subject dispute records (docs/disputes.md), which CounterAudit seals through the agent-bureau-dispute-v1 connector. valid records pass the form check and carry real signatures: a subject's over EIP-191 personal_sign of signing_payload as raw bytes, by the subject key's address; a furnisher's Ed25519 over the same payload, with the furnisher key. Each invalid record breaks the one rule named. Built by scripts/dispute-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
+  "schema": "agent-bureau/dispute/v1",
+  "connector_id": "agent-bureau-dispute-v1",
+  "signing_context": "agent-bureau/dispute/v1\n",
+  "keys": {
+    "subject": {
+      "type": "eip191",
+      "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+    },
+    "furnisher": {
+      "type": "ed25519",
+      "furnisher_id": "fur_vectors01",
+      "key_id": "vectors-key-1",
+      "public_key": "ed25519:o6_AIzDZUmqE5hbI4BTlLoERt_LxI_fOqBI4j7f6Bjk"
+    }
+  },
+  "valid": [
+    {
+      "id": "dispute",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"I never received this payment request.\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"wallet\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "dispute_with_evidence",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"evidence\":[{\"tx_hash\":\"0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef\"},{\"url\":\"https://example.com/receipts/1\"},{\"note\":\"My bank statement for that week shows nothing.\"}],\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"I never received this payment request.\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"wallet\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "evidence": [
+          {
+            "tx_hash": "0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+          },
+          {
+            "url": "https://example.com/receipts/1"
+          },
+          {
+            "note": "My bank statement for that week shows nothing."
+          }
+        ],
+        "signature": "0x369cd5e670ce7228992d76d0b3b34997d5ab46937cd6a6df6d3f8fe3ff2745af3600149c01c592a00cdd18e48179196a1a454855080e5e553b0513e0ff1314fa1b"
+      }
+    },
+    {
+      "id": "dispute_did_sigvara_subject",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"I never received this payment request.\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"did\":\"did:sigvara:5042002:0x7ab1b0513ee4981f019deb3cd19829b6a38f72aa\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "did": "did:sigvara:5042002:0x7ab1b0513ee4981f019deb3cd19829b6a38f72aa"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x79412d0c1eadd9aff3a3a9630bd8aec1e70d7c93871b6361065d29b0be0cea5970802d45da2c6f2d2dedc4221fc23388d4a12f57cc2d8b656836f5ccfecfa3b81c"
+      }
+    },
+    {
+      "id": "dispute_reason_500_characters",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"wallet\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0xdbd2c28a5456604a76de772a7633131cf062b3874e91609923165bb5037ce9515c29fd99f474e7554f51894d20a2b108874df40bae001677a638ab33e8c97d881c"
+      }
+    },
+    {
+      "id": "dispute_non_ascii_reason",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"Zahlung nie erhalten: Überweisung fehlt\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"wallet\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "Zahlung nie erhalten: Überweisung fehlt",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0xbb61f41029360a9198a6ca3979e6203dafb24c6988a4193334f9a494d4d8a22c0b12704e243962a3d7b3e3dffa677b65b4b9ff763791956cebd5c57f3a8209501c"
+      }
+    },
+    {
+      "id": "dispute_subject_ref_1024_bytes",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"filed_at\":\"2026-11-01T10:00:00.000Z\",\"kind\":\"dispute\",\"line\":{\"event_id\":\"vectors-event-1\",\"furnisher_id\":\"fur_vectors01\",\"signed_event_hash\":\"abababababababababababababababababababababababababababababababab\"},\"reason\":\"I never received this payment request.\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"subject_ref\":{\"did\":\"did:example:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "did": "did:example:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0xe153c6248f9a5209773cdfa3dcb99dc9f72e76fe35bdbda9d41438037ec086e5753bf8158d8427a456e0cc7b6a51d2e03a96ed4810a21904a38fe2127c8c99201b"
+      }
+    },
+    {
+      "id": "response",
+      "signed_by": "furnisher",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"evidence\":[{\"tx_hash\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\"}],\"furnisher_id\":\"fur_vectors01\",\"key_id\":\"vectors-key-1\",\"kind\":\"response\",\"responded_at\":\"2026-11-03T09:30:00.000Z\",\"response\":\"confirm\",\"schema\":\"agent-bureau/dispute/v1\"}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_five_evidence_items",
+      "signed_by": "furnisher",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"evidence\":[{\"tx_hash\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\"},{\"tx_hash\":\"0xCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD\"},{\"url\":\"https://example.com/logs/delivery?id=7\"},{\"note\":\"Delivery confirmed by the provider log.\"},{\"note\":\"n\"}],\"furnisher_id\":\"fur_vectors01\",\"key_id\":\"vectors-key-1\",\"kind\":\"response\",\"responded_at\":\"2026-11-03T09:30:00.000Z\",\"response\":\"confirm\",\"schema\":\"agent-bureau/dispute/v1\"}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          {
+            "tx_hash": "0xCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD"
+          },
+          {
+            "url": "https://example.com/logs/delivery?id=7"
+          },
+          {
+            "note": "Delivery confirmed by the provider log."
+          },
+          {
+            "note": "n"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:jjIq3zrlumT0V40F8k5OzLFyWMJNFkMlHnxAhdqGmwoPWZvGMeYfl9zlhbxSlze9UG3Top1EYwaUiV0G0d4TCg"
+      }
+    },
+    {
+      "id": "statement",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"kind\":\"statement\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"},\"stated_at\":\"2026-11-04T08:00:00.000Z\",\"text\":\"The transfer went to a wallet I do not control.\"}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "statement",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "text": "The transfer went to a wallet I do not control.",
+        "stated_at": "2026-11-04T08:00:00.000Z",
+        "signature": "0x0ff09d9d51a27537bf6033c634e818c2310219c6b431b8b32063274133927bd36a9b24c031af3dee5696d7bc989465f551a67497a3eda491a1dbfee2cef34d251b"
+      }
+    },
+    {
+      "id": "appeal_by_subject",
+      "signed_by": "subject",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"appealed_at\":\"2026-11-05T12:00:00.000Z\",\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"kind\":\"appeal\",\"party\":\"subject\",\"reason\":\"The furnisher's evidence shows another wallet.\",\"schema\":\"agent-bureau/dispute/v1\",\"signer\":{\"address\":\"0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA\",\"type\":\"eip191\"}}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "subject",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "The furnisher's evidence shows another wallet.",
+        "appealed_at": "2026-11-05T12:00:00.000Z",
+        "signature": "0xfb9b0e5ca3b4bcb110edf6e28d8474c7d6f9229e7089a3b718b19d11d94ab47c112ebad595526c5ca2ad3c3ad3d984fd73117e9d935d2c33ed8681657dcb10701c"
+      }
+    },
+    {
+      "id": "appeal_by_furnisher",
+      "signed_by": "furnisher",
+      "signing_payload": "agent-bureau/dispute/v1\n{\"appealed_at\":\"2026-11-20T12:00:00.000Z\",\"corrective_event_id\":\"vectors-event-1-corrected\",\"dispute_id\":\"3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d\",\"furnisher_id\":\"fur_vectors01\",\"key_id\":\"vectors-key-1\",\"kind\":\"appeal\",\"party\":\"furnisher\",\"reason\":\"We missed the deadline; the corrected line is attached.\",\"schema\":\"agent-bureau/dispute/v1\"}",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "furnisher",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "corrective_event_id": "vectors-event-1-corrected",
+        "reason": "We missed the deadline; the corrected line is attached.",
+        "appealed_at": "2026-11-20T12:00:00.000Z",
+        "signature": "ed25519:LJzpKglgW3Fte-G-IwvSD6Wibk_yLH7Q2EJKrDvewBrINU1KOTtlTutqlZnUt6eWSq8uBZwU8khoXQPA5JzCDA"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "not_an_object",
+      "rule": "not a JSON object",
+      "record": [
+        {
+          "schema": "agent-bureau/dispute/v1",
+          "kind": "dispute",
+          "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+          "line": {
+            "furnisher_id": "fur_vectors01",
+            "event_id": "vectors-event-1",
+            "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+          },
+          "subject_ref": {
+            "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+          },
+          "signer": {
+            "type": "eip191",
+            "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+          },
+          "reason": "I never received this payment request.",
+          "filed_at": "2026-11-01T10:00:00.000Z",
+          "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+        }
+      ]
+    },
+    {
+      "id": "schema_v2",
+      "rule": "schema is not agent-bureau/dispute/v1",
+      "record": {
+        "schema": "agent-bureau/dispute/v2",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "unknown_kind",
+      "rule": "kind is not dispute, response, statement or appeal",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "withdrawal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "appeal_unknown_party",
+      "rule": "party is not subject or furnisher",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "operator",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "The furnisher's evidence shows another wallet.",
+        "appealed_at": "2026-11-05T12:00:00.000Z",
+        "signature": "0xfb9b0e5ca3b4bcb110edf6e28d8474c7d6f9229e7089a3b718b19d11d94ab47c112ebad595526c5ca2ad3c3ad3d984fd73117e9d935d2c33ed8681657dcb10701c"
+      }
+    },
+    {
+      "id": "extra_field",
+      "rule": "unexpected field note",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b",
+        "note": "extra"
+      }
+    },
+    {
+      "id": "missing_reason",
+      "rule": "missing field reason",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "missing_signature",
+      "rule": "missing field signature",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z"
+      }
+    },
+    {
+      "id": "dispute_id_uppercase",
+      "rule": "dispute_id is not a lowercase UUID",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3F2B8C1D-6A4E-4F9B-9C2D-7E8F9A0B1C2D",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "dispute_id_not_uuid",
+      "rule": "dispute_id is not a lowercase UUID",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "dispute-1",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "filed_at_without_milliseconds",
+      "rule": "filed_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "filed_at_with_offset",
+      "rule": "filed_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000+00:00",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "filed_at_month_13",
+      "rule": "filed_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-13-01T00:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "responded_at_minute_60",
+      "rule": "responded_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:60:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "line_not_object",
+      "rule": "line is not an object",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": "fur_vectors01/vectors-event-1",
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "line_extra_field",
+      "rule": "unexpected field line.outcome",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+          "outcome": "paid"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "line_missing_hash",
+      "rule": "missing field line.signed_event_hash",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "line_furnisher_id_uppercase",
+      "rule": "line.furnisher_id is not a furnisher id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_VECTORS01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "line_event_id_with_space",
+      "rule": "line.event_id is not an event id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors event 1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "line_hash_uppercase",
+      "rule": "line.signed_event_hash is not 64 lowercase hex characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "subject_ref_not_object",
+      "rule": "subject_ref is not an object",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "subject_ref_1025_bytes",
+      "rule": "subject_ref is over 1024 bytes as canonical JSON",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "did": "did:example:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "signer_not_eip191",
+      "rule": "signer.type is not eip191",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip712",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "signer_extra_field",
+      "rule": "unexpected field signer.chain_id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA",
+          "chain_id": 1
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "signer_short_address",
+      "rule": "signer.address is not 0x and 40 hex characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72a"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "reason_empty",
+      "rule": "reason is not 1 to 500 characters, or is blank",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "reason_blank",
+      "rule": "reason is not 1 to 500 characters, or is blank",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": " \n\t ",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "reason_501_characters",
+      "rule": "reason is not 1 to 500 characters, or is blank",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "evidence_empty",
+      "rule": "evidence is not a list of 1 to 5 items",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b",
+        "evidence": []
+      }
+    },
+    {
+      "id": "evidence_six_items",
+      "rule": "evidence is not a list of 1 to 5 items",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "note": "n"
+          },
+          {
+            "note": "n"
+          },
+          {
+            "note": "n"
+          },
+          {
+            "note": "n"
+          },
+          {
+            "note": "n"
+          },
+          {
+            "note": "n"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_two_kinds_in_one_item",
+      "rule": "evidence[0] is not exactly one of tx_hash, url or note",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "note": "and a note"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_unknown_kind",
+      "rule": "evidence[0] is not exactly one of tx_hash, url or note",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_short_tx_hash",
+      "rule": "evidence[0].tx_hash is not 0x and 64 hex characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_http_url",
+      "rule": "evidence[0].url is not an https URL of at most 500 characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "url": "http://example.com/logs/1"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_url_501_characters",
+      "rule": "evidence[0].url is not an https URL of at most 500 characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "url": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "evidence_empty_note",
+      "rule": "evidence[1].note is not 1 to 500 characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "note": "ok"
+          },
+          {
+            "note": ""
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_not_confirm",
+      "rule": "response is not confirm",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "deny",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_without_evidence",
+      "rule": "missing field evidence",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_key_id_leading_dash",
+      "rule": "key_id is not a key id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "-vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_furnisher_id_short",
+      "rule": "furnisher_id is not a furnisher id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_abc",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "response_signed_by_wallet",
+      "rule": "signature is not ed25519: and 64 bytes of canonical base64url",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "response_noncanonical_signature",
+      "rule": "signature is not ed25519: and 64 bytes of canonical base64url",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:30:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCB"
+      }
+    },
+    {
+      "id": "dispute_signed_by_ed25519_key",
+      "rule": "signature is not 0x and 130 hex characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
+      "id": "dispute_short_signature",
+      "rule": "signature is not 0x and 130 hex characters",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-11-01T10:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff"
+      }
+    },
+    {
+      "id": "statement_text_501_characters",
+      "rule": "text is not 1 to 500 characters, or is blank",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "statement",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "stated_at": "2026-11-04T08:00:00.000Z",
+        "signature": "0x0ff09d9d51a27537bf6033c634e818c2310219c6b431b8b32063274133927bd36a9b24c031af3dee5696d7bc989465f551a67497a3eda491a1dbfee2cef34d251b"
+      }
+    },
+    {
+      "id": "statement_with_evidence",
+      "rule": "unexpected field evidence",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "statement",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "text": "The transfer went to a wallet I do not control.",
+        "stated_at": "2026-11-04T08:00:00.000Z",
+        "signature": "0x0ff09d9d51a27537bf6033c634e818c2310219c6b431b8b32063274133927bd36a9b24c031af3dee5696d7bc989465f551a67497a3eda491a1dbfee2cef34d251b",
+        "evidence": [
+          {
+            "note": "n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "appeal_by_subject_with_key_id",
+      "rule": "unexpected field key_id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "subject",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "The furnisher's evidence shows another wallet.",
+        "appealed_at": "2026-11-05T12:00:00.000Z",
+        "signature": "0xfb9b0e5ca3b4bcb110edf6e28d8474c7d6f9229e7089a3b718b19d11d94ab47c112ebad595526c5ca2ad3c3ad3d984fd73117e9d935d2c33ed8681657dcb10701c",
+        "key_id": "vectors-key-1"
+      }
+    },
+    {
+      "id": "appeal_by_furnisher_without_corrective_line",
+      "rule": "missing field corrective_event_id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "furnisher",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "reason": "We missed the deadline; the corrected line is attached.",
+        "appealed_at": "2026-11-20T12:00:00.000Z",
+        "signature": "ed25519:LJzpKglgW3Fte-G-IwvSD6Wibk_yLH7Q2EJKrDvewBrINU1KOTtlTutqlZnUt6eWSq8uBZwU8khoXQPA5JzCDA"
+      }
+    },
+    {
+      "id": "appeal_by_furnisher_bad_corrective_event_id",
+      "rule": "corrective_event_id is not an event id",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "furnisher",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "corrective_event_id": "corrected/1",
+        "reason": "We missed the deadline; the corrected line is attached.",
+        "appealed_at": "2026-11-20T12:00:00.000Z",
+        "signature": "ed25519:LJzpKglgW3Fte-G-IwvSD6Wibk_yLH7Q2EJKrDvewBrINU1KOTtlTutqlZnUt6eWSq8uBZwU8khoXQPA5JzCDA"
+      }
+    },
+    {
+      "id": "appeal_time_as_number",
+      "rule": "appealed_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "appeal",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "party": "subject",
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "The furnisher's evidence shows another wallet.",
+        "appealed_at": 1793700000000,
+        "signature": "0xfb9b0e5ca3b4bcb110edf6e28d8474c7d6f9229e7089a3b718b19d11d94ab47c112ebad595526c5ca2ad3c3ad3d984fd73117e9d935d2c33ed8681657dcb10701c"
+      }
+    }
+  ]
+}

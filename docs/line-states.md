@@ -1,6 +1,6 @@
 # Line states
 
-What the Bureau knows about each stored line, kept as separate facts instead of one "verified" bit, how a furnisher's later line can withdraw, replace or dispute an earlier one, and whether reviewers released it. Code: `server/lineState.ts`, applied by the operator intake (`docs/counteraudit-intake.md`).
+What the Bureau knows about each stored line, kept as separate facts instead of one "verified" bit, how a furnisher's later line can withdraw, replace or dispute an earlier one, how the subject's dispute acts on it (`docs/disputes.md`), and whether reviewers released it. Code: `server/lineState.ts`, applied by the operator intake (`docs/counteraudit-intake.md`), `pnpm review` and `pnpm dispute`.
 
 ## States
 
@@ -10,21 +10,24 @@ What the Bureau knows about each stored line, kept as separate facts instead of 
 | `source_signed`     | The packet's public proof passed every check, including the furnisher's signature (`proofOk`). | `server/outcomeProof.ts`    |
 | `evidence_verified` | The evidence check returned `verified` (`evidenceStatus`).                                     | `docs/evidence-verifier.md` |
 | `disputed`          | A later line from the same furnisher `disputes` it.                                            | Furnisher relation          |
+| `subject_dispute`   | The subject's dispute counts: `open`, `confirmed`, `corrected`, `withdrawn` or `lapsed`.       | `docs/disputes.md`          |
+| `removed`           | The subject's dispute lapsed: the furnisher did not answer within 15 days.                     | `docs/disputes.md`          |
 | `withdrawn`         | A later line from the same furnisher `withdraws` it.                                           | Furnisher relation          |
 | `superseded`        | A later line from the same furnisher `supersedes` or `corrects` it.                            | Furnisher relation          |
 | `released`          | Listed reviewers released it: `two_person`, or `solo_test` for one reviewer on test data.      | `docs/two-person-review.md` |
 
-Each fact stays readable on its own. A line can be source signed with evidence still under review, or evidence verified and withdrawn.
+Each fact stays readable on its own. A line can be source signed with evidence still under review, or evidence verified and withdrawn. `subject_dispute` and `removed` are present only on a line with a subject dispute.
 
 ## Display state
 
-The stored `displayState` (Phase 0 decision 4) follows from the states. A withdrawal outranks a replacement, which outranks a dispute, which outranks a release:
+The stored `displayState` (Phase 0 decision 4) follows from the states. A removal outranks everything; then a withdrawal outranks a replacement, which outranks a dispute, which outranks a release:
 
-1. `withdrawn`
-2. `superseded`
-3. `disputed`
-4. `released`, once reviewers released the line (`two_person`, or `solo_test` for test data). Phase 0 named this state `verified`; it was renamed for review finding M-04 (`docs/independent-payer.md`), since a release records what the checks and reviewers found, not that the outcome happened. Migration 0012 renamed it on stored lines.
-5. `unverified`
+1. `removed`, once a subject's dispute lapsed (`docs/disputes.md`). A removed line is on no file, history included, and is never released again, whatever reviewers decide. Migration 0015 added the state.
+2. `withdrawn`
+3. `superseded`
+4. `disputed`, by the furnisher's `disputes` relation or by the subject's dispute while it is open or the furnisher has confirmed the line.
+5. `released`, once reviewers released the line (`two_person`, or `solo_test` for test data). Phase 0 named this state `verified`; it was renamed for review finding M-04 (`docs/independent-payer.md`), since a release records what the checks and reviewers found, not that the outcome happened. Migration 0012 renamed it on stored lines.
+6. `unverified`
 
 A release needs a passing proof, evidence verified or waived by every approving reviewer (and unchanged since they signed), no current rejection, and two different reviewers (one for test data). `docs/two-person-review.md` has the rule and the steps.
 
@@ -39,12 +42,12 @@ An outcome event v1 may carry `relation: {type, target_event_id}`. The Bureau lo
 
 When a relation cannot act, the intake reports why, and the target is settled without it. A relation can arrive before its target: the intake settles each line it stores against the relations already waiting for it. Re-running a file re-settles every line in it and its targets. That is how a relation whose proof was not checked the first time takes effect later, and how one whose proof no longer passes stops acting. Event ids match with exact case, as in CounterAudit, although the database columns compare without case.
 
+**Subject disputes** (`docs/disputes.md`). The subject disputes a released line by signing with the wallet the line names, or for a `did:sigvara` the agent address SigvaraIdentity holds. While the dispute is open, or once the furnisher confirms the line, the line shows as `disputed`. A later line from the furnisher that withdraws, corrects or replaces the disputed one, sealed within the furnisher's 15 days, closes the dispute as `withdrawn` or `corrected`, and the line shows as the relation makes it. If the furnisher does nothing, the dispute lapses at 15 days and the line is `removed`. A line without a subject dispute is settled exactly as before. The display state is settled by `pnpm dispute settle`, and by every settle after the deadline; a file decides it again as of the time it is assembled.
+
 **Withdrawing a relating line** (owner decision, 2026-10-31). If a furnisher withdraws its own dispute, the dispute ends and the disputed line goes back to `unverified`. A withdrawn correction, replacement or withdrawal stays in force: to bring an earlier line back, the furnisher sends a new line that supersedes the withdrawn one. For a line backed by a charge, that is also how the new line takes the charge over; a new line without that relation is a second line on the charge and fails (`docs/evidence-verifier.md`). The file only ever narrows, apart from a dispute ending. The intake carries such a change along the chain of relations, up to 10 lines.
 
 A withdrawal, a replacement or a furnisher's own dispute takes effect without review, since each only narrows what the file says. A correction's new line goes through every check like any other line. The relating line is kept as its own line. On an agent's file (`docs/agent-file.md`) it appears like any other line once reviewers release it, and a released line it withdrew or replaced moves to the file's `history`.
 
 ## Not covered yet
 
-- **Subject disputes.** The spec has the subject dispute by signing with the wallet that controls the agent. That needs subject matching (Phase 0 decision 3) and its own intake. Today only a furnisher's `disputes` relation marks a line disputed.
-- **Dispute deadlines.** The furnisher's 15 days to confirm, correct or withdraw a disputed line.
 - **Event ids that differ only in case.** The unique index on furnisher and event id compares without case, so the Bureau cannot store two events from one furnisher whose ids differ only in case; the second fails to store with a duplicate-key error. Fixing that needs a binary collation on those columns.
