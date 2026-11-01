@@ -201,6 +201,8 @@ export type CountedDecision = {
   decision: ReviewDecision;
   sequence: number;
   packetId: string;
+  // When CounterAudit sealed it: an appeal on a subject dispute is decided by decisions sealed after it.
+  sealedAt: Date;
   // By a suspended reviewer: it does not count, and it holds its line until the quorum decides.
   suspended: boolean;
 };
@@ -384,6 +386,7 @@ export function replayReviewLog(
         decision: checked.decision,
         sequence: entry.sequence,
         packetId: entry.packetId,
+        sealedAt: entry.sealedAt,
         suspended: state.status === "suspended",
       });
     }

@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   gt,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -16,6 +17,8 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import { createPool, type Pool } from "mysql2";
 import {
+  DisputeRecordRow,
+  InsertDisputeRecord,
   InsertInquiry,
   InsertOutcomeEvent,
   InsertReviewLogRecord,
@@ -23,6 +26,7 @@ import {
   ReviewLogSyncRow,
   agents,
   dailyUsage,
+  disputeRecords,
   inquiries,
   outcomeEvents,
   playQuestions,
@@ -245,12 +249,13 @@ export async function pingDb(): Promise<boolean> {
 }
 
 // The Bureau tables the app needs to serve games, inquiries and the inbox, and
-// to hold furnished outcome events and the review log. review_log_records is
-// from the most recent migration, so its presence doubles as a check that
-// migrations ran to the current version.
+// to hold furnished outcome events, the review log and subject disputes.
+// dispute_records is from the most recent migration, so its presence doubles as
+// a check that migrations ran to the current version.
 const REQUIRED_TABLES = [
   "agents",
   "daily_usage",
+  "dispute_records",
   "inquiries",
   "outcome_events",
   "outcome_reviews",
@@ -271,7 +276,7 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
+            and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
     );
     const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       present?: number | string;
@@ -434,7 +439,26 @@ const LINE_COLUMNS = {
 // The columns compare without case under the server's default collation, but
 // CounterAudit's event ids do not, so the two lookups below also match exactly.
 
-// A stored line with what its states depend on (server/lineState.ts).
+// The subject dispute records on these lines (server/dispute.ts), each line
+// with its own.
+async function withDisputeRecords<T extends { id: number }>(
+  rows: T[]
+): Promise<Array<T & { disputeRecords: DisputeRecordRow[] }>> {
+  if (rows.length === 0) return [];
+  const db = await requireDb();
+  const records = await db
+    .select()
+    .from(disputeRecords)
+    .where(inArray(disputeRecords.outcomeEventId, rows.map(r => r.id)))
+    .orderBy(asc(disputeRecords.id));
+  return rows.map(row => ({
+    ...row,
+    disputeRecords: records.filter(r => r.outcomeEventId === row.id),
+  }));
+}
+
+// A stored line with what its states depend on (server/lineState.ts),
+// including the subject's disputes on it.
 export async function getOutcomeLine(
   furnisherId: string,
   eventId: string
@@ -450,18 +474,19 @@ export async function getOutcomeLine(
       )
     );
   return row && row.furnisherId === furnisherId && row.eventId === eventId
-    ? row
+    ? (await withDisputeRecords([row]))[0]
     : undefined;
 }
 
-// The same furnisher's lines whose relation points at this event.
+// The same furnisher's lines whose relation points at this event, with when
+// CounterAudit sealed each (a subject dispute's deadline compares with it).
 export async function findRelatingOutcomeLines(
   furnisherId: string,
   eventId: string
 ): Promise<Line[]> {
   const db = await requireDb();
   const rows = await db
-    .select(LINE_COLUMNS)
+    .select({ ...LINE_COLUMNS, caCreatedAt: outcomeEvents.caCreatedAt })
     .from(outcomeEvents)
     .where(
       and(
@@ -536,17 +561,20 @@ export async function updateOutcomeEventEvidence(
   await db.update(outcomeEvents).set(evidence).where(eq(outcomeEvents.id, id));
 }
 
-// Every stored line, with what the review queue shows (pnpm review).
+// Every stored line, with what the review queue shows (pnpm review) and the
+// subject's disputes on it.
 export async function listOutcomeLines() {
   const db = await requireDb();
-  return db
-    .select({
-      ...LINE_COLUMNS,
-      outcome: outcomeEvents.outcome,
-      expiredAt: outcomeEvents.expiredAt,
-    })
-    .from(outcomeEvents)
-    .orderBy(asc(outcomeEvents.id));
+  return withDisputeRecords(
+    await db
+      .select({
+        ...LINE_COLUMNS,
+        outcome: outcomeEvents.outcome,
+        expiredAt: outcomeEvents.expiredAt,
+      })
+      .from(outcomeEvents)
+      .orderBy(asc(outcomeEvents.id))
+  );
 }
 
 // Every stored line, with what pnpm lines expire needs to judge its source
@@ -582,24 +610,90 @@ export async function eraseOutcomeEventContent(
 }
 
 // Every stored line with its signed event, which an agent's file reads it
-// from (server/agentFile.ts).
+// from (server/agentFile.ts), and the subject's disputes on it.
 export async function listFileLines() {
   const db = await requireDb();
-  return db
-    .select({
-      ...LINE_COLUMNS,
-      outcome: outcomeEvents.outcome,
-      occurredAt: outcomeEvents.occurredAt,
-      receivedAt: outcomeEvents.receivedAt,
-      caCreatedAt: outcomeEvents.caCreatedAt,
-      packetId: outcomeEvents.packetId,
-      entryHash: outcomeEvents.entryHash,
-      sequence: outcomeEvents.sequence,
-      signedEvent: outcomeEvents.signedEvent,
-      expiredAt: outcomeEvents.expiredAt,
-    })
+  return withDisputeRecords(
+    await db
+      .select({
+        ...LINE_COLUMNS,
+        outcome: outcomeEvents.outcome,
+        occurredAt: outcomeEvents.occurredAt,
+        receivedAt: outcomeEvents.receivedAt,
+        caCreatedAt: outcomeEvents.caCreatedAt,
+        packetId: outcomeEvents.packetId,
+        entryHash: outcomeEvents.entryHash,
+        sequence: outcomeEvents.sequence,
+        signedEvent: outcomeEvents.signedEvent,
+        expiredAt: outcomeEvents.expiredAt,
+      })
+      .from(outcomeEvents)
+      .orderBy(asc(outcomeEvents.id))
+  );
+}
+
+const DISPUTE_LINE_COLUMNS = {
+  ...LINE_COLUMNS,
+  caCreatedAt: outcomeEvents.caCreatedAt,
+  signedEvent: outcomeEvents.signedEvent,
+  receipt: outcomeEvents.receipt,
+  expiredAt: outcomeEvents.expiredAt,
+};
+
+// A line as pnpm dispute submit checks a record against it: what its states
+// depend on, its signed event and receipt (the key that signed it), and its
+// disputes. Matched exactly, as getOutcomeLine does.
+export async function findDisputeLine(furnisherId: string, eventId: string) {
+  const db = await requireDb();
+  const [row] = await db
+    .select(DISPUTE_LINE_COLUMNS)
     .from(outcomeEvents)
-    .orderBy(asc(outcomeEvents.id));
+    .where(
+      and(
+        eq(outcomeEvents.furnisherId, furnisherId),
+        eq(outcomeEvents.eventId, eventId)
+      )
+    );
+  return row && row.furnisherId === furnisherId && row.eventId === eventId
+    ? (await withDisputeRecords([row]))[0]
+    : undefined;
+}
+
+// The same, by the line's id, as a dispute record names it.
+export async function getDisputeLine(id: number) {
+  const db = await requireDb();
+  const [row] = await db
+    .select(DISPUTE_LINE_COLUMNS)
+    .from(outcomeEvents)
+    .where(eq(outcomeEvents.id, id));
+  return row ? (await withDisputeRecords([row]))[0] : undefined;
+}
+
+// Every stored record of one subject dispute, in the order they were stored.
+export async function listDisputeRecords(
+  disputeId: string
+): Promise<DisputeRecordRow[]> {
+  const db = await requireDb();
+  return db
+    .select()
+    .from(disputeRecords)
+    .where(eq(disputeRecords.disputeId, disputeId))
+    .orderBy(asc(disputeRecords.id));
+}
+
+// Stores a sealed dispute record. Returns false when its packet is stored already.
+export async function insertDisputeRecord(
+  row: InsertDisputeRecord
+): Promise<boolean> {
+  const db = await requireDb();
+  try {
+    await db.insert(disputeRecords).values(row);
+    return true;
+  } catch (error) {
+    const { code, cause } = error as { code?: string; cause?: { code?: string } };
+    if ((code ?? cause?.code) !== "ER_DUP_ENTRY") throw error;
+    return false;
+  }
 }
 
 // The last pnpm review sync, or undefined before the first.
