@@ -169,6 +169,8 @@ export type StoredLine = Line & {
   entryHash: string;
   sequence: number | null;
   signedEvent: unknown;
+  /** When the Bureau erased the row's content, its source having expired (server/lineExpiry.ts). */
+  expiredAt?: Date | string | null;
 };
 
 // ---- What a file is about ----
@@ -326,6 +328,8 @@ export function assembleFile(
   const expired: string[] = [];
   const lines: StoredLine[] = [];
   for (const row of rows) {
+    // Erased with its source: it says nothing any more, and names no subject.
+    if (row.expiredAt) continue;
     const line = fromSignedEvent(row);
     if (typeof line === "string") skipped.push(line);
     else lines.push(line);
@@ -334,7 +338,7 @@ export function assembleFile(
   const standing: FileLine[] = [];
   const history: FileLine[] = [];
   for (const line of lines) {
-    if (subjectKey(line.subjectRef) !== key) continue;
+    if (!line.subjectRef || subjectKey(line.subjectRef) !== key) continue;
     // The same furnisher's lines whose relation points at this one, matched
     // exactly as findRelatingOutcomeLines does, from their signed events.
     const relating = lines.filter(

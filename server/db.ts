@@ -379,6 +379,7 @@ export async function findOutcomeEvent(furnisherId: string, eventId: string) {
       packetId: outcomeEvents.packetId,
       signedEventHash: outcomeEvents.signedEventHash,
       evidenceResult: outcomeEvents.evidenceResult,
+      expiredAt: outcomeEvents.expiredAt,
     })
     .from(outcomeEvents)
     .where(
@@ -536,9 +537,45 @@ export async function updateOutcomeEventEvidence(
 export async function listOutcomeLines() {
   const db = await requireDb();
   return db
-    .select({ ...LINE_COLUMNS, outcome: outcomeEvents.outcome })
+    .select({
+      ...LINE_COLUMNS,
+      outcome: outcomeEvents.outcome,
+      expiredAt: outcomeEvents.expiredAt,
+    })
     .from(outcomeEvents)
     .orderBy(asc(outcomeEvents.id));
+}
+
+// Every stored line, with what pnpm lines expire needs to judge its source
+// (server/lineExpiry.ts).
+export async function listExpiryLines() {
+  const db = await requireDb();
+  return db
+    .select({
+      ...LINE_COLUMNS,
+      outcome: outcomeEvents.outcome,
+      caCreatedAt: outcomeEvents.caCreatedAt,
+      packetId: outcomeEvents.packetId,
+      entryHash: outcomeEvents.entryHash,
+      sequence: outcomeEvents.sequence,
+      expiredAt: outcomeEvents.expiredAt,
+    })
+    .from(outcomeEvents)
+    .orderBy(asc(outcomeEvents.id));
+}
+
+// Erases what a line says once its source has expired, and marks when. Only a
+// row not erased already, so a second run changes nothing.
+export async function eraseOutcomeEventContent(
+  id: number,
+  columns: Partial<InsertOutcomeEvent> & { expiredAt: Date }
+): Promise<boolean> {
+  const db = await requireDb();
+  const [result] = await db
+    .update(outcomeEvents)
+    .set(columns)
+    .where(and(eq(outcomeEvents.id, id), isNull(outcomeEvents.expiredAt)));
+  return result.affectedRows === 1;
 }
 
 // Every stored line with its signed event, which an agent's file reads it
@@ -556,6 +593,7 @@ export async function listFileLines() {
       entryHash: outcomeEvents.entryHash,
       sequence: outcomeEvents.sequence,
       signedEvent: outcomeEvents.signedEvent,
+      expiredAt: outcomeEvents.expiredAt,
     })
     .from(outcomeEvents)
     .orderBy(asc(outcomeEvents.id));

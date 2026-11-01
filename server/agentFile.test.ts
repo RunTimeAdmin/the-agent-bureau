@@ -234,6 +234,30 @@ describe("assembleFile", () => {
     );
   });
 
+  it("passes over a line erased with its source, which names no subject, without holding the file", () => {
+    const log = reviewLog();
+    const kept = log.approve(stored());
+    const erased = log.approve(
+      stored({
+        subjectRef: null,
+        signedEvent: null,
+        evidenceResult: null,
+        expiredAt: new Date("2028-10-31T03:15:00.000Z"),
+      })
+    );
+    const { file, skipped, expired } = assembleFile(
+      { wallet: WALLET },
+      [kept, erased],
+      log.reviewsOf,
+      OPTIONS
+    );
+    expect(skipped).toEqual([]);
+    expect(expired).toEqual([]);
+    expect(file.furnished_outcomes.map(l => l.counteraudit.packet_id)).toEqual([
+      kept.packetId,
+    ]);
+  });
+
   it("leaves off a line whose signed event does not check, and says why", () => {
     const log = reviewLog();
     const swapped = log.approve(stored());

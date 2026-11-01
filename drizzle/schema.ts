@@ -151,6 +151,12 @@ export const EVIDENCE_STATUSES = [
 // Bureau read the event; caCreatedAt is CounterAudit's seal time. Event ids are
 // unique per furnisher, as in CounterAudit.
 //
+// Once CounterAudit erases a line's packet under its retention policy, pnpm lines
+// expire erases what the row says about the subject (server/lineExpiry.ts): the
+// signed event, subjectRef, the evidence result and claim, and the receipt go,
+// and expiredAt is set. The row stays, so the event cannot be stored again as a
+// new line and the review log's decisions still have their line.
+//
 // Times are DATETIME in UTC (getDb pins the session zone), not TIMESTAMP:
 // occurredAt is the furnisher's choice and TIMESTAMP ends in 2038, and MariaDB
 // before 10.10 (or MySQL with explicit_defaults_for_timestamp off) gives the
@@ -164,11 +170,11 @@ export const outcomeEvents = mysqlTable(
     eventId: varchar("eventId", { length: 128 }).notNull(),
     keyId: varchar("keyId", { length: 64 }).notNull(),
     outcome: mysqlEnum("outcome", OUTCOMES).notNull(),
-    subjectRef: json("subjectRef").$type<Record<string, unknown>>().notNull(),
+    subjectRef: json("subjectRef").$type<Record<string, unknown>>(),
     occurredAt: datetime("occurredAt", { fsp: 3 }).notNull(),
     relationType: mysqlEnum("relationType", RELATION_TYPES),
     relationTargetEventId: varchar("relationTargetEventId", { length: 128 }),
-    signedEvent: json("signedEvent").$type<Record<string, unknown>>().notNull(),
+    signedEvent: json("signedEvent").$type<Record<string, unknown>>(),
     // SHA-256 of the RFC 8785 canonical signed event, signature included.
     signedEventHash: varchar("signedEventHash", { length: 64 }).notNull(),
     packetId: varchar("packetId", { length: 36 }).notNull().unique(),
@@ -199,6 +205,8 @@ export const outcomeEvents = mysqlTable(
       .notNull(),
     // "test" until retention is signed off; intake writes nothing else.
     dataClass: mysqlEnum("dataClass", ["test", "live"]).notNull(),
+    // When pnpm lines expire erased the row's content, its source having expired.
+    expiredAt: datetime("expiredAt", { fsp: 3 }),
   },
   table => [
     uniqueIndex("outcome_events_furnisher_event_uq").on(

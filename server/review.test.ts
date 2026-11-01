@@ -636,6 +636,24 @@ describe("pnpm review queue and settle", () => {
     );
   });
 
+  it("passes over a line erased with its source, and counts it", async () => {
+    store.rows.push(
+      row({
+        id: 4,
+        eventId: "expired",
+        subjectRef: null,
+        evidenceResult: null,
+        expiredAt: new Date("2028-10-31T03:15:00.000Z"),
+      })
+    );
+    const { io, printed } = fakeIO();
+    expect(await runReview(["queue"], io)).toBe(0);
+    expect(printed()).not.toContain("fur_levymerchant1/expired ");
+    expect(printed()).toContain(
+      "1 line: 0 waiting, 0 released, 0 withdrawn or superseded, 1 expired with their source."
+    );
+  });
+
   it("counts nothing while no genesis is pinned", async () => {
     pin.genesis = null;
     store.rows.push(row());

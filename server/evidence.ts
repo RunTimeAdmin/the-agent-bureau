@@ -26,6 +26,7 @@ import {
   type WalletState,
 } from "./fundingScreen";
 import { isRecord } from "./outcomeProof";
+import { addMonthsUtc, RETENTION_MONTHS } from "./retention";
 
 export const VERIFIER = "levy-arc/1";
 
@@ -163,6 +164,8 @@ export type EvidenceDeps = {
   screen?:
     | ((chain: ChainEntry) => { index: TransferIndex; state: WalletState } | null)
     | null;
+  // The time of the check; now when left out.
+  now?: () => Date;
 };
 
 function defaultScreen(chain: ChainEntry) {
@@ -514,6 +517,18 @@ export async function verifyEvidence(
   if (!(skew <= MAX_OCCURRED_AT_SKEW_MS)) {
     failures.push(
       `occurred_at is more than 24 hours from the block's time, ${charge.block_time}`
+    );
+  }
+  // Older than the retention baseline, a charge backs no line: one it backed
+  // before may have expired, and pnpm lines expire erased that line's claim on
+  // it, which is what kept one charge from backing two lines.
+  const now = (deps.now ?? (() => new Date()))();
+  if (
+    addMonthsUtc(new Date(charge.block_time), RETENTION_MONTHS).getTime() <=
+    now.getTime()
+  ) {
+    failures.push(
+      `the charge settled at ${charge.block_time}, more than ${RETENTION_MONTHS} months ago, past the retention baseline`
     );
   }
   const status = failures.length

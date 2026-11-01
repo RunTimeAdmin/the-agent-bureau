@@ -561,7 +561,13 @@ async function queue(io: ReviewIO) {
   let waiting = 0;
   let released = 0;
   let closed = 0;
+  let expired = 0;
   for (const line of lines) {
+    // Erased with its source (pnpm lines expire): nothing is left to review.
+    if (line.expiredAt) {
+      expired++;
+      continue;
+    }
     const relating = await findRelatingOutcomeLines(
       line.furnisherId,
       line.eventId
@@ -611,7 +617,7 @@ async function queue(io: ReviewIO) {
     );
   }
   io.log(
-    `${lines.length} line${lines.length === 1 ? "" : "s"}: ${waiting} waiting, ${released} released, ${closed} withdrawn or superseded.`
+    `${lines.length} line${lines.length === 1 ? "" : "s"}: ${waiting} waiting, ${released} released, ${closed} withdrawn or superseded${expired ? `, ${expired} expired with their source` : ""}.`
   );
   return 0;
 }
