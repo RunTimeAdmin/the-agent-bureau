@@ -23,7 +23,7 @@ The stored `displayState` (Phase 0 decision 4) follows from the states. A withdr
 1. `withdrawn`
 2. `superseded`
 3. `disputed`
-4. `verified`, once reviewers released the line (`released`: `two_person`, or `solo_test` for test data)
+4. `released`, once reviewers released the line (`two_person`, or `solo_test` for test data). Phase 0 named this state `verified`; it was renamed for review finding M-04 (`docs/independent-payer.md`), since a release records what the checks and reviewers found, not that the outcome happened. Migration 0012 renamed it on stored lines.
 5. `unverified`
 
 A release needs a passing proof, evidence verified or waived by every approving reviewer (and unchanged since they signed), no current rejection, and two different reviewers (one for test data). `docs/two-person-review.md` has the rule and the steps.

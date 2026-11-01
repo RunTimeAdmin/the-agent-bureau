@@ -15,6 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "furnish:intake": "tsx scripts/furnish-intake.ts",
     "review": "tsx scripts/review.ts",
+    "file": "tsx scripts/file.ts",
     "review:vectors": "tsx scripts/review-vectors.ts",
     "dev:static": "vite --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
     "build:static": "vite build"

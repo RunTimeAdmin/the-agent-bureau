@@ -88,7 +88,7 @@ function describeError(error: unknown): string {
 type Outcome = (typeof OUTCOMES)[number];
 type RelationType = (typeof RELATION_TYPES)[number];
 
-type EventFields = {
+export type EventFields = {
   furnisherId: string;
   eventId: string;
   keyId: string;
@@ -102,7 +102,7 @@ type EventFields = {
 // Reads the fields the Bureau stores. CounterAudit runs the full furnish v1
 // schema and refuses anything else with 422; this only keeps an event the
 // Bureau could not store from being sent at all.
-function readEventFields(event: Record<string, unknown>): EventFields | string {
+export function readEventFields(event: Record<string, unknown>): EventFields | string {
   const { furnisher_id, event_id, key_id, outcome, subject_ref, relation } =
     event;
   if (event.schema_version !== "1") return 'schema_version is not "1"';

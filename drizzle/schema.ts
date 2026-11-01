@@ -120,12 +120,12 @@ export const RELATION_TYPES = [
   "withdraws",
 ] as const;
 // How a line may be shown on a file (Phase 0 decision 4), set by
-// server/lineState.ts. Nothing sets "verified" yet: a passing proof and
-// evidence check are recorded on the line, but the display rule also needs
-// two-person review, which is not built.
+// server/lineState.ts. A line reviewers released shows as "released", not
+// "verified" (review finding M-04, docs/independent-payer.md): a release says
+// what the checks and reviewers found, never that the outcome is true.
 export const DISPLAY_STATES = [
   "unverified",
-  "verified",
+  "released",
   "disputed",
   "withdrawn",
   "superseded",
