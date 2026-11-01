@@ -863,7 +863,9 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   );
   if (count + signed.history.length === 0) {
     io.log(
-      "No released line names exactly this subject. Matching is exact apart from EVM addresses in a wallet or a did:sigvara, so check the spelling."
+      expired.length > 0
+        ? `No line is on the file: ${expired.length} released line${expired.length === 1 ? "" : "s"} naming this subject ${expired.length === 1 ? "was" : "were"} left off because ${expired.length === 1 ? "its source has" : "their sources have"} expired.`
+        : "No released line names exactly this subject. Matching is exact apart from EVM addresses in a wallet or a did:sigvara, so check the spelling."
     );
   }
   if (log.testnet) {
