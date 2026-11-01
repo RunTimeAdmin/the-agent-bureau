@@ -149,9 +149,12 @@ function failedEvent(overrides: Record<string, unknown> = {}) {
   });
 }
 
-const deps = (reader = fixtureReader()) => ({
+// Checked days after the fixtures settled (29 and 30 October 2026), well inside the retention baseline.
+const CHECKED_AT = new Date("2026-11-01T00:00:00.000Z");
+const deps = (reader = fixtureReader(), now = CHECKED_AT) => ({
   accounts: ACCOUNTS,
   reader: () => reader,
+  now: () => now,
 });
 
 describe("verifyEvidence: Levy on Arc testnet", () => {
@@ -199,6 +202,25 @@ describe("verifyEvidence: Levy on Arc testnet", () => {
       "the payer is the merchant or another of the furnisher's own accounts, so the charge is not with another party",
     ]);
     expect(result.charge).toMatchObject({ sub_id: "1", payer: MERCHANT });
+  });
+
+  it("takes no charge older than the retention baseline, since its claim may have been erased", async () => {
+    const settled = new Date(blockTime(PAID));
+    const lastDay = new Date(settled);
+    lastDay.setUTCMonth(lastDay.getUTCMonth() + 24);
+    const late = await verifyEvidence(
+      paidEvent(),
+      deps(fixtureReader(), new Date(lastDay.getTime() + 1000))
+    );
+    expect(late.status).toBe("failed");
+    expect(late.reasons).toContain(
+      `the charge settled at ${settled.toISOString()}, more than 24 months ago, past the retention baseline`
+    );
+    const inTime = await verifyEvidence(
+      paidEvent(),
+      deps(fixtureReader(), new Date(lastDay.getTime() - 1000))
+    );
+    expect(inTime.status).toBe("verified");
   });
 
   it("verifies a payment_failed line against ChargeFailed, with the amount that was due", async () => {

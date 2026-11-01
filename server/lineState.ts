@@ -107,6 +107,10 @@ export function relationProblem(relating: Line, target: Line): string | null {
   if (relating.dataClass !== target.dataClass) {
     return `a ${relating.dataClass} line cannot act on a ${target.dataClass} line`;
   }
+  // A line erased with its source (server/lineExpiry.ts) names no subject.
+  if (!relating.subjectRef || !target.subjectRef) {
+    return "its source has expired";
+  }
   if (subjectKey(relating.subjectRef) !== subjectKey(target.subjectRef)) {
     return "it names a different subject";
   }

@@ -30,6 +30,19 @@ A line can be checked for as long as CounterAudit keeps the packet that sealed i
 
 After the date, the proof URL answers 410 with CounterAudit's signed record of the erasure (`counteraudit.packet_tombstone`). It still shows the packet sat at that sequence and entry hash in that organization's chain, and when it was erased, but no longer the outcome or the event's hash. `pnpm file verify` checks that record against CounterAudit's export key and the line, and reports the line as expired, not failed: from then on the line rests on the Bureau's signature alone. A record of erasure that does not check is a failure. Verify also says when CounterAudit erased the source before the file's `checkable_until`.
 
+The Bureau erases its own copy too. `pnpm lines expire` reads every stored line's public proof the same way and, for a line whose source CounterAudit has erased (its signed record checks) or whose `expires_at` has passed, erases what the row says about the subject: the signed event, the subject reference, the evidence result, the settlement claim (it names an on-chain transfer, and so the payer) and CounterAudit's receipt. It sets `expiredAt` and shows the line as `unverified`. The row keeps the furnisher and event ids, the hashes, the packet id, the outcome and the times, so the same event cannot be stored again as a new line and the review log's decisions still have their line; an expired line is on no file and out of the review queue, and the intake writes nothing back into it. It trusts a proof's `expires_at` only when the proof is CounterAudit's for that packet (signature, organization, sequence and entry hash), whether or not the rest still checks. A line it cannot check is left alone and named, and the run exits 1.
+
+A line whose relation still acts on a line that stands (a withdrawal, a replacement or a dispute) is held, not erased, since erasing it would put a withdrawn line back or take a dispute off: it is erased with its target, which a line sealed earlier normally reaches first. A held line also makes the run exit 1, because it outlives its source. `--dry-run` reports without erasing.
+
+The settlement claim was what kept one charge from backing two lines. With it erased, the evidence check refuses any charge older than the 24-month retention baseline instead (`docs/evidence-verifier.md`). That covers a line in the Bureau's organization, whose source expires 24 months after the Bureau received it, give or take the day the event may precede its charge. A furnisher's organization with a shorter policy frees the charge sooner, for the rest of the 24 months.
+
+```bash
+pnpm lines expire --dry-run
+pnpm lines expire
+```
+
+It needs `DATABASE_URL` and `COUNTERAUDIT_ORG_ID`, and the database must have migration `0013_line_expiry`, which the app applies when it starts. It is not scheduled yet.
+
 ## The state names (review finding M-04)
 
 A line reviewers released shows as `released`. Phase 0 named that state `verified`; it was renamed before any file existed, because a release records what the checks and the reviewers found, not that the outcome happened. Migration 0012 renamed it on stored lines. Payment evidence uses the names decided in `docs/independent-payer.md`, and every file carries its disclosure:

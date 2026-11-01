@@ -342,6 +342,24 @@ describe("runIntake", () => {
     expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.read_failed).toBe(true);
   });
 
+  it("writes nothing back into a line that expired with its source", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue({
+      ...stored,
+      evidenceResult: null,
+      expiredAt: new Date("2028-10-31T03:15:00.000Z"),
+    });
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const { io, printed } = fakeIO();
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.updateOutcomeEventEvidence).not.toHaveBeenCalled();
+    expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+    expect(printed()).toContain(
+      "not updated: this line expired with its source, and its content was erased at 2028-10-31T03:15:00.000Z"
+    );
+  });
+
   it("loses the same race when a re-run claims a charge for a stored line", async () => {
     ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
     db.findOutcomeEvent.mockResolvedValue(stored);

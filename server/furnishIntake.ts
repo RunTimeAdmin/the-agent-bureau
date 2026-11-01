@@ -41,6 +41,7 @@ import {
   type ProofVerification,
 } from "./outcomeProof";
 import { FURNISHERS, registeredSigner, type Furnisher } from "./furnishers";
+import { addMonthsUtc, RETENTION_MONTHS } from "./retention";
 import { settleDisplayStates } from "./settleLines";
 import {
   EVIDENCE_KEY_INDEX,
@@ -54,7 +55,7 @@ export const TEST_DATA_FLAG = "--test-data";
 export const SEALED_FLAG = "--sealed";
 // The retention baseline (Phase 0 decision 5): a packet sealed elsewhere must
 // show it will be erased within this long of the Bureau receiving it.
-export const RETENTION_MONTHS = 24;
+export { RETENTION_MONTHS };
 
 export const REFUSAL = [
   `Refused: this intake accepts only runs marked ${TEST_DATA_FLAG}.`,
@@ -354,17 +355,6 @@ function newTally(): Tally {
   };
 }
 
-/** Adds calendar months in UTC, clamping to the month's last day as CounterAudit does. */
-function addMonthsUtc(date: Date, months: number): Date {
-  const out = new Date(date.getTime());
-  const day = out.getUTCDate();
-  out.setUTCDate(1);
-  out.setUTCMonth(out.getUTCMonth() + months);
-  const lastDay = new Date(Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0)).getUTCDate();
-  out.setUTCDate(Math.min(day, lastDay));
-  return out;
-}
-
 // What a new line from a packet sealed in a furnisher's own organization must
 // also show, on top of the proof checks every line runs: that the key CounterAudit
 // verified is the one the Bureau lists for the furnisher (the furnisher
@@ -530,7 +520,7 @@ async function intakeSealedLine(
     parts,
     packetId,
     // CounterAudit's signed proof, kept as the line's record of what was
-    // sealed: it checks offline against the export key after the packet is gone.
+    // sealed until the line expires with its source (server/lineExpiry.ts).
     receipt: proofOk && proof.ran ? proof.proof : null,
     sealedFields,
     receivedAt,
@@ -781,6 +771,12 @@ async function recordLine({
       stored = true;
       parts.push("stored as unverified test data");
       if (takeover) parts.push(takeover);
+    } else if (existing.expiredAt) {
+      // Erased with its source (server/lineExpiry.ts): nothing is written back.
+      tally.notStored++;
+      parts.push(
+        `not updated: this line expired with its source, and its content was erased at ${new Date(existing.expiredAt).toISOString()}`
+      );
     } else if (existing.packetId !== packetId) {
       tally.notStored++;
       parts.push(
