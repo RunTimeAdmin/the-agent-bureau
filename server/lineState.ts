@@ -64,8 +64,13 @@ export type LineStates = {
   released: Release | null;
 };
 
-// EVM addresses compare without case; everything else exactly. A MariaDB
-// server older than 10.5.2 returns the JSON column as text, so parse it first.
+// A Sigvara DID: its chain id written plainly, then an EVM address.
+const SIGVARA_DID =
+  /^(did:sigvara:(?:0|[1-9][0-9]{0,11}):)(0x[0-9a-fA-F]{40})$/;
+
+// EVM addresses compare without case, in a wallet or in a did:sigvara;
+// everything else exactly. A MariaDB server older than 10.5.2 returns the
+// JSON column as text, so parse it first.
 export function subjectKey(stored: Record<string, unknown> | string): string {
   let subjectRef: unknown = stored;
   if (typeof stored === "string") {
@@ -78,11 +83,14 @@ export function subjectKey(stored: Record<string, unknown> | string): string {
   if (typeof subjectRef !== "object" || subjectRef === null) {
     return String(stored);
   }
-  const wallet = (subjectRef as Record<string, unknown>).wallet;
+  const { wallet, did } = subjectRef as Record<string, unknown>;
+  const sigvara = typeof did === "string" ? SIGVARA_DID.exec(did) : null;
   const normalized =
     typeof wallet === "string" && /^0x[0-9a-fA-F]{40}$/.test(wallet)
       ? { ...subjectRef, wallet: wallet.toLowerCase() }
-      : subjectRef;
+      : sigvara
+        ? { ...subjectRef, did: `${sigvara[1]}${sigvara[2].toLowerCase()}` }
+        : subjectRef;
   return canonicalize(normalized) ?? "";
 }
 

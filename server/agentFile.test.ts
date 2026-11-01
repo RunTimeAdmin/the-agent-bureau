@@ -26,6 +26,40 @@ import {
   type Jwks,
 } from "./outcomeProof";
 import { evidenceDigest, newReviewerKey } from "./reviewDecision";
+import { readSigvaraStanding, type SigvaraClient } from "./sigvaraStanding";
+
+// Sigvara's contracts as they answered for the demo agent at one block, with the
+// total score set by the caller.
+function fakeSigvara(total = 36): SigvaraClient {
+  const block = {
+    number: 70108525n,
+    hash: `0x${"2c".repeat(32)}` as const,
+    // Ten seconds before NOW, when these test files are issued.
+    timestamp: 1793494790n,
+  };
+  return {
+    chainId: async () => 5042002,
+    finalizedBlock: async () => block,
+    block: async number => ({ ...block, number }),
+    identity: async () => ({
+      agentAddress: "0xCc52Cd92963f8A86d04dB29a4810d1e01D193910",
+      status: 0,
+      registeredAt: 1789695433n,
+    }),
+    reputation: async () => ({
+      feeScore: 20,
+      successScore: 8,
+      ageScore: 3,
+      externalScore: 0,
+      communityScore: 5,
+      propagationScore: 0,
+      lastUpdated: 1793485345n,
+    }),
+    totalScore: async () => total,
+    stake: async () => 5_000_000_000_000_000_000_000n,
+    hasMinimumStake: async () => true,
+  };
+}
 
 const read = (name: string) =>
   readFileSync(path.join(__dirname, "fixtures", "counteraudit", name), "utf8");
@@ -595,6 +629,7 @@ describe("pnpm file", () => {
       jwks,
       keys,
       furnishers: {},
+      sigvara: fakeSigvara(),
     };
   }
 
@@ -631,6 +666,48 @@ describe("pnpm file", () => {
     expect(env.out.at(-1)).toBe(
       `${proof.packet_id}: proof verified (delivered, sealed in ${proof.org_id})`
     );
+  });
+
+  it("carries Sigvara's standing as a third-party fact, and checks it against the chain", async () => {
+    const standing = await readSigvaraStanding(subject, fakeSigvara());
+    const log = reviewLog();
+    const { file } = assembleFile(subject, [], log.reviewsOf, {
+      ...OPTIONS,
+      standing,
+    });
+    expect(file.third_party_standing).toEqual([standing]);
+    expect(
+      file.not_on_file.some(n => n.startsWith("Third-party standing"))
+    ).toBe(false);
+    const signed = signFile(file, privateKeyPem, "test-file-1", keys);
+
+    const env = io({ "file.json": JSON.stringify(signed) });
+    expect(await runFile(["verify", "file.json"], env)).toBe(0);
+    expect(env.out).toContain(
+      "Sigvara standing: verified at block 70108525 (Active, score 36)"
+    );
+
+    // The chain says otherwise at that block: the file is signed, but the fact does not hold.
+    const moved = io({ "file.json": JSON.stringify(signed) });
+    moved.sigvara = fakeSigvara(50);
+    expect(await runFile(["verify", "file.json"], moved)).toBe(1);
+    expect(moved.out.at(-1)).toMatch(/^Sigvara standing: FAILED/);
+  });
+
+  it("has no third-party standing without one, and verifies a file from before it existed", async () => {
+    const log = reviewLog();
+    const { file } = assembleFile(subject, [], log.reviewsOf, OPTIONS);
+    expect(file.third_party_standing).toEqual([]);
+    const older = { ...file } as Partial<typeof file>;
+    delete older.third_party_standing;
+    const signed = signFile(
+      older as typeof file,
+      privateKeyPem,
+      "test-file-1",
+      keys
+    );
+    const env = io({ "file.json": JSON.stringify(signed) });
+    expect(await runFile(["verify", "file.json"], env)).toBe(0);
   });
 
   it("checks the subject and the age when asked", async () => {

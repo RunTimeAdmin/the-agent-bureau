@@ -35,6 +35,13 @@ import {
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { newReviewerKey, reviewerPublicKey } from "./reviewDecision";
 import { loadReviewLog, reviewsFor } from "./settleLines";
+import {
+  checkSigvaraStanding,
+  readSigvaraStanding,
+  rpcSigvaraClient,
+  type SigvaraClient,
+  type SigvaraStanding,
+} from "./sigvaraStanding";
 
 export const FILE_SCHEMA = "agent-bureau/file/v1";
 // Domain separation: nothing else a file key signs can pass for a file.
@@ -58,9 +65,9 @@ const HISTORY_DISCLOSURE =
 // What a file cannot show yet, said rather than left out (bureau-spec.md,
 // "What a file contains").
 export const NOT_ON_FILE = [
-  "Subject matching: only lines naming exactly this subject reference are here (EVM wallets compare without case). Other spellings, registrations, wallets or DIDs of the same operator are not matched (Phase 3).",
+  "Subject matching: only lines naming exactly this subject reference are here (an EVM address, in a wallet or a did:sigvara, compares without case). Other spellings, registrations, wallets or DIDs of the same operator are not matched (Phase 3).",
   "Lines reviewers have not released are held and not shown, whatever their outcome.",
-  "Public record, payment history and third-party standing such as Sigvara's score are not assembled into files yet.",
+  "Public record and payment history are not assembled into files yet. Third-party standing comes only from Sigvara, and only for a did:sigvara agent on Arc testnet.",
   "Disputes and statements from the subject, and inquiries, are not built yet.",
 ];
 
@@ -107,6 +114,8 @@ export type AgentFile = {
   furnished_outcomes: FileLine[];
   /** Released lines the furnisher later withdrew or replaced. */
   history: FileLine[];
+  /** Third-party facts about the agent, each with its source and when it was read. */
+  third_party_standing: SigvaraStanding[];
   disclosures: string[];
   not_on_file: string[];
 };
@@ -242,6 +251,8 @@ export type AssembleOptions = {
   fileId?: string;
   proofBase?: string;
   furnishers?: Record<string, Furnisher>;
+  /** Sigvara's standing for the subject, read by the caller, or null when there is none. */
+  standing?: SigvaraStanding | null;
 };
 
 /**
@@ -349,6 +360,7 @@ export function assembleFile(
         : "independent",
       furnished_outcomes: standing,
       history,
+      third_party_standing: options.standing ? [options.standing] : [],
       disclosures,
       not_on_file: NOT_ON_FILE,
     },
@@ -498,6 +510,7 @@ export type FileIO = {
   jwks: Jwks;
   keys: Record<string, string>;
   furnishers: Record<string, Furnisher>;
+  sigvara: SigvaraClient;
 };
 
 const defaultIO: FileIO = {
@@ -511,6 +524,7 @@ const defaultIO: FileIO = {
   jwks: COUNTERAUDIT_EXPORT_KEYS,
   keys: BUREAU_FILE_KEYS,
   furnishers: FURNISHERS,
+  sigvara: rpcSigvaraClient(ENV.arcTestnetRpcUrl),
 };
 
 function describeError(error: unknown): string {
@@ -605,6 +619,15 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     return 1;
   }
   const log = await loadReviewLog();
+  // Read before anything is signed: a file that should carry Sigvara's standing
+  // and cannot is not signed without it.
+  let standing: SigvaraStanding | null;
+  try {
+    standing = await readSigvaraStanding(subjectRef, io.sigvara);
+  } catch (error) {
+    io.log(`Not signed: Sigvara could not be read: ${describeError(error)}`);
+    return 1;
+  }
   const { file, skipped } = assembleFile(
     subjectRef,
     (await listFileLines()) as StoredLine[],
@@ -614,6 +637,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
       bureauOrgId: ENV.counterauditOrgId,
       testnetReviewers: log.testnet,
       furnishers: io.furnishers,
+      standing,
     }
   );
   // A stored line whose signed event does not check means the store was
@@ -645,7 +669,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   );
   if (count + signed.history.length === 0) {
     io.log(
-      "No released line names exactly this subject. Matching is exact apart from EVM wallets, so check the spelling."
+      "No released line names exactly this subject. Matching is exact apart from EVM addresses in a wallet or a did:sigvara, so check the spelling."
     );
   }
   if (log.testnet) {
@@ -740,11 +764,46 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
     return 1;
   }
   const entries = lines.flat() as unknown[];
+  // Absent on a file assembled before standing was added.
+  const standings = Array.isArray(signed.third_party_standing)
+    ? (signed.third_party_standing as unknown[])
+    : [];
   if (offline) {
     io.log(
-      `${entries.length} line(s); their proofs were not fetched (--offline).`
+      `${entries.length} line(s) and ${standings.length} third-party fact(s); not checked against CounterAudit or the chain (--offline).`
     );
     return failed === 0 ? 0 : 1;
+  }
+  for (const entry of standings) {
+    const source = isRecord(entry) ? entry.source : null;
+    if (source !== "Sigvara") {
+      failed++;
+      io.log(
+        `Third-party standing from ${printable(source)}: FAILED: not a source this tool can check`
+      );
+      continue;
+    }
+    const result = await checkSigvaraStanding(
+      signed.subject?.subject_ref,
+      entry,
+      io.sigvara,
+      String(signed.issued_at)
+    );
+    const at =
+      isRecord(entry) && isRecord(entry.read_at)
+        ? entry.read_at.block_number
+        : null;
+    const score =
+      isRecord(entry) && isRecord(entry.score) ? entry.score.total : null;
+    const status = isRecord(entry) ? entry.status : null;
+    if (result.ok) {
+      io.log(
+        `Sigvara standing: verified at block ${printable(at)} (${printable(status)}, score ${printable(score)})`
+      );
+    } else {
+      failed++;
+      io.log(`Sigvara standing: FAILED: ${printable(result.detail)}`);
+    }
   }
   // The signature held, but each line is still read as untrusted JSON.
   for (const entry of entries) {

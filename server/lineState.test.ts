@@ -4,6 +4,7 @@ import {
   lineStates,
   relationProblem,
   releaseFor,
+  subjectKey,
   takesOverClaim,
   type Line,
   type Review,
@@ -506,5 +507,25 @@ describe("releaseFor: a settled payment's funding screen (review M-04)", () => {
     const garbled = { ...clear, evidenceResult: "{not json" } as unknown as Line;
     expect(releaseFor(garbled, [decide(garbled, "approve")]).released).toBeNull();
     expect(releaseFor(garbled, [decide(garbled, "approve_with_waiver")]).released).toBe("solo_test");
+  });
+});
+
+describe("subjectKey", () => {
+  const AGENT = "0xCc52Cd92963f8A86d04dB29a4810d1e01D193910";
+
+  it("compares an EVM address without case, in a wallet or a did:sigvara", () => {
+    expect(subjectKey({ wallet: WALLET })).toBe(subjectKey({ wallet: WALLET.toLowerCase() }));
+    expect(subjectKey({ did: `did:sigvara:5042002:${AGENT}` })).toBe(
+      subjectKey({ did: `did:sigvara:5042002:${AGENT.toLowerCase()}` })
+    );
+  });
+
+  it("compares everything else exactly", () => {
+    expect(subjectKey({ did: `did:sigvara:05042002:${AGENT}` })).not.toBe(
+      subjectKey({ did: `did:sigvara:5042002:${AGENT}` })
+    );
+    expect(subjectKey({ did: `did:pkh:eip155:1:${AGENT}` })).not.toBe(
+      subjectKey({ did: `did:pkh:eip155:1:${AGENT.toLowerCase()}` })
+    );
   });
 });
