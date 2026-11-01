@@ -122,13 +122,16 @@ export const RELATION_TYPES = [
 // How a line may be shown on a file (Phase 0 decision 4), set by
 // server/lineState.ts. A line reviewers released shows as "released", not
 // "verified" (review finding M-04, docs/independent-payer.md): a release says
-// what the checks and reviewers found, never that the outcome is true.
+// what the checks and reviewers found, never that the outcome is true. A line
+// whose subject dispute lapsed is "removed" (docs/disputes.md): on no file, for
+// good.
 export const DISPLAY_STATES = [
   "unverified",
   "released",
   "disputed",
   "withdrawn",
   "superseded",
+  "removed",
 ] as const;
 // Results of an evidence check (server/evidence.ts, docs/evidence-verifier.md).
 // "pending" and "error" are not verdicts: the check runs again later.
@@ -287,6 +290,50 @@ export const reviewLogSync = mysqlTable("review_log_sync", {
 });
 
 export type ReviewLogSyncRow = typeof reviewLogSync.$inferSelect;
+
+// The kinds of record in a subject dispute (docs/disputes.md).
+export const DISPUTE_KINDS = [
+  "dispute",
+  "response",
+  "statement",
+  "appeal",
+] as const;
+
+// One row per record of a subject dispute, sealed whole in the Bureau's
+// CounterAudit organization through the agent-bureau-dispute-v1 connector
+// (server/dispute.ts). outcomeEventId is the disputed line, for every record of
+// the dispute. signatureOk and subjectControlOk are what the Bureau's checks
+// found when the record was submitted, and checkProblem why one failed; a record
+// that failed is kept and counts for nothing. subjectControlOk is null for a
+// furnisher's record. controllerAddress is the agent address SigvaraIdentity
+// held at the finalized block when a record about a did:sigvara was submitted.
+// sealedAt is CounterAudit's seal time, which the furnisher's deadline counts
+// from, and receipt its signed receipt for the packet.
+export const disputeRecords = mysqlTable(
+  "dispute_records",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    disputeId: varchar("disputeId", { length: 36 }).notNull(),
+    kind: mysqlEnum("kind", DISPUTE_KINDS).notNull(),
+    outcomeEventId: int("outcomeEventId").notNull(),
+    record: json("record").$type<Record<string, unknown>>().notNull(),
+    packetId: varchar("packetId", { length: 36 }).notNull().unique(),
+    sequence: bigint("sequence", { mode: "number" }),
+    sealedAt: datetime("sealedAt", { fsp: 3 }).notNull(),
+    receipt: json("receipt").$type<Record<string, unknown>>(),
+    signatureOk: boolean("signatureOk").notNull(),
+    subjectControlOk: boolean("subjectControlOk"),
+    checkProblem: varchar("checkProblem", { length: 500 }),
+    controllerAddress: varchar("controllerAddress", { length: 42 }),
+  },
+  table => [
+    index("dispute_records_dispute_idx").on(table.disputeId),
+    index("dispute_records_line_idx").on(table.outcomeEventId),
+  ]
+);
+
+export type DisputeRecordRow = typeof disputeRecords.$inferSelect;
+export type InsertDisputeRecord = typeof disputeRecords.$inferInsert;
 
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
