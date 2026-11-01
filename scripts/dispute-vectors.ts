@@ -272,6 +272,17 @@ export async function buildDisputeVectors(): Promise<DisputeVectors> {
       record: { ...dispute, filed_at: "2026-11-01T10:00:00.000+00:00" },
     },
     {
+      // The pattern holds, but Date.parse reads no time in it.
+      id: "filed_at_month_13",
+      rule: "filed_at is not a UTC time with milliseconds",
+      record: { ...dispute, filed_at: "2026-13-01T00:00:00.000Z" },
+    },
+    {
+      id: "responded_at_minute_60",
+      rule: "responded_at is not a UTC time with milliseconds",
+      record: { ...response, responded_at: "2026-11-03T09:60:00.000Z" },
+    },
+    {
       id: "line_not_object",
       rule: "line is not an object",
       record: { ...dispute, line: "fur_vectors01/vectors-event-1" },

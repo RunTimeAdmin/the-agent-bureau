@@ -542,6 +542,49 @@
       }
     },
     {
+      "id": "filed_at_month_13",
+      "rule": "filed_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "dispute",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "line": {
+          "furnisher_id": "fur_vectors01",
+          "event_id": "vectors-event-1",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab"
+        },
+        "subject_ref": {
+          "wallet": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "signer": {
+          "type": "eip191",
+          "address": "0x7Ab1B0513EE4981F019dEB3CD19829B6A38f72aA"
+        },
+        "reason": "I never received this payment request.",
+        "filed_at": "2026-13-01T00:00:00.000Z",
+        "signature": "0x70a38cb9d061e35c2aaaf291b5553d34bfc3eee7a47b27e3a35943489fbaae1a688a031e0c9c7094a2bfc9869c155d448034e48848061267ab8519560591ffff1b"
+      }
+    },
+    {
+      "id": "responded_at_minute_60",
+      "rule": "responded_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/dispute/v1",
+        "kind": "response",
+        "dispute_id": "3f2b8c1d-6a4e-4f9b-9c2d-7e8f9a0b1c2d",
+        "furnisher_id": "fur_vectors01",
+        "key_id": "vectors-key-1",
+        "response": "confirm",
+        "evidence": [
+          {
+            "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        ],
+        "responded_at": "2026-11-03T09:60:00.000Z",
+        "signature": "ed25519:Ex-M-QYYsYzhya79yTbtPEFhmCEZnHumNYDBR4ktJxHoy_zr2MyxffJvgjpbgZ9CKI9rslh1N0flx0ZWIPLHCA"
+      }
+    },
+    {
       "id": "line_not_object",
       "rule": "line is not an object",
       "record": {

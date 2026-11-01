@@ -187,8 +187,11 @@ function textProblem(name: string, value: unknown): string | null {
     : `${name} is not 1 to ${MAX_TEXT} characters, or is blank`;
 }
 
+// The pattern, and a time Date.parse reads, as CounterAudit's connector checks it.
 function timeProblem(name: string, value: unknown): string | null {
-  return typeof value === "string" && TIME.test(value)
+  return typeof value === "string" &&
+    TIME.test(value) &&
+    !Number.isNaN(Date.parse(value))
     ? null
     : `${name} is not a UTC time with milliseconds`;
 }
