@@ -91,6 +91,8 @@ describe("reading the review log", () => {
 
     expect(problem).toBeNull();
     expect(rows.map(r => r.sequence)).toEqual([0, 1, 2, 3, 4]);
+    // Every packet CounterAudit listed, across both pages.
+    expect((await read(fetch)).listed).toBe(5);
     expect(rows[1]).toEqual({
       sequence: 1,
       packetId: idOf(1),
@@ -150,14 +152,17 @@ describe("reading the review log", () => {
     foreign[1].org_id = "99999999-2222-4333-8444-555555555555";
     expect(await read(fakeCounterAudit(foreign))).toEqual({
       rows: [],
+      listed: 3,
       problem: `packet ${idOf(1)} belongs to another organization`,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(1)]: 410 } }))).toEqual({
       rows: [],
+      listed: 3,
       problem: `packet ${idOf(1)} has been erased; the review log must keep every packet`,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(0)]: 409 } }))).toEqual({
       rows: [],
+      listed: 3,
       problem: `CounterAudit could not verify packet ${idOf(0)} (409)`,
     });
   });

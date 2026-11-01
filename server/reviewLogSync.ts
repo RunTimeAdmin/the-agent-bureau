@@ -66,6 +66,9 @@ async function call(
 export type ReadResult = {
   // Packets to store, in sequence order, each linked to the one before.
   rows: InsertReviewLogRecord[];
+  // How many packets CounterAudit listed for the organization (as far as the listing got), so a
+  // caller can tell whether what it holds after storing the rows is the whole log.
+  listed: number;
   // Why reading stopped early, or null.
   problem: string | null;
 };
@@ -92,11 +95,11 @@ export async function readReviewLog(options: {
   const ids: string[] = [];
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
-    if (page === MAX_PAGES) return { rows: [], problem: "the review log has more packets than one sync reads" };
+    if (page === MAX_PAGES) return { rows: [], listed: ids.length, problem: "the review log has more packets than one sync reads" };
     const query = new URLSearchParams({ limit: String(PAGE), ...(cursor ? { cursor } : {}) });
     const listed = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
     if (listed.status !== 200 || !isRecord(listed.body) || !Array.isArray(listed.body.packets)) {
-      return { rows: [], problem: `CounterAudit answered ${listed.status} when listing the review log's packets` };
+      return { rows: [], listed: ids.length, problem: `CounterAudit answered ${listed.status} when listing the review log's packets` };
     }
     for (const p of listed.body.packets) {
       if (isRecord(p) && typeof p.packet_id === "string" && UUID.test(p.packet_id)) ids.push(p.packet_id);
@@ -111,16 +114,16 @@ export async function readReviewLog(options: {
     if (knownIds.has(id)) continue;
     const got = await call(fetchImpl, `${base}/v1/audit/verify/${id}`, options.readKey);
     if (got.status === 410) {
-      return { rows: [], problem: `packet ${id} has been erased; the review log must keep every packet` };
+      return { rows: [], listed: ids.length, problem: `packet ${id} has been erased; the review log must keep every packet` };
     }
     const body = got.body;
     if (got.status !== 200 || !isRecord(body) || body.valid !== true || !isRecord(body.packet)) {
-      return { rows: [], problem: `CounterAudit could not verify packet ${id} (${got.status})` };
+      return { rows: [], listed: ids.length, problem: `CounterAudit could not verify packet ${id} (${got.status})` };
     }
     const packet = body.packet;
     const integrity = isRecord(packet.integrity) ? packet.integrity : {};
     if (packet.org_id !== options.orgId) {
-      return { rows: [], problem: `packet ${id} belongs to another organization` };
+      return { rows: [], listed: ids.length, problem: `packet ${id} belongs to another organization` };
     }
     const sequence = packet.sequence;
     const prevHash = integrity.prev_hash;
@@ -133,7 +136,7 @@ export async function readReviewLog(options: {
       Number.isNaN(sealedAt.getTime()) ||
       typeof packet.connector_id !== "string"
     ) {
-      return { rows: [], problem: `packet ${id} is missing its sequence, hashes or time` };
+      return { rows: [], listed: ids.length, problem: `packet ${id} is missing its sequence, hashes or time` };
     }
     const isReview = packet.connector_id === REVIEW_CONNECTOR_ID;
     fresh.push({
@@ -156,7 +159,7 @@ export async function readReviewLog(options: {
     ...fresh.map(r => ({ ...r, isNew: true })),
   ].sort((a, b) => a.sequence - b.sequence);
   if (all.length > 0 && (all[0].sequence !== 0 || all[0].prevHash !== CHAIN_START)) {
-    return { rows: [], problem: `the review log does not start at sequence 0 (its first packet is ${all[0].sequence})` };
+    return { rows: [], listed: ids.length, problem: `the review log does not start at sequence 0 (its first packet is ${all[0].sequence})` };
   }
   const rows: InsertReviewLogRecord[] = [];
   for (let i = 0; i < all.length; i++) {
@@ -165,6 +168,7 @@ export async function readReviewLog(options: {
     if (before && (row.sequence !== before.sequence + 1 || row.prevHash !== before.entryHash)) {
       return {
         rows,
+        listed: ids.length,
         problem:
           row.sequence === before.sequence
             ? `two packets claim sequence ${row.sequence}`
@@ -176,7 +180,40 @@ export async function readReviewLog(options: {
       rows.push(stored);
     }
   }
-  return { rows, problem: null };
+  return { rows, listed: ids.length, problem: null };
+}
+
+/**
+ * One review-log packet as CounterAudit's verify route returns it, for a reader checking a
+ * file's review-log references (pnpm file verify). CounterAudit checks the packet's seal and
+ * hashes; this returns where it sits and the signed record it holds.
+ */
+export async function readReviewPacket(
+  packetId: string,
+  options: { apiUrl: string; readKey: string; fetch?: Fetch }
+): Promise<
+  | { ok: true; orgId: unknown; sequence: unknown; entryHash: unknown; record: unknown }
+  | { ok: false; reason: string }
+> {
+  if (!UUID.test(packetId)) return { ok: false, reason: "not a packet id" };
+  const got = await call(
+    options.fetch ?? fetch,
+    `${counterauditBase(options.apiUrl)}/v1/audit/verify/${packetId}`,
+    options.readKey
+  );
+  const body = got.body;
+  if (got.status !== 200 || !isRecord(body) || body.valid !== true || !isRecord(body.packet)) {
+    return { ok: false, reason: `CounterAudit could not verify it (${got.status})` };
+  }
+  const packet = body.packet;
+  const integrity = isRecord(packet.integrity) ? packet.integrity : {};
+  return {
+    ok: true,
+    orgId: packet.org_id,
+    sequence: packet.sequence,
+    entryHash: integrity.entry_hash,
+    record: packet.connector_id === REVIEW_CONNECTOR_ID ? packet.signed_event : null,
+  };
 }
 
 /** Seals one review record in the review organization with a reviewer's own ingest key. */

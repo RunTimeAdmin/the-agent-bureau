@@ -108,7 +108,7 @@ The Bureau reads the review chain in sequence order and applies each record as i
 
 ### Not in this build
 
-- The redacted release bundle for subscribers. Files are assembled now (`docs/agent-file.md`), but a file does not yet cite the review packets that released a line or the review-log position its release rests on.
+- The redacted release bundle for subscribers. Files are assembled now (`docs/agent-file.md`) against the whole log read just before, and state the review-log position and the packets of each line's decisions. Review packets are not public, so only a reader with the review organization's read key can check those, and a file does not carry the signed decisions themselves.
 - A reviewer-side command that replays the chain with the reviewer's own read key.
 
 ## Build outline
