@@ -21,7 +21,7 @@ Each decision is signed for one line (`furnisher_id`, `event_id`), one version o
 
 Each reviewer's latest decision counts, ordered by the time they signed it, not the order it was sealed. A reviewer changes their mind by signing and sealing a new decision.
 
-A dispute, withdrawal or replacement (`docs/line-states.md`) outranks a release: a disputed line shows as `disputed` at once, whatever reviewers decided.
+A dispute, withdrawal or replacement (`docs/line-states.md`) outranks a release: a disputed line shows as `disputed` at once, whatever reviewers decided. So does the subject's dispute while it is open or confirmed, and a line whose subject dispute lapsed is `removed` and never released again (`docs/disputes.md`).
 
 ## What is trusted
 
@@ -89,7 +89,7 @@ pnpm review sync
 pnpm review queue
 ```
 
-`sync` reads the review log's new packets with the Bureau's read key, says what each reviewer-key record did, and settles every line. It stops at a gap in the chain, a packet of another organization, or one erased or not verified, keeps what came before, and exits 1. `queue` prints the sequence read to and the reviewers; then, for each line not withdrawn or superseded, the line, its outcome, data class and display state, its `signed_event_hash`, the proof and evidence results, the decisions sealed for it with their packets, what still holds it back, and a `sign with:` line with the arguments a decision needs.
+`sync` reads the review log's new packets with the Bureau's read key, says what each reviewer-key record did, and settles every line. It stops at a gap in the chain, a packet of another organization, or one erased or not verified, keeps what came before, and exits 1. `queue` prints the sequence read to and the reviewers; then, for each line not withdrawn or superseded, the line, its outcome, data class and display state, its `signed_event_hash`, the proof and evidence results, the decisions sealed for it with their packets, what still holds it back, and a `sign with:` line with the arguments a decision needs. It ends with the subject disputes that wait on someone (below).
 
 **3. Decide and seal (each reviewer, on their own machine):**
 
@@ -110,6 +110,17 @@ pnpm review key --key ~/bureau-review.pem --signer rev_alice --add rev_dave --na
 ```
 
 and `--reenable rev_bob` or `--remove rev_bob` the same way; then `pnpm review submit` the file. A suspension takes effect at once. The others take effect when a second reviewer seals the same change (the same id, name and key; the reason may differ). Any change taking effect clears the votes still pending, so vote again for a change that was pending then.
+
+## Appeals on subject disputes
+
+`pnpm review queue` lists the subject disputes (`docs/disputes.md`) that wait on someone: each open dispute with the furnisher's deadline, each lapsed one, whose line is removed, and each open appeal with what decides it. A line removed after a lapse is not listed for review: it can never be released again.
+
+Reviewers decide an appeal with ordinary decisions, signed and sealed as above. Only decisions sealed in the review log after CounterAudit sealed the appeal count for it, each reviewer's latest one as for a release:
+
+- **The subject's appeal** against a line the furnisher confirmed. A rejection of the line upholds it, and holds the line off every file as any current rejection does. The approvals a release needs dismiss it. The queue prints the line's `sign with:` arguments as for any line.
+- **The furnisher's appeal** against a removal names its corrective line, a new line that `corrects` the removed one and comes through the intake and the queue like any line. Releasing that line upholds the appeal, and a rejection of it dismisses the appeal. The removed line stays removed either way.
+
+Until reviewers decide, the appeal is open and the queue lists it.
 
 ## The signed decision
 

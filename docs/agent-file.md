@@ -8,7 +8,11 @@ A line is on a subject's file when its `subject_ref` names exactly that subject 
 
 What a line says (its subject, outcome, time and relation) is read from the signed event the reviewers approved, never from the table's copies of those fields, which nothing signs. The event must hash to the `signed_event_hash` reviewers signed and name the row's own furnisher and event id. If any stored line fails that, the store was changed or damaged, and `pnpm file assemble` signs nothing until it is fixed: a withdrawal that stopped acting that way could put a line back on a file.
 
-A released line that a later line from the same furnisher disputes stays in `furnished_outcomes`, shown with the dispute. One the furnisher withdrew or replaced moves to `history`, kept as a record of what was reported (Phase 0 decision 4: "prior line kept in history"), with a disclosure saying it is not a current fact (`docs/line-states.md`). Each line carries:
+A released line that a later line from the same furnisher disputes stays in `furnished_outcomes`, shown with the dispute. One the furnisher withdrew or replaced moves to `history`, kept as a record of what was reported (Phase 0 decision 4: "prior line kept in history"), with a disclosure saying it is not a current fact (`docs/line-states.md`).
+
+A line its subject disputed (`docs/disputes.md`) carries the dispute in `dispute`, decided as of the time the file is assembled, and the file then carries a disclosure saying what a subject dispute means. While the dispute is open, or once the furnisher has confirmed the line, it shows as `disputed`; a dispute the furnisher closed by withdrawing or correcting the line stays on it in `history`. A line whose dispute lapsed is `removed`: it is left off the file, `history` included, whatever reviewers decided. A file without a subject dispute is exactly what it was before disputes were built.
+
+Each line carries:
 
 | Field                   | What it is                                                                                                                                                                                                           |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,6 +20,7 @@ A released line that a later line from the same furnisher disputes stays in `fur
 | `occurred_at`           | The furnisher's claim, never independently checked. `received_at` is when the Bureau read the event and `sealed_at` when CounterAudit sealed it (Phase 0 decision 7).                                                |
 | `furnisher_category`    | Not the furnisher's name, which subscribers see only if the furnisher opts in (`bureau-spec.md`). Categories are listed in `FURNISHER_CATEGORIES` by pull request.                                                   |
 | `display_state`         | `released`, `disputed`, `withdrawn` or `superseded`.                                                                                                                                                                 |
+| `dispute`               | Only on a line its subject disputed: `state` (`open`, `confirmed`, `corrected` or `withdrawn`), `filed_at` (when CounterAudit sealed the dispute), `respond_by` (the furnisher's deadline, while open), `confirmed_at` (when CounterAudit sealed the furnisher's confirmation) and `statement` (the subject's statement beside a confirmed line). |
 | `released`              | `two_person`, or `solo_test` for test data one reviewer released.                                                                                                                                                    |
 | `review_decisions`      | The review-log decisions on the line, each by its sequence and packet in the review organization, and the decision. |
 | `evidence`              | `payment_settlement_verified` or `payment_failure_verified` for a payment the chain proved, `verified` for other machine-checked evidence, or `waived_by_reviewers`.                                                 |
@@ -63,7 +68,7 @@ The contract addresses are pinned in `server/sigvaraStanding.ts` from Sigvara's 
 
 ## Not on file yet
 
-Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record and payment history, third-party standing other than Sigvara's, and the subject's disputes, statements and inquiries.
+Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record and payment history, third-party standing other than Sigvara's, and the subject's disputes, statements and inquiries. That last entry predates subject disputes and is unchanged, so that a file without a dispute stays as it was; a line with a dispute carries it in `dispute`.
 
 Matching is exact apart from EVM addresses in a wallet or a `did:sigvara`, so a subject spelled another way (an address in a DID or registry id in other case, say) gets a file with no lines. `--subject` must be one of the outcome event v1 `subject_ref` forms, and `pnpm file assemble` warns when no line matches.
 
@@ -101,10 +106,11 @@ pnpm file verify file.json
 
 `COUNTERAUDIT_ORG_ID` (the Bureau's organization) must be set too, and for assemble `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY`, the review organization and the Bureau's read key to it, as for `pnpm review sync`. `pnpm file verify file.json --subject '{"did":"did:example:123"}' --max-age-days 7` also checks the subject and age, and `--offline` skips the proofs and the chain. `ARC_TESTNET_RPC_URL` (default `https://rpc.testnet.arc.io`) is where Sigvara's contracts are read, for both commands. While the review log holds only the operator-held testnet reviewers (`docs/review-log-design.md`), only test-data lines can be released, so only test-data lines can be on a file.
 
+`pnpm file subject --subject '{"wallet":"0x..."}' --out view.json` writes the subject's view (`docs/disputes.md`): every line ever released on the subject, with the furnisher, the signed event and the rest a file leaves out. It needs the same settings as assemble, but no file key: the view is not signed.
+
 A key has no validity window: a key kept in `server/bureauFileKeys.ts` so old files still verify could sign a new file dated in the past. When a key is retired, destroy its private key. The site serves only pinned keys that parse, with a five-minute cache and open CORS so a subscriber's page can read them.
 
 ## Not built yet
 
 - Serving files to subscribers: an API or MCP tool, pricing, and an inquiry logged for each pull, visible to the subject (`bureau-spec.md`, Subscribers).
-- The subject's view, which names furnishers and includes the signed events.
 - The other sections of a file listed under `not_on_file`.
