@@ -302,13 +302,15 @@ export const DISPUTE_KINDS = [
 // One row per record of a subject dispute, sealed whole in the Bureau's
 // CounterAudit organization through the agent-bureau-dispute-v1 connector
 // (server/dispute.ts). outcomeEventId is the disputed line, for every record of
-// the dispute. signatureOk and subjectControlOk are what the Bureau's checks
-// found when the record was submitted, and checkProblem why one failed; a record
-// that failed is kept and counts for nothing. subjectControlOk is null for a
-// furnisher's record. controllerAddress is the agent address SigvaraIdentity
-// held at the finalized block when a record about a did:sigvara was submitted.
-// sealedAt is CounterAudit's seal time, which the furnisher's deadline counts
-// from, and receipt its signed receipt for the packet.
+// the dispute. Every settle checks each record's signature again from the
+// record itself. controllerAddress, the agent address SigvaraIdentity held at
+// the finalized block when a record about a did:sigvara was submitted, is the
+// one stored value those checks rely on. signatureOk, subjectControlOk and
+// checkProblem only record what the checks found at submission (null control
+// for a furnisher's record); nothing reads them to decide a dispute. sealedAt
+// is CounterAudit's seal time, which the furnisher's deadline counts from, and
+// receipt its signed receipt for the packet. When the line expires with its
+// source, record, receipt, controllerAddress and checkProblem are erased.
 export const disputeRecords = mysqlTable(
   "dispute_records",
   {
@@ -316,7 +318,7 @@ export const disputeRecords = mysqlTable(
     disputeId: varchar("disputeId", { length: 36 }).notNull(),
     kind: mysqlEnum("kind", DISPUTE_KINDS).notNull(),
     outcomeEventId: int("outcomeEventId").notNull(),
-    record: json("record").$type<Record<string, unknown>>().notNull(),
+    record: json("record").$type<Record<string, unknown>>(),
     packetId: varchar("packetId", { length: 36 }).notNull().unique(),
     sequence: bigint("sequence", { mode: "number" }),
     sealedAt: datetime("sealedAt", { fsp: 3 }).notNull(),

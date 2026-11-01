@@ -6,7 +6,7 @@ CREATE TABLE `dispute_records` (
 	`disputeId` varchar(36) NOT NULL,
 	`kind` enum('dispute','response','statement','appeal') NOT NULL,
 	`outcomeEventId` int NOT NULL,
-	`record` json NOT NULL,
+	`record` json,
 	`packetId` varchar(36) NOT NULL,
 	`sequence` bigint,
 	`sealedAt` datetime(3) NOT NULL,

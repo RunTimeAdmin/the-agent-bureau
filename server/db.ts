@@ -602,21 +602,23 @@ export async function listOutcomeLines() {
 }
 
 // Every stored line, with what pnpm lines expire needs to judge its source
-// (server/lineExpiry.ts).
+// (server/lineExpiry.ts), and the subject's disputes on it, erased with it.
 export async function listExpiryLines() {
   const db = await requireDb();
-  return db
-    .select({
-      ...LINE_COLUMNS,
-      outcome: outcomeEvents.outcome,
-      caCreatedAt: outcomeEvents.caCreatedAt,
-      packetId: outcomeEvents.packetId,
-      entryHash: outcomeEvents.entryHash,
-      sequence: outcomeEvents.sequence,
-      expiredAt: outcomeEvents.expiredAt,
-    })
-    .from(outcomeEvents)
-    .orderBy(asc(outcomeEvents.id));
+  return withDisputeRecords(
+    await db
+      .select({
+        ...LINE_COLUMNS,
+        outcome: outcomeEvents.outcome,
+        caCreatedAt: outcomeEvents.caCreatedAt,
+        packetId: outcomeEvents.packetId,
+        entryHash: outcomeEvents.entryHash,
+        sequence: outcomeEvents.sequence,
+        expiredAt: outcomeEvents.expiredAt,
+      })
+      .from(outcomeEvents)
+      .orderBy(asc(outcomeEvents.id))
+  );
 }
 
 // Erases what a line says once its source has expired, and marks when. Only a
@@ -703,6 +705,25 @@ export async function listDisputeRecords(
     .from(disputeRecords)
     .where(eq(disputeRecords.disputeId, disputeId))
     .orderBy(asc(disputeRecords.id));
+}
+
+// Erases what a line's dispute records say about the subject once the line has
+// expired with its source (server/lineExpiry.ts). Returns how many rows changed.
+export async function eraseDisputeRecordContent(
+  outcomeEventId: number,
+  columns: Partial<InsertDisputeRecord>
+): Promise<number> {
+  const db = await requireDb();
+  const [result] = await db
+    .update(disputeRecords)
+    .set(columns)
+    .where(
+      and(
+        eq(disputeRecords.outcomeEventId, outcomeEventId),
+        isNotNull(disputeRecords.record)
+      )
+    );
+  return result.affectedRows;
 }
 
 // Stores a sealed dispute record. Returns false when its packet is stored already.
