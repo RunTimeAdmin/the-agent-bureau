@@ -3,6 +3,7 @@ import path from "node:path";
 import { encodeAbiParameters, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import {
+  CHAINS,
   chargeKey,
   verifyEvidence,
   type ChainReader,
@@ -423,7 +424,7 @@ describe("verifyEvidence: Levy on Arc testnet", () => {
     ]);
   });
 
-  it("ignores Charged logs from a contract that is not Levy's", async () => {
+  it("never verifies Charged logs from a contract that is not a listed Levy manager", async () => {
     const impostor = "0x00000000000000000000000000000000000000aa";
     const logs = fixture.transactions[PAID].receipt.logs.map(log =>
       log.address.toLowerCase() === MANAGER
@@ -434,8 +435,55 @@ describe("verifyEvidence: Levy on Arc testnet", () => {
       paidEvent(),
       deps(fixtureReader({}, withLogs(PAID, logs)))
     );
-    expect(result.status).toBe("failed");
-    expect(result.reasons).toEqual(["the transaction has no Levy Charged log"]);
+    // A retired deployment or an impostor: explicitly unverified, for a reviewer.
+    expect(result.status).toBe("needs_review");
+    expect(result.charge).toBeUndefined();
+    expect(result.reasons).toEqual([
+      `unverified settlement path: the transaction has a Levy-shaped log from ${impostor}, which is not a listed SubscriptionManager (a retired deployment, or not Levy's)`,
+    ]);
+  });
+
+  it("keeps a USDC settlement without a Levy log explicitly unverified, and fails one that moved nothing", async () => {
+    // What an x402 transfer, escrow, batch or cross-chain settlement looks like to this verifier:
+    // the token moved, and no listed SubscriptionManager logged a charge.
+    const transfersOnly = fixture.transactions[PAID].receipt.logs.filter(
+      log => log.address.toLowerCase() === USDC
+    ) as ReceiptLog[];
+    expect(transfersOnly.length).toBeGreaterThan(0);
+    const x402 = await verifyEvidence(
+      paidEvent(),
+      deps(fixtureReader({}, withLogs(PAID, transfersOnly)))
+    );
+    expect(x402.status).toBe("needs_review");
+    expect(x402.reasons).toEqual([
+      "unverified settlement path: the transaction moves USDC with no Levy SubscriptionManager log; x402 transfers, escrow, batch and cross-chain settlements have no verifier",
+    ]);
+
+    const nothing = await verifyEvidence(
+      paidEvent(),
+      deps(fixtureReader({}, withLogs(PAID, [])))
+    );
+    expect(nothing.status).toBe("failed");
+    expect(nothing.reasons).toEqual(["the transaction has no Levy Charged log"]);
+  });
+
+  it("sends a charge below the token's minimum to review, still recording and claiming it", async () => {
+    const strict = {
+      "arc-testnet": {
+        ...CHAINS["arc-testnet"],
+        token: { ...CHAINS["arc-testnet"].token, minimum: "2" },
+      },
+    };
+    const result = await verifyEvidence(paidEvent(), { ...deps(), chains: strict });
+    expect(result.status).toBe("needs_review");
+    expect(result.reasons).toContain(
+      "the charge is 1 USDC, below the 2 USDC minimum for a verified line"
+    );
+    expect(result.charge).toMatchObject({ tx_hash: PAID, log_index: 14 });
+    expect(result.recipient_confirmed).toBe(true);
+    // The registry's own minimum is 1 USDC, which this charge meets.
+    expect(CHAINS["arc-testnet"].token.minimum).toBe("1");
+    expect((await verifyEvidence(paidEvent(), deps())).status).toBe("verified");
   });
 
   it("fails a cycle paid from proration credit, where no USDC moved", async () => {

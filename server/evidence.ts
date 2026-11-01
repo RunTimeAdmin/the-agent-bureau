@@ -69,7 +69,10 @@ export type ChainEntry = {
   rpcUrl: string;
   // A Blockscout explorer for the funding screen. Without one, paid lines are not screened.
   explorerUrl?: string;
-  token: { symbol: string; address: Address; decimals: number };
+  // minimum: the least a charge must carry, in whole tokens, for its line to be verified. A
+  // smaller one is still checked and claimed, but the line goes to review: small charges cost
+  // little to manufacture in bulk.
+  token: { symbol: string; address: Address; decimals: number; minimum: string };
   levyManagers: Address[];
 };
 
@@ -98,6 +101,7 @@ export const CHAINS: Record<string, ChainEntry> = {
       symbol: "USDC",
       address: "0x3600000000000000000000000000000000000000",
       decimals: 6,
+      minimum: "1",
     },
     levyManagers: ["0xea24ac9c1217a671139d93225fdcf19ea3c4df4e"],
   },
@@ -283,16 +287,40 @@ async function readCharges(
   // log in the same transaction.
   const previous = new Map<string, number>();
   const chargeLogs = [];
+  let levyLogs = 0;
+  let unlisted: string | null = null;
   for (const log of logs) {
     const manager = chain.levyManagers.find(m =>
       isAddressEqual(m, log.address)
     );
-    const event = manager ? decode(LEVY_EVENTS, log) : null;
+    const event = decode(LEVY_EVENTS, log);
+    if (event && !manager) unlisted ??= log.address;
     if (!manager || !event) continue;
+    levyLogs++;
     const start = previous.get(manager) ?? -1;
     previous.set(manager, log.logIndex);
     if ((event.eventName === "Charged") === (kind === "charged")) {
       chargeLogs.push({ log, manager, event, start });
+    }
+  }
+  // A transaction that moved the token with no log from a listed SubscriptionManager settled by
+  // another path: an x402 transfer, escrow, batch or cross-chain settlement, or a Levy deployment
+  // not in the registry (retired, or an impostor). None has a verifier. Such a line stays
+  // explicitly unverified, for a reviewer to judge and, if they waive it, to be shown as waived;
+  // it is never verified and never failed for the path alone.
+  if (levyLogs === 0) {
+    const movesToken = logs.some(
+      l => isAddressEqual(l.address, token) && decode(TRANSFER, l)
+    );
+    if (unlisted) {
+      return result(VERIFIER, "needs_review", [
+        `unverified settlement path: the transaction has a Levy-shaped log from ${unlisted}, which is not a listed SubscriptionManager (a retired deployment, or not Levy's)`,
+      ]);
+    }
+    if (movesToken) {
+      return result(VERIFIER, "needs_review", [
+        `unverified settlement path: the transaction moves ${chain.token.symbol} with no Levy SubscriptionManager log; x402 transfers, escrow, batch and cross-chain settlements have no verifier`,
+      ]);
     }
   }
   if (chargeLogs.length > MAX_CHARGE_LOGS) {
@@ -456,6 +484,7 @@ export async function verifyEvidence(
       `the transaction has no Levy ${logName} log`,
     ]);
   }
+  const minimum = toUnits(chain.token.minimum, decimals);
   const wallet = subjectWallet(event.subject_ref);
   const matches = found.filter(
     c =>
@@ -482,6 +511,11 @@ export async function verifyEvidence(
 
   const failures: string[] = problem ? [problem] : [];
   const reviews: string[] = uncertain ? [uncertain] : [];
+  if (minimum !== null && units < minimum) {
+    reviews.push(
+      `the charge is ${formatUnits(units, decimals)} ${symbol}, below the ${chain.token.minimum} ${symbol} minimum for a verified line`
+    );
+  }
   if (!wallet) {
     reviews.push(
       "the subject is not an EVM wallet; matching a registry id or DID to the payer is not built (Phase 0 decision 3)"

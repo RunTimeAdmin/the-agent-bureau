@@ -25,7 +25,8 @@ For a `paid` or `payment_failed` line the verifier needs `amount.chain` set to `
 9. **Recipient.** The plan's merchant is an account the furnisher was vetted for (below).
 10. **Another party.** The payer is not the merchant or another of the furnisher's own accounts. A merchant paying itself goes to review.
 11. **Time.** `occurred_at` is within 24 hours of the block's time. The furnisher's time is its claim; the block's time is the one recorded.
-12. **Age.** The charge settled less than 24 months before the check, the retention baseline. A line it backed before may have expired, and `pnpm lines expire` erases that line's claim on the charge, so without this one charge could back two lines (`docs/agent-file.md`, "When a line's source expires").
+12. **Minimum.** The charge (or, for a failed one, what was due) is at least the token's `minimum` in the registry, 1 USDC. A smaller one is still checked, recorded and claimed, but the line goes to review: small charges cost little to manufacture in bulk.
+13. **Age.** The charge settled less than 24 months before the check, the retention baseline. A line it backed before may have expired, and `pnpm lines expire` erases that line's claim on the charge, so without this one charge could back two lines (`docs/agent-file.md`, "When a line's source expires").
 
 The intake adds one check the chain cannot answer: no other stored line already claims the same settlement log (`evidenceKey`: chain id, transaction and log index). A line claims a charge only when its CounterAudit proof passed and the charge's merchant is that furnisher's vetted account. Every Levy charge is public, so this keeps another furnisher from claiming a charge first to block the real line. One charge backs at most one line: a second line claiming the same charge gets `failed` evidence, which no reviewer can waive, and claims nothing (review M-02, 2026-10-31). A released line must also still hold its claim: a line backed by a charge whose claim it does not hold (an unvetted merchant, or a charge another line holds) is never released (`docs/two-person-review.md`). The one exception to one-line-per-charge is a correction: a line that `corrects` or `supersedes` the line holding the charge, from the same furnisher, with a passing proof, the same subject and the same data class, takes the claim over, and the line it replaces shows as `superseded`. `evidenceKey` is unique in the database, so two intake runs storing at once cannot both claim it; the one that writes second becomes the second line. A stored claim is never cleared by a later check, so a later result cannot free the charge for another line.
 
@@ -63,6 +64,36 @@ The screen is `inconclusive` when it could not see everything: a wallet with mor
 
 A settled payment releases on a plain approval only when its screen is `clear`; otherwise every approval has to waive it (`docs/two-person-review.md`). A merchant payment, for the "no other merchant payment" and "three merchants of one furnisher" flags, is a Levy charge: a payment made outside Levy is not recognised as one.
 
+## The Arc/Levy adapter, bound
+
+What a `verified` result from this adapter rests on, field by field. Anything outside it is never `verified`.
+
+| Binding | How it is fixed |
+| --- | --- |
+| Chain | The event's `amount.chain` names a registry entry (`arc-testnet`), which fixes chain id 5042002; the RPC must report that id. The result records it as `charge.chain_id`. |
+| Token | USDC's ERC-20 interface at `0x3600...0000`, 6 decimals, `amount.asset` `USDC`. Arc's 18-decimal native mirror of each transfer is never read. |
+| Contract | A log from a SubscriptionManager listed in the registry. A Levy-shaped log from any other address is unverified (below). |
+| Transaction | `evidence.tx_hash` in the signed event. |
+| Log index | Exactly one charge log in the transaction matches the event's payer and amount; two or more go to review, never a guess. The result records its index, and the claim key (chain id, transaction, log index) ties one log to one line. The v1 event has no field for the index (its `evidence` object allows only `tx_hash`, `counteraudit_packet` and `log_ref`), so the index is bound by this rule and the claim, not by the furnisher's signature. |
+| Recipient | The plan's merchant is one of the furnisher's vetted accounts on that chain, or the line goes to review and claims nothing. |
+| Payer | The subscription's subscriber at that block is the event's `subject_ref.wallet`. |
+| Amount | Exact, in base units; a failed charge's amount due is read at the block and the block before, and a difference between them goes to review. |
+| Finality | The block is at or below the RPC's `finalized` block, and the RPC's block at that height has the receipt's hash. |
+| Reorgs | None on Arc (below). A hash mismatch is retried, not decided. |
+| Minimum | 1 USDC per charge (above). |
+| Time and age | `occurred_at` within 24 hours of the block; the charge less than 24 months old. |
+
+## Explicitly unverified
+
+These have no verifier. Each comes back `needs_review` with a reason that names it, so a line on one can only be released by reviewers who waive the evidence, and a file then says `waived_by_reviewers`, never a `_verified` label.
+
+- **Another chain or asset:** any `amount.chain` other than `arc-testnet` (Arc mainnet, Base, BNB, Robinhood, Solana) or any asset other than USDC: `no verifier for ...`.
+- **Another settlement path:** a transaction that moved USDC with no log from a listed SubscriptionManager. That covers x402 transfers (the facilitator's `transferWithAuthorization`), escrow, batch and cross-chain settlement: `unverified settlement path: the transaction moves USDC with no Levy SubscriptionManager log`.
+- **A Levy deployment not in the registry:** a retired SubscriptionManager, or a contract emitting Levy-shaped logs that is not Levy's: `unverified settlement path: ... not a listed SubscriptionManager`. Before 2026-11-01 these failed, contrary to this page; they now go to review as it said.
+- **Outcomes with no machine check:** see "Not covered yet".
+
+A transaction that moved no USDC and has no Levy log at all still fails: nothing in it can back a payment line.
+
 ## Finality and reorg policy
 
 Arc uses Malachite BFT consensus: a committed block is final and there are no reorgs (Levy `VERIFICATION.md` section 3). The verifier still reads only at or below the `finalized` block, and compares the block hash at the receipt's height with the receipt's own. A mismatch means the RPC answered from inconsistent state (Arc's public RPC is load-balanced), so the check is retried, not decided. A chain added later with probabilistic finality needs its own confirmation depth and reorg handling before it gets a registry entry.
@@ -72,7 +103,7 @@ Arc uses Malachite BFT consensus: a committed block is final and there are no re
 The registry is code, so each change is a reviewed pull request.
 
 - **Chains** (`CHAINS`): only `arc-testnet`. Arc mainnet (`arc`) is not listed because Levy is not deployed there.
-- **Token:** USDC's ERC-20 interface at `0x3600000000000000000000000000000000000000`, 6 decimals. Arc also logs an 18-decimal native copy of every USDC transfer from `0xfffffffffffffffffffffffffffffffffffffffe`; the verifier never reads it.
+- **Token:** USDC's ERC-20 interface at `0x3600000000000000000000000000000000000000`, 6 decimals, minimum 1 USDC per charge. Arc also logs an 18-decimal native copy of every USDC transfer from `0xfffffffffffffffffffffffffffffffffffffffe`; the verifier never reads it.
 - **Levy:** the SubscriptionManager deployed 2026-10-24, `0xea24ac9c1217a671139d93225fdcf19ea3c4df4e`. Retired deployments are left out, so their charges go to review.
 - **Furnisher accounts** (`FURNISHER_ACCOUNTS`): the merchant addresses each furnisher has shown it controls, per chain. A Levy line reports the furnisher's own billing, so the charge's merchant must be one of them. The list is empty: until a furnisher is vetted for Levy, its charges go to review. Adding one is part of vetting that furnisher.
 
@@ -94,5 +125,5 @@ ARC_LIVE=1 pnpm vitest run server/evidence.test.ts
 
 - `refunded`, `delivered`, `disputed`, `not_delivered`, `access_revoked` and `policy_violation`: no machine check. They need signed provider logs or a CounterAudit packet plus human review (Phase 0 item 3).
 - Subjects named by a registry id or DID: matching them to a payer wallet is Phase 3 (decision 3).
-- Evidence fields inside the signed event that pin the chain id and log index. Today the event names only the transaction, and the verifier finds the log.
+- Evidence fields inside the signed event that pin the chain id and log index. Today the event names only the transaction and the chain, and the verifier finds the log (see the binding table). Pinning them in the signature needs a new event schema version, since v1's `evidence` allows no other fields.
 - Wash payments between wallets that are not on the furnisher's account list. Testnet USDC is free, so a vetted furnisher could pay itself from a wallet it has not listed. Only review and furnisher vetting catch that.
