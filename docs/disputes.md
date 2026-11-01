@@ -45,11 +45,11 @@ Every step is in CounterAudit's sealed chain, so the subject's view and an audit
 pnpm dispute sign <record.json> --wallet-key <file> --out <file>     # testing only: a subject's real wallet signs it
 pnpm dispute sign <record.json> --furnisher-key <file> --out <file>  # testing only: a response or a furnisher's appeal
 pnpm dispute submit <signed.json>                                    # seal it and record it
-pnpm dispute settle                                                  # close lapsed disputes; run daily
+pnpm dispute settle                                                  # close lapsed disputes; the server runs it hourly
 pnpm file subject --subject '{"wallet":"0x..."}' --out <file>
 ```
 
-`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `settle` seals nothing and needs only `DATABASE_URL`. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
+`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `settle` seals nothing and needs only `DATABASE_URL`. The production server runs it at start and every hour after (`server/disputeSchedule.ts`), so nobody has to; running it by hand as well does no harm. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
 
 ## Choices in the code
 
