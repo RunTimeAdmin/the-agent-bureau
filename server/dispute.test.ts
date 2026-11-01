@@ -379,6 +379,12 @@ describe("control of the subject", () => {
       ok: false,
       problem: "the agent is not registered in SigvaraIdentity at block 1234",
     });
+    // A genuine SigvaraIdentity never answers with another address.
+    expect(await checkSubjectControl(did, OTHER, sigvara(OTHER))).toEqual({
+      ok: false,
+      problem: `SigvaraIdentity holds agent address ${OTHER} for the did, not the did's own address`,
+      controller: null,
+    });
   });
 
   it("cannot be shown yet for a registry id or a wallet that is not an EVM address", async () => {
@@ -584,6 +590,26 @@ describe("what a dispute's records add up to", () => {
     // Another address, or none read, counts for nothing.
     expect(await as(OTHER)).toEqual([]);
     expect(await as(null)).toEqual([]);
+    // So does a record signed by another wallet whose address was stored as
+    // the controller, since it is not the did's own address.
+    const forged = await filing(
+      { subject_ref: did, signer: { ...signer, address: OTHER } },
+      OTHER_KEY
+    );
+    expect(
+      await derive(
+        [stored(forged, T0, { controllerAddress: SUBJECT })],
+        at(1),
+        {
+          line,
+        }
+      )
+    ).toEqual([]);
+    expect(
+      await derive([stored(forged, T0, { controllerAddress: OTHER })], at(1), {
+        line,
+      })
+    ).toEqual([]);
   });
 });
 
