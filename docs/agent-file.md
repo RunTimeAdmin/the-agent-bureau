@@ -4,7 +4,7 @@ What the Bureau holds on one subject, as of one time, as a signed JSON file. Thi
 
 ## What is on a file
 
-A line is on a subject's file when its `subject_ref` names exactly that subject (EVM wallets compare without case) and reviewers released it (`docs/two-person-review.md`). A line reviewers have not released is held and not shown, whatever its outcome. Phase 0 decision 4 requires that only for negative outcomes; a file applies it to every outcome, so it says only what passed review.
+A line is on a subject's file when its `subject_ref` names exactly that subject (an EVM address in a wallet or a `did:sigvara` compares without case) and reviewers released it (`docs/two-person-review.md`). A line reviewers have not released is held and not shown, whatever its outcome. Phase 0 decision 4 requires that only for negative outcomes; a file applies it to every outcome, so it says only what passed review.
 
 What a line says (its subject, outcome, time and relation) is read from the signed event the reviewers approved, never from the table's copies of those fields, which nothing signs. The event must hash to the `signed_event_hash` reviewers signed and name the row's own furnisher and event id. If any stored line fails that, the store was changed or damaged, and `pnpm file assemble` signs nothing until it is fixed: a withdrawal that stopped acting that way could put a line back on a file.
 
@@ -29,11 +29,21 @@ A line reviewers released shows as `released`. Phase 0 named that state `verifie
 
 Every file also says it is not a score, a grade or a recommendation. A file with a `solo_test` line says what that means, and a file of test data only says so. `reviewers` is `operator_held_testnet` while the review log's genesis is the testnet one (`docs/review-log-design.md`), and the file then says that `two_person` there does not mean two independent people.
 
+## Third-party standing
+
+For a subject that is a Sigvara agent (`{"did":"did:sigvara:5042002:<agent address>"}`), the file carries Sigvara's standing in `third_party_standing`, labelled as a fact Sigvara computes and not the Bureau's verdict (`bureau-spec.md`: "Sigvara's score appears as a labeled third-party fact"). It is read from Sigvara's contracts on Arc testnet at one finalized block, and the file names the block's number, hash and time:
+
+- `status`: `Active`, `Suspended`, `Slashed` or `PendingBond` from SigvaraIdentity, or `not_registered`;
+- `score`: `total` is SigvaraReputation's `getTotalScore` at that block, the matured score, which can trail the factors after a rise and restarts after an operator handover, so it can be below their sum; the factors are the last finalized proposal's, with when it was finalized;
+- `stake` and `has_minimum_stake` from SigvaraStaking.
+
+The contract addresses are pinned in `server/sigvaraStanding.ts` from Sigvara's `deployments/5042002.json`, by pull request, so a file says what those contracts said rather than whatever an RPC setting points at. The agent's `didHash` is `keccak256(abi.encodePacked("did:sigvara:", chainid, ":", agentAddress))`, as SigvaraIdentity computes it. If the subject is a Sigvara agent and the chain cannot be read, nothing is signed. Any other subject has no standing, and the file says so. The score is Sigvara's finalized one: an outcome Sigvara has recorded counts only once its next score proposal has finalized on chain.
+
 ## Not on file yet
 
-Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record, payment history and third-party standing such as Sigvara's score, and the subject's disputes, statements and inquiries.
+Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record and payment history, third-party standing other than Sigvara's, and the subject's disputes, statements and inquiries.
 
-Matching is exact apart from EVM wallets, so a subject spelled another way (an address in a DID or registry id in other case, say) gets a file with no lines. `--subject` must be one of the outcome event v1 `subject_ref` forms, and `pnpm file assemble` warns when no line matches.
+Matching is exact apart from EVM addresses in a wallet or a `did:sigvara`, so a subject spelled another way (an address in a DID or registry id in other case, say) gets a file with no lines. `--subject` must be one of the outcome event v1 `subject_ref` forms, and `pnpm file assemble` warns when no line matches.
 
 ## Signing and checking
 
@@ -44,6 +54,8 @@ A reader of a file checks these, which `pnpm file verify <file>` does:
 1. **The Bureau's signature**, against a pinned key, so the file came from the Bureau unchanged. A file in which a key appears twice in one object is refused, since another JSON parser could read it differently.
 2. **Who and when.** Verify prints the subject, the file id, when it was issued and who the reviewers were. A valid file can still be another agent's, or an old one from before a line was released, so `--subject` checks the subject and `--max-age-days` the age.
 3. **Each line against CounterAudit's public proof** (`GET /v1/proofs/{packet_id}`, no key needed), checked against CounterAudit's pinned export key: CounterAudit sealed a packet with that id in that organization, at that sequence and entry hash and that time, holding an event with that hash and that outcome, and checked the furnisher's signature on it when it sealed it. In an organization a furnisher listed in `server/furnishers.ts` runs, the proof's signer must also be a key listed for that furnisher, since there the furnisher registered its keys itself.
+
+4. **Sigvara's standing against the chain.** Each fact is read again at the block the file names, from the same contracts, and the entry must be exactly what that reads, wording and fields included: the block hash, status, score, factors and stake. The block must be finalized and read within 15 minutes before the file was issued, so a file cannot show a standing from before a slash. Verify trusts the RPC it reads (`ARC_TESTNET_RPC_URL`, by default the same public RPC that assembled the file); a reader who wants a check independent of that RPC points it at a node of their own. Arc testnet's public RPC serves past blocks, so an old file can still be checked.
 
 A pass on a line says nothing about its subject, data class or release, which only the Bureau's signature vouches for. A file leaves out the signed event, which names the furnisher and holds the evidence, so a subscriber cannot check the furnisher's signature or the binding to the subject alone; for those it relies on the Bureau's signature and on CounterAudit's check at seal time. The subject and the reviewers get the signed events and can run the full proof check (`server/outcomeProof.ts`).
 
@@ -64,7 +76,7 @@ pnpm file assemble --subject '{"did":"did:example:123"}' --key <private-key-file
 pnpm file verify file.json
 ```
 
-`COUNTERAUDIT_ORG_ID` (the Bureau's organization) must be set too. `pnpm file verify file.json --subject '{"did":"did:example:123"}' --max-age-days 7` also checks the subject and age, and `--offline` skips the proofs. While the review log holds only the operator-held testnet reviewers (`docs/review-log-design.md`), only test-data lines can be released, so only test-data lines can be on a file.
+`COUNTERAUDIT_ORG_ID` (the Bureau's organization) must be set too. `pnpm file verify file.json --subject '{"did":"did:example:123"}' --max-age-days 7` also checks the subject and age, and `--offline` skips the proofs and the chain. `ARC_TESTNET_RPC_URL` (default `https://rpc.testnet.arc.io`) is where Sigvara's contracts are read, for both commands. While the review log holds only the operator-held testnet reviewers (`docs/review-log-design.md`), only test-data lines can be released, so only test-data lines can be on a file.
 
 A key has no validity window: a key kept in `server/bureauFileKeys.ts` so old files still verify could sign a new file dated in the past. When a key is retired, destroy its private key. The site serves only pinned keys that parse, with a five-minute cache and open CORS so a subscriber's page can read them.
 

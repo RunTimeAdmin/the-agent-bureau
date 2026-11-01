@@ -33,7 +33,7 @@ A release needs a passing proof, evidence verified or waived by every approving 
 An outcome event v1 may carry `relation: {type, target_event_id}`. The Bureau looks the target up among the **same furnisher's** lines, so a furnisher can only act on its own lines. A relation takes effect only when:
 
 - the relating line's own proof passed, so the furnisher really sent it;
-- it names the same subject as its target (EVM wallets compare without case; other subject forms must match exactly);
+- it names the same subject as its target (an EVM address, in a wallet or a `did:sigvara`, compares without case; other subject forms must match exactly);
 - both lines have the same data class, so test data can never change a live line;
 - it does not point at itself.
 
