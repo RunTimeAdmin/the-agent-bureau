@@ -63,4 +63,4 @@ Testnet USDC is free, so testnet lines show nothing about wash resistance and ar
 1. Documents and review prompts use the section 1 names. Done: `pnpm review queue` shows them for payment lines, with the disclosure and the checklist in section 2, layer 5.
 2. Funding screen. Done: `server/fundingScreen.ts`, described in `docs/evidence-verifier.md` (Funding screen), with a test for each flag and a recording of Arc's explorer for a real Levy charge.
 3. Subject control, with Phase 3.
-4. File assembly shows the states and the disclosure.
+4. File assembly shows the states and the disclosure. Done: `docs/agent-file.md`; released lines show as `released`, not `verified` (migration 0012).

@@ -66,7 +66,7 @@ export type LineStates = {
 
 // EVM addresses compare without case; everything else exactly. A MariaDB
 // server older than 10.5.2 returns the JSON column as text, so parse it first.
-function subjectKey(stored: Record<string, unknown> | string): string {
+export function subjectKey(stored: Record<string, unknown> | string): string {
   let subjectRef: unknown = stored;
   if (typeof stored === "string") {
     try {
@@ -263,6 +263,6 @@ export function displayStateFor(states: LineStates): DisplayState {
   if (states.withdrawn) return "withdrawn";
   if (states.superseded) return "superseded";
   if (states.disputed) return "disputed";
-  if (states.released) return "verified";
+  if (states.released) return "released";
   return "unverified";
 }

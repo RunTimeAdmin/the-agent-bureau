@@ -85,6 +85,13 @@
       "when": 1793478212956,
       "tag": "0011_review_log",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1793492345681,
+      "tag": "0012_released_display_state",
+      "breakpoints": true
     }
   ]
 }

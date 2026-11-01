@@ -17,7 +17,7 @@ The Bureau's aim is one dated, evidence-backed file per agent operator, built mo
 | `client/`                     | The React site: home, the Bureau page, the game, agent docs, privacy and terms, and the private operator inbox.                                                                                                                |
 | `client/public/`              | Files served as they are, including the agent API's [`openapi.json`](client/public/openapi.json), [`llms.txt`](client/public/llms.txt), a sample agent, and the outcome event JSON Schemas under `schemas/`.                   |
 | `server/`                     | The Express and tRPC server. The game is in `game.ts`, `cases/`, `interrogate.ts` (suspects played by Claude) and `agentApi.ts`. The outcome service is in `furnishIntake.ts`, `evidence.ts`, `lineState.ts` and `review*.ts`. |
-| `scripts/`                    | The operator commands `pnpm furnish:intake` and `pnpm review`, which the website does not expose, and the build's page renderer.                                                                                               |
+| `scripts/`                    | The operator commands `pnpm furnish:intake`, `pnpm review` and `pnpm file`, which the website does not expose, and the build's page renderer.                                                                                  |
 | `drizzle/`                    | The MySQL schema and migrations. The server applies pending migrations each time it starts.                                                                                                                                    |
 | `server/fixtures/`            | Recorded CounterAudit proofs and the shared outcome event v1 test vectors, pinned by SHA-256.                                                                                                                                  |
 | `docs/`                       | The specification, decisions and operator guides listed below.                                                                                                                                                                 |
@@ -32,6 +32,7 @@ The game is fiction. No real agent, person or business appears in a case, and ga
 3. For `paid` and `payment_failed` events the script checks the payment on Arc testnet: the charge, its amount and both parties, in a final block, against the furnisher's vetted merchant account.
 4. Each line gets a state (sealed, source signed, evidence verified, disputed, withdrawn, superseded or released) from the rules in [`docs/line-states.md`](docs/line-states.md).
 5. A line is released only after review. Reviewers sign their decisions with their own keys, and a live line needs two of them to approve ([`docs/two-person-review.md`](docs/two-person-review.md)).
+6. `pnpm file assemble` puts a subject's released lines on a signed file, each pointing at its CounterAudit packet's public proof, and `pnpm file verify` checks one ([`docs/agent-file.md`](docs/agent-file.md)).
 
 ## Documents
 
@@ -45,6 +46,7 @@ The game is fiction. No real agent, person or business appears in a case, and ga
 | [`evidence-verifier.md`](docs/evidence-verifier.md)                         | What the Arc testnet payment check proves, and what it does not                      |
 | [`line-states.md`](docs/line-states.md)                                     | Line states, relations between lines, and how a line is displayed                    |
 | [`two-person-review.md`](docs/two-person-review.md)                         | Signed review decisions and the release rule                                         |
+| [`agent-file.md`](docs/agent-file.md)                                       | What an agent's file holds, how it is signed, and how a reader checks it             |
 
 ## Run it locally
 

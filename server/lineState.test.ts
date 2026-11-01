@@ -106,7 +106,7 @@ describe("lineStates", () => {
     ).toBe(true);
   });
 
-  it("does not return verified without a release, even when every check passed", () => {
+  it("is not shown released without reviewers, even when every check passed", () => {
     const states = lineStates(line({ evidenceStatus: "verified" }), []);
     expect(displayStateFor(states)).toBe("unverified");
   });
@@ -223,13 +223,13 @@ describe("releaseFor: two-person review", () => {
       review("rev_bob", "approve", onLive),
     ];
     expect(releaseFor(live, two).released).toBe("two_person");
-    expect(displayStateFor(lineStates(live, [], two))).toBe("verified");
+    expect(displayStateFor(lineStates(live, [], two))).toBe("released");
   });
 
   it("lets one reviewer release test data, flagged as solo", () => {
     const one = [review("rev_alice", "approve")];
     expect(releaseFor(test, one).released).toBe("solo_test");
-    expect(displayStateFor(lineStates(test, [], one))).toBe("verified");
+    expect(displayStateFor(lineStates(test, [], one))).toBe("released");
     expect(releaseFor(test, []).holdingBack).toBe(
       "needs 2 more approvals from different reviewers (test data: one is enough)"
     );

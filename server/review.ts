@@ -529,13 +529,13 @@ function describeLog(log: ReviewLog): string[] {
   ];
 }
 
-const PAYMENT_OUTCOMES = new Set(["paid", "refunded", "payment_failed"]);
+export const PAYMENT_OUTCOMES = new Set(["paid", "refunded", "payment_failed"]);
 
 /**
  * What a line's evidence proved, by the names decided for review finding M-04
  * (docs/independent-payer.md): a verified payment proves a transfer settled, not
- * who controls the payer. The stored status stays `verified` until these become
- * the states in code, before any external file or API.
+ * who controls the payer. The stored evidence status stays `verified`; files
+ * use these names (server/agentFile.ts).
  */
 export function evidenceLabel(outcome: string, status: string | null): string {
   if (status !== "verified") return status ?? "not checked";

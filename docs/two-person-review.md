@@ -1,10 +1,10 @@
 # Two-person review
 
-No line shows as `verified` until reviewers release it (Phase 0 item 6). Each reviewer signs their decisions with their own key on their own machine and seals them in the independent review log, a CounterAudit organization they write to with their own key (`docs/review-log-design.md`). The operator never handles a decision. The Bureau reads the log and counts only what is sealed there, checking every signature each time a line is settled. Code: `server/reviewDecision.ts` (decisions), `server/reviewLog.ts` (reviewer-key records and the log's rules), `server/reviewLogSync.ts` (reading and sealing), `server/lineState.ts` (`releaseFor`), `server/settleLines.ts` (`loadReviewLog`, `reviewsFor`) and `server/review.ts` (`pnpm review`).
+No line shows as `released` until reviewers release it (Phase 0 item 6). Each reviewer signs their decisions with their own key on their own machine and seals them in the independent review log, a CounterAudit organization they write to with their own key (`docs/review-log-design.md`). The operator never handles a decision. The Bureau reads the log and counts only what is sealed there, checking every signature each time a line is settled. Code: `server/reviewDecision.ts` (decisions), `server/reviewLog.ts` (reviewer-key records and the log's rules), `server/reviewLogSync.ts` (reading and sealing), `server/lineState.ts` (`releaseFor`), `server/settleLines.ts` (`loadReviewLog`, `reviewsFor`) and `server/review.ts` (`pnpm review`).
 
 ## Release rule
 
-A line is released, and shows as `verified`, when all of these hold:
+A line is released, and shows as `released`, when all of these hold:
 
 1. **Its proof passed**: CounterAudit sealed it and the furnisher's signature checked out (`source_signed`).
 2. **Its evidence allows it.**
@@ -141,4 +141,4 @@ The `outcome_reviews` table (migration 0009), where `pnpm review apply` recorded
 - **One run at a time.** `pnpm review sync`, `pnpm review settle` and the intake do not lock lines against each other; run them one after the other.
 - **Command line only.** There is no review screen in the inbox.
 - **No passphrase on private keys.**
-- **Not yet covered:** subject matching changes (Phase 0 item 6 names them too; subject matching is Phase 3), and showing released lines on an agent's file (assembling files is not built).
+- **Not yet covered:** subject matching changes (Phase 0 item 6 names them too; subject matching is Phase 3). Released lines appear on an agent's file (`docs/agent-file.md`).

@@ -541,6 +541,26 @@ export async function listOutcomeLines() {
     .orderBy(asc(outcomeEvents.id));
 }
 
+// Every stored line with its signed event, which an agent's file reads it
+// from (server/agentFile.ts).
+export async function listFileLines() {
+  const db = await requireDb();
+  return db
+    .select({
+      ...LINE_COLUMNS,
+      outcome: outcomeEvents.outcome,
+      occurredAt: outcomeEvents.occurredAt,
+      receivedAt: outcomeEvents.receivedAt,
+      caCreatedAt: outcomeEvents.caCreatedAt,
+      packetId: outcomeEvents.packetId,
+      entryHash: outcomeEvents.entryHash,
+      sequence: outcomeEvents.sequence,
+      signedEvent: outcomeEvents.signedEvent,
+    })
+    .from(outcomeEvents)
+    .orderBy(asc(outcomeEvents.id));
+}
+
 // The review log's packets, in sequence order (server/reviewLog.ts).
 export async function listReviewLogRecords(): Promise<ReviewLogRecordRow[]> {
   const db = await requireDb();

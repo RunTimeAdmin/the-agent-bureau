@@ -21,6 +21,7 @@ import {
 } from "node:crypto";
 import bs58 from "bs58";
 import canonicalize from "canonicalize";
+import type { Furnisher } from "./furnishers";
 
 export const FURNISH_CONNECTOR_ID = "agent-bureau-outcome-v1";
 
@@ -410,4 +411,133 @@ export function verifyOutcomeProof(input: ProofInput): ProofVerification {
   };
 
   return { ok: PROOF_CHECKS.every(name => checks[name].ok), checks };
+}
+
+// ---- A line on an agent's file ----
+
+export const LINE_PROOF_CHECKS = [
+  "proof_signature",
+  "proof_type",
+  "org_id",
+  "connector_id",
+  "public_proof",
+  "content_verified",
+  "packet_id",
+  "sequence",
+  "entry_hash",
+  "sealed_at",
+  "signed_event_hash",
+  "outcome",
+  "signer_registered",
+] as const;
+
+export type LineProofCheckName = (typeof LINE_PROOF_CHECKS)[number];
+export type LineProofVerification = {
+  ok: boolean;
+  checks: Record<LineProofCheckName, CheckResult>;
+};
+
+export type LineProofInput = {
+  /** The body of GET /v1/proofs/{packet_id}, as fetched. */
+  proof: unknown;
+  /** CounterAudit's export keys. */
+  jwks: Jwks;
+  /** The furnishers listed with their own organizations (server/furnishers.ts). */
+  furnishers: Record<string, Furnisher>;
+  /** What the file says about the line (server/agentFile.ts). */
+  packetId: string;
+  orgId: string;
+  sequence: number | null;
+  entryHash: string;
+  sealedAt: string;
+  signedEventHash: string;
+  outcome: string;
+};
+
+/**
+ * What a reader of an agent's file can check without the signed event, which
+ * a file leaves out: that CounterAudit signed this proof, sealed a packet in
+ * that organization at that place in its chain and at that time, holding an
+ * event with that hash and outcome, and checked the furnisher's signature on
+ * it when it sealed it. In an organization a listed furnisher runs, the signer
+ * must be a key listed for that furnisher, since there the furnisher registered
+ * its keys itself. A pass says nothing about the subject, the data class or the
+ * release, which only the Bureau's signature on the file vouches for. The
+ * subject and reviewers see the event itself and can run verifyOutcomeProof.
+ */
+export function verifyLineProof(input: LineProofInput): LineProofVerification {
+  const proof = isRecord(input.proof) ? input.proof : {};
+  const claim = isRecord(proof.outcome_claim) ? proof.outcome_claim : {};
+  const signer = isRecord(claim.signer) ? claim.signer : {};
+  const checks: Record<LineProofCheckName, CheckResult> = {
+    proof_signature: check(() => {
+      const { signature, ...payload } = proof;
+      const result = verifyExportSignature(payload, signature, input.jwks);
+      if (result.valid) return pass;
+      return fail(
+        result.key_id
+          ? `${result.reason} (key ${result.key_id})`
+          : result.reason
+      );
+    }),
+    proof_type:
+      proof.proof_type === "counteraudit.packet_proof" &&
+      proof.proof_version === 1
+        ? pass
+        : fail("not a version 1 counteraudit.packet_proof"),
+    org_id: equalsExpected(proof.org_id, input.orgId),
+    connector_id: equalsExpected(proof.connector_id, FURNISH_CONNECTOR_ID),
+    public_proof:
+      proof.public_proof === true ? pass : fail("public_proof is not true"),
+    content_verified:
+      proof.content_verified === true
+        ? pass
+        : fail("content_verified is not true"),
+    packet_id: equalsExpected(proof.packet_id, input.packetId),
+    sequence:
+      typeof proof.sequence === "number" && proof.sequence === input.sequence
+        ? pass
+        : fail(
+            `expected ${JSON.stringify(input.sequence)}, proof has ${JSON.stringify(proof.sequence ?? null)}`
+          ),
+    entry_hash: equalsExpected(proof.entry_hash, input.entryHash),
+    sealed_at: check(() => {
+      const proofTime = new Date(String(proof.created_at)).getTime();
+      const fileTime = new Date(input.sealedAt).getTime();
+      return Number.isFinite(proofTime) && proofTime === fileTime
+        ? pass
+        : fail(
+            `the file says ${JSON.stringify(input.sealedAt)}, proof has ${JSON.stringify(proof.created_at ?? null)}`
+          );
+    }),
+    signed_event_hash: equalsExpected(
+      claim.signed_event_hash,
+      input.signedEventHash
+    ),
+    outcome: check(() =>
+      claim.asserted_by === "signature"
+        ? equalsExpected(claim.outcome, input.outcome)
+        : fail("CounterAudit did not check a furnisher's signature on it")
+    ),
+    signer_registered: check(() => {
+      const runs = Object.entries(input.furnishers).filter(
+        ([, f]) => f.counterauditOrgId === proof.org_id
+      );
+      // The Bureau's own organization: the Bureau registers keys there.
+      if (runs.length === 0) return pass;
+      const furnisherId = String(signer.furnisher_id ?? "");
+      const listed = runs.find(([id]) => id === furnisherId)?.[1];
+      const keyId = String(signer.key_id ?? "");
+      const key =
+        listed && Object.hasOwn(listed.keys, keyId)
+          ? listed.keys[keyId]
+          : undefined;
+      return key && key.publicKey === signer.public_key
+        ? pass
+        : fail(
+            `the proof's signer is not a key listed for a furnisher of organization ${String(proof.org_id)}`
+          );
+    }),
+  };
+  return { ok: LINE_PROOF_CHECKS.every(name => checks[name].ok), checks };
 }

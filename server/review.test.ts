@@ -524,7 +524,7 @@ describe("pnpm review sync", () => {
 
     expect(await runReview(["sync"], io)).toBe(0);
     expect(store.log).toHaveLength(5);
-    expect(store.rows[0].displayState).toBe("verified");
+    expect(store.rows[0].displayState).toBe("released");
     expect(printed()).toBe(
       [
         "Read 5 new packets.",
@@ -533,7 +533,7 @@ describe("pnpm review sync", () => {
         "  sequence 2: genesis of rev_alice, rev_bob, rev_carol took effect, signed by all of them",
         "Review log read to sequence 4.",
         "Reviewers: rev_alice (Alice) active, rev_bob (Bob) active, rev_carol (Carol) active.",
-        `${LINE}: unverified -> verified`,
+        `${LINE}: unverified -> released`,
         "1 line settled, 1 changed.",
       ].join("\n")
     );
@@ -662,21 +662,21 @@ describe("pnpm review queue and settle", () => {
     store.rows.push(row());
     seal(...genesis(), decision("alice"));
     await runReview(["settle"], fakeIO().io);
-    expect(store.rows[0].displayState).toBe("verified");
+    expect(store.rows[0].displayState).toBe("released");
 
     const remove: KeyChange = { type: "remove", reviewer_id: "rev_alice" };
     seal(keyRecord("bob", remove), keyRecord("carol", remove));
     const after = fakeIO();
     expect(await runReview(["settle"], after.io)).toBe(0);
     expect(store.rows[0].displayState).toBe("unverified");
-    expect(after.printed()).toContain(`${LINE}: verified -> unverified`);
+    expect(after.printed()).toContain(`${LINE}: released -> unverified`);
   });
 
   it("holds a released line once one of its approvers is suspended", async () => {
     store.rows.push(row({ dataClass: "live" }));
     seal(...genesis(), decision("alice", { data_class: "live" }), decision("bob", { data_class: "live" }));
     await runReview(["settle"], fakeIO().io);
-    expect(store.rows[0].displayState).toBe("verified");
+    expect(store.rows[0].displayState).toBe("released");
 
     seal(keyRecord("carol", { type: "suspend", reviewer_id: "rev_bob" }));
     const { io, printed } = fakeIO();
@@ -704,7 +704,7 @@ describe("what pnpm review trusts", () => {
     store.rows.push(row());
     seal(...genesis(), decision("alice"));
     await runReview(["settle"], fakeIO().io);
-    expect(store.rows[0].displayState).toBe("verified");
+    expect(store.rows[0].displayState).toBe("released");
 
     const rotate: KeyChange = { type: "rotate", reviewer_id: "rev_alice", public_key: newReviewerKey().publicKey };
     seal(keyRecord("bob", rotate), keyRecord("carol", rotate));

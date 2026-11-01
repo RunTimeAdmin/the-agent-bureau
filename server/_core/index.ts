@@ -5,7 +5,9 @@ import path from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
+import { BUREAU_FILE_KEYS } from "../bureauFileKeys";
 import { pingDb, runMigrations, schemaReady } from "../db";
+import { parsePublicKey } from "../outcomeProof";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ENV } from "./env";
@@ -65,6 +67,26 @@ async function startServer() {
   // Liveness: the process is up. Stays ok even without a database, because the
   // public pages are still served then.
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+  // The keys agents' files are signed with (docs/agent-file.md), so a
+  // subscriber can check a file without trusting the file itself. Only keys
+  // that parse are served, and any page may read them.
+  const fileKeys = Object.entries(BUREAU_FILE_KEYS)
+    .filter(([, publicKey]) => {
+      try {
+        parsePublicKey(publicKey);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .map(([key_id, public_key]) => ({ key_id, public_key }));
+  app.get("/.well-known/agent-bureau-file-keys.json", (_req, res) => {
+    res.set({
+      "Cache-Control": "public, max-age=300",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.json({ keys: fileKeys });
+  });
   // Readiness: the database answers and the Bureau schema is present. Use this,
   // not /api/health, to gate traffic that needs the database (games, inquiries,
   // the inbox). A boot migration failure leaves the server answering but the
