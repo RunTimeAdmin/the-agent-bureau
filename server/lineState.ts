@@ -48,6 +48,8 @@ export type Review = {
   // By a reviewer the review log has suspended: it does not count, and it holds
   // its line until the other reviewers re-enable, rotate or remove them.
   suspended?: boolean;
+  // The review-log packet that holds the decision, when it came from the review log.
+  packetId?: string;
 };
 
 // How reviewers released a line: two different reviewers, or for test data

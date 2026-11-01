@@ -2,9 +2,11 @@
 // furnisher's later relations (docs/line-states.md) and the reviewers' signed
 // decisions in the independent review log (docs/review-log-design.md). Used by
 // the intake and by pnpm review.
+import type { ReviewLogRecordRow } from "../drizzle/schema";
 import {
   findRelatingOutcomeLines,
   getOutcomeLine,
+  insertReviewLogRecords,
   listReviewLogRecords,
   setOutcomeEventDisplayState,
 } from "./db";
@@ -17,8 +19,23 @@ import {
   type Review,
 } from "./lineState";
 import { replayReviewLog, type ReviewLog } from "./reviewLog";
+import { readReviewLog, type Fetch } from "./reviewLogSync";
 
 const MAX_RELATION_HOPS = 10;
+
+/** The stored packets linked from sequence 0, up to the first missing or out of place. */
+function linkedRecords(rows: ReviewLogRecordRow[]): ReviewLogRecordRow[] {
+  const linked: ReviewLogRecordRow[] = [];
+  for (const row of rows) {
+    const before = linked.at(-1);
+    const follows = before
+      ? row.sequence === before.sequence + 1 && row.prevHash === before.entryHash
+      : row.sequence === 0;
+    if (!follows) break;
+    linked.push(row);
+  }
+  return linked;
+}
 
 /**
  * The review log as stored by pnpm review sync, with its rules applied. Only
@@ -27,15 +44,44 @@ const MAX_RELATION_HOPS = 10;
  * missing or out of place stops it there, as a gap stops pnpm review sync.
  */
 export async function loadReviewLog(): Promise<ReviewLog> {
-  const linked: Awaited<ReturnType<typeof listReviewLogRecords>> = [];
-  for (const row of await listReviewLogRecords()) {
-    const before = linked.at(-1);
-    const follows = before
-      ? row.sequence === before.sequence + 1 && row.prevHash === before.entryHash
-      : row.sequence === 0;
-    if (!follows) break;
-    linked.push(row);
+  return replayLinked(linkedRecords(await listReviewLogRecords()));
+}
+
+/** Where the review log stood when a decision was taken from it: its newest packet. */
+export type ReviewLogPosition = { sequence: number; entryHash: string; packetId: string };
+
+/**
+ * Brings the stored review log up to CounterAudit's head and loads it, for a release
+ * (pnpm file assemble). Anything short of the whole log is a problem, never a shorter
+ * log: a rejection sealed since the last pnpm review sync must not be missed.
+ */
+export async function loadCurrentReviewLog(options: {
+  apiUrl: string;
+  readKey: string;
+  orgId: string;
+  fetch?: Fetch;
+  now?: Date;
+}): Promise<{ log: ReviewLog; position: ReviewLogPosition | null } | { problem: string }> {
+  const read = await readReviewLog({ ...options, known: await listReviewLogRecords() });
+  if (read.problem) return { problem: read.problem };
+  await insertReviewLogRecords(read.rows);
+  const stored = await listReviewLogRecords();
+  const linked = linkedRecords(stored);
+  if (linked.length !== stored.length) {
+    const last = linked.at(-1);
+    return { problem: `the stored review log breaks after ${last ? `sequence ${last.sequence}` : "its start"}` };
   }
+  if (stored.length !== read.listed) {
+    return { problem: `the Bureau holds ${stored.length} review-log packets and CounterAudit lists ${read.listed}` };
+  }
+  const tip = linked.at(-1);
+  return {
+    log: replayLinked(linked),
+    position: tip ? { sequence: tip.sequence, entryHash: tip.entryHash, packetId: tip.packetId } : null,
+  };
+}
+
+function replayLinked(linked: ReviewLogRecordRow[]): ReviewLog {
   return replayReviewLog(
     linked.map(row => {
       // A MariaDB server older than 10.5.2 returns the JSON column as text.
@@ -65,6 +111,7 @@ export function reviewsFor(line: Line, log: ReviewLog): Review[] {
       evidenceDigest: d.decision.evidence_digest,
       decidedAt: new Date(d.decision.decided_at),
       suspended: d.suspended,
+      packetId: d.packetId,
     }));
 }
 

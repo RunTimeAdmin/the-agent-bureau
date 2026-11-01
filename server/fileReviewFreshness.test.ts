@@ -1,0 +1,388 @@
+// pnpm file assemble against the review log as CounterAudit holds it now (review M-01): a
+// rejection sealed since the last pnpm review sync must hold its line on the next file, and a
+// file is not signed against a log the Bureau could not read to its head.
+import { createHash } from "node:crypto";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const store = vi.hoisted(() => ({
+  lines: [] as unknown[],
+  log: [] as { id: number; sequence: number; [k: string]: unknown }[],
+}));
+vi.mock("./db", () => ({
+  schemaReady: vi.fn(async () => true),
+  listFileLines: vi.fn(async () => store.lines),
+  listReviewLogRecords: vi.fn(async () =>
+    [...store.log].sort((a, b) => a.sequence - b.sequence)
+  ),
+  insertReviewLogRecords: vi.fn(async (rows: { sequence: number }[]) => {
+    let added = 0;
+    for (const row of rows) {
+      if (store.log.some(l => l.sequence === row.sequence)) continue;
+      store.log.push({ ...row, id: store.log.length + 1 });
+      added++;
+    }
+    return added;
+  }),
+}));
+
+const pin = vi.hoisted(() => ({ genesis: null as string | null }));
+vi.mock("./reviewLog", async importOriginal => {
+  const actual = await importOriginal<typeof import("./reviewLog")>();
+  return {
+    ...actual,
+    get REVIEW_GENESIS() {
+      return pin.genesis;
+    },
+    replayReviewLog: (records: Parameters<typeof actual.replayReviewLog>[0]) =>
+      actual.replayReviewLog(records, pin.genesis),
+  };
+});
+
+import { runFile, type FileIO, type SignedAgentFile } from "./agentFile";
+import { signedEventHash } from "./outcomeProof";
+import {
+  REVIEW_SCHEMA,
+  evidenceDigest,
+  newReviewerKey,
+  signReviewDecision,
+} from "./reviewDecision";
+import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
+
+const NOW = new Date("2026-11-01T12:00:00.000Z");
+const API = "https://api.counteraudit.test";
+const REVIEW_ORG = "11111111-2222-4333-8444-555555555555";
+const BUREAU_ORG = "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1";
+const WALLET = "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77";
+const EVIDENCE = { status: "verified", reasons: [] };
+const people = {
+  alice: newReviewerKey(),
+  bob: newReviewerKey(),
+  carol: newReviewerKey(),
+};
+type Person = keyof typeof people;
+const TEAM = (["alice", "bob", "carol"] as const).map(p => ({
+  reviewer_id: `rev_${p}`,
+  name: p,
+  public_key: people[p].publicKey,
+}));
+const idOf = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const hashOf = (n: number) =>
+  n < 0
+    ? "0".repeat(64)
+    : createHash("sha256").update(`packet ${n}`).digest("hex");
+
+// One stored line, read from its signed event.
+const event = {
+  schema_version: "1",
+  furnisher_id: "fur_bureaupilot01",
+  key_id: "pilot-2026-10",
+  event_id: "event-1",
+  subject_ref: { wallet: WALLET },
+  occurred_at: "2026-10-31T10:00:00.000Z",
+  outcome: "delivered",
+  signature: "ed25519:test",
+};
+const LINE = {
+  id: 1,
+  furnisherId: event.furnisher_id,
+  eventId: event.event_id,
+  subjectRef: event.subject_ref,
+  dataClass: "test" as const,
+  proofOk: true,
+  evidenceStatus: "verified",
+  evidenceResult: EVIDENCE,
+  evidenceKey: null,
+  signedEventHash: signedEventHash(event),
+  displayState: "unverified",
+  relationType: null,
+  relationTargetEventId: null,
+  outcome: event.outcome,
+  occurredAt: new Date(event.occurred_at),
+  receivedAt: new Date("2026-10-31T11:00:00.000Z"),
+  caCreatedAt: new Date("2026-10-31T11:00:01.000Z"),
+  packetId: "29879d36-0000-4000-8000-000000000001",
+  entryHash: "e".repeat(64),
+  sequence: 7,
+  signedEvent: event,
+};
+
+const genesis = () =>
+  (["alice", "bob", "carol"] as const).map(p =>
+    signKeyRecord(
+      {
+        schema: REVIEWER_KEY_SCHEMA,
+        signer_id: `rev_${p}`,
+        change: { type: "genesis", reviewers: TEAM },
+        decided_at: "2026-11-01T09:00:00.000Z",
+      },
+      people[p].privateKeyPem
+    )
+  );
+const decision = (
+  reviewer: Person,
+  verdict: "approve" | "reject",
+  decidedAt: string
+) =>
+  signReviewDecision(
+    {
+      schema: REVIEW_SCHEMA,
+      reviewer_id: `rev_${reviewer}`,
+      furnisher_id: LINE.furnisherId,
+      event_id: LINE.eventId,
+      signed_event_hash: LINE.signedEventHash,
+      data_class: "test",
+      evidence_digest: evidenceDigest(EVIDENCE),
+      decision: verdict,
+      // A rejection is counted only with a reason.
+      ...(verdict === "reject" ? { reason: "related payer" } : {}),
+      decided_at: decidedAt,
+    },
+    people[reviewer].privateKeyPem
+  );
+
+// CounterAudit's list and verify routes over a review organization holding these records.
+function counterAudit(
+  records: unknown[],
+  options: { skip?: number[]; swap?: Record<number, unknown> } = {}
+) {
+  const chain = records
+    .map((record, n) => ({
+      packet_id: idOf(n),
+      org_id: REVIEW_ORG,
+      sequence: n,
+      connector_id: "agent-bureau-review-v1",
+      signed_event: n in (options.swap ?? {}) ? options.swap![n] : record,
+      integrity: { prev_hash: hashOf(n - 1), entry_hash: hashOf(n) },
+      created_at: NOW.toISOString(),
+    }))
+    .filter(p => !(options.skip ?? []).includes(p.sequence));
+  return vi.fn(async (url: string) => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/audit/packets") {
+      return Response.json({
+        packets: [...chain].reverse().map(p => ({ packet_id: p.packet_id })),
+        next_cursor: null,
+      });
+    }
+    const packet = chain.find(p => path.endsWith(p.packet_id));
+    if (!packet) return Response.json({ error: "not_found" }, { status: 404 });
+    return Response.json({
+      valid: true,
+      entry_hash: packet.integrity.entry_hash,
+      packet,
+    });
+  });
+}
+
+const fileKey = newReviewerKey();
+function fileIO(fetch: FileIO["fetch"]) {
+  const out: string[] = [];
+  const files: Record<string, string> = { "file.pem": fileKey.privateKeyPem };
+  const io: FileIO = {
+    readText: async p => {
+      if (!(p in files)) throw new Error("no such file");
+      return files[p];
+    },
+    writeNewPrivateFile: async () => {
+      throw new Error("not used");
+    },
+    writeNewFile: async (p, text) => {
+      if (p in files) throw new Error("exists");
+      files[p] = text;
+    },
+    log: line => out.push(line),
+    now: () => NOW,
+    fetchProof: vi.fn(async () => ({
+      ok: false as const,
+      status: null,
+      message: "not used here",
+    })),
+    fetch,
+    jwks: { keys: [] },
+    keys: { "test-file-1": fileKey.publicKey },
+    furnishers: {},
+    sigvara: {} as FileIO["sigvara"],
+  };
+  return { io, out, files };
+}
+
+const assemble = (io: FileIO, out: string) =>
+  runFile(
+    [
+      "assemble",
+      "--subject",
+      JSON.stringify({ wallet: WALLET }),
+      "--key",
+      "file.pem",
+      "--key-id",
+      "test-file-1",
+      "--out",
+      out,
+    ],
+    io
+  );
+
+beforeEach(() => {
+  store.lines = [LINE];
+  store.log = [];
+  pin.genesis = genesisHash(TEAM);
+  process.env.DATABASE_URL = "mysql://test";
+  process.env.COUNTERAUDIT_ORG_ID = BUREAU_ORG;
+  process.env.COUNTERAUDIT_REVIEW_ORG_ID = REVIEW_ORG;
+  process.env.COUNTERAUDIT_REVIEW_READ_KEY = "ca_read_review";
+  process.env.COUNTERAUDIT_API_URL = API;
+});
+
+describe("pnpm file assemble and the review log", () => {
+  const approved = () => [
+    ...genesis(),
+    decision("alice", "approve", "2026-11-01T10:00:00.000Z"),
+    decision("bob", "approve", "2026-11-01T10:05:00.000Z"),
+  ];
+
+  it("reads the log to CounterAudit's head itself, and states where it stood", async () => {
+    // Nothing was synced before: the Bureau's store is empty.
+    const { io, files } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "one.json")).toBe(0);
+    const file = JSON.parse(files["one.json"]) as SignedAgentFile;
+    expect(file.furnished_outcomes).toHaveLength(1);
+    expect(file.furnished_outcomes[0].released).toBe("two_person");
+    expect(file.review_log).toEqual({
+      org_id: REVIEW_ORG,
+      sequence: 4,
+      entry_hash: hashOf(4),
+      packet_id: idOf(4),
+    });
+    expect(file.furnished_outcomes[0].review_decisions).toEqual([
+      { sequence: 3, packet_id: idOf(3), decision: "approve" },
+      { sequence: 4, packet_id: idOf(4), decision: "approve" },
+    ]);
+  });
+
+  it("never signs the old release after a rejection sealed since the last sync", async () => {
+    const first = fileIO(counterAudit(approved()));
+    expect(await assemble(first.io, "one.json")).toBe(0);
+    expect(JSON.parse(first.files["one.json"]).furnished_outcomes).toHaveLength(
+      1
+    );
+
+    // Carol rejects in the review organization. No pnpm review sync runs.
+    const records = [
+      ...approved(),
+      decision("carol", "reject", "2026-11-01T11:00:00.000Z"),
+    ];
+    const second = fileIO(counterAudit(records));
+    expect(await assemble(second.io, "two.json")).toBe(0);
+    const file = JSON.parse(second.files["two.json"]) as SignedAgentFile;
+    expect(file.furnished_outcomes).toEqual([]);
+    expect(file.review_log).toMatchObject({ sequence: 5, packet_id: idOf(5) });
+  });
+
+  it("signs nothing when the log cannot be read to its head", async () => {
+    const records = [
+      ...approved(),
+      decision("carol", "reject", "2026-11-01T11:00:00.000Z"),
+    ];
+    // CounterAudit lists every packet but the Bureau cannot read the rejection.
+    const unreadable = fileIO(
+      vi.fn(async (url: string) =>
+        new URL(url).pathname.endsWith(idOf(5))
+          ? new Response(null, { status: 503 })
+          : counterAudit(records)(url)
+      )
+    );
+    expect(await assemble(unreadable.io, "out.json")).toBe(1);
+    expect(unreadable.files["out.json"]).toBeUndefined();
+    expect(unreadable.out.join("\n")).toContain(
+      "Not signed: the review log could not be brought up to date"
+    );
+
+    // A gap in what CounterAudit answers stops the read there.
+    store.log = [];
+    const gapped = fileIO(counterAudit(records, { skip: [2] }));
+    expect(await assemble(gapped.io, "out.json")).toBe(1);
+    expect(gapped.files["out.json"]).toBeUndefined();
+
+    // Unreachable is not an empty log.
+    store.log = [];
+    const offline = fileIO(
+      vi.fn(async () => {
+        throw new Error("connect ECONNREFUSED");
+      })
+    );
+    expect(await assemble(offline.io, "out.json")).toBe(1);
+    expect(offline.out.join("\n")).toContain("ECONNREFUSED");
+  });
+
+  it("refuses to run without the review organization's read key", async () => {
+    delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    const { io, out } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "out.json")).toBe(2);
+    expect(out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
+  });
+});
+
+describe("pnpm file verify and the review log", () => {
+  async function signedFile() {
+    const records = [
+      ...genesis(),
+      decision("alice", "approve", "2026-11-01T10:00:00.000Z"),
+      decision("bob", "approve", "2026-11-01T10:05:00.000Z"),
+    ];
+    const { io, files } = fileIO(counterAudit(records));
+    expect(await assemble(io, "one.json")).toBe(0);
+    return { records, text: files["one.json"] };
+  }
+
+  it("states the position, and checks it and each decision with the read key", async () => {
+    const { records, text } = await signedFile();
+    const { io, out, files } = fileIO(counterAudit(records));
+    files["one.json"] = text;
+    await runFile(["verify", "one.json"], io);
+    const printed = out.join("\n");
+    expect(printed).toContain(
+      `Review log: assembled at sequence 4 (packet ${idOf(4)})`
+    );
+    expect(printed).toContain(
+      "Review log: position and 2 decision(s) verified against the review organization"
+    );
+  });
+
+  it("fails a decision CounterAudit holds differently", async () => {
+    const { records, text } = await signedFile();
+    // The packet the file names for Alice's approval holds something else.
+    const swapped = {
+      ...(records[3] as Record<string, unknown>),
+      decision: "reject",
+    };
+    const { io, out, files } = fileIO(
+      counterAudit(records, { swap: { 3: swapped } })
+    );
+    files["one.json"] = text;
+    expect(await runFile(["verify", "one.json"], io)).toBe(1);
+    expect(out.join("\n")).toContain(
+      `Review log: FAILED: decision ${idOf(3)} is not the approve at sequence 3`
+    );
+  });
+
+  it("says the references were not checked without the read key, and states them offline", async () => {
+    const { records, text } = await signedFile();
+    delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    const online = fileIO(counterAudit(records));
+    online.files["one.json"] = text;
+    await runFile(["verify", "one.json"], online.io);
+    expect(online.out.join("\n")).toContain(
+      "Review log: not checked against CounterAudit"
+    );
+
+    const offline = fileIO(counterAudit(records));
+    offline.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--offline"], offline.io)).toBe(
+      0
+    );
+    expect(offline.out.join("\n")).toContain(
+      "Review log: assembled at sequence 4"
+    );
+  });
+});

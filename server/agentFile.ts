@@ -34,7 +34,12 @@ import {
 } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { newReviewerKey, reviewerPublicKey } from "./reviewDecision";
-import { loadReviewLog, reviewsFor } from "./settleLines";
+import { readReviewPacket, type Fetch } from "./reviewLogSync";
+import {
+  loadCurrentReviewLog,
+  reviewsFor,
+  type ReviewLogPosition,
+} from "./settleLines";
 import {
   checkSigvaraStanding,
   readSigvaraStanding,
@@ -88,6 +93,16 @@ export type FileLine = {
   furnisher_category: string;
   display_state: Exclude<DisplayState, "unverified">;
   released: Release;
+  /**
+   * The review-log decisions on this line, by their packets in the review organization, so a
+   * reader with access to it can see which decisions the release was taken from. Absent on a
+   * file assembled before these were recorded.
+   */
+  review_decisions?: {
+    sequence: number;
+    packet_id: string;
+    decision: string;
+  }[];
   /** What the evidence check proved, by the M-04 names, or that reviewers waived it. */
   evidence: string;
   payment?: {
@@ -110,6 +125,17 @@ export type AgentFile = {
   issued_at: string;
   subject: { subject_ref: Record<string, unknown>; matching: "exact" };
   reviewers: "independent" | "operator_held_testnet";
+  /**
+   * The newest review-log packet the Bureau had read from CounterAudit just before assembling,
+   * or null for an empty log. Every release on the file was decided against the log up to it.
+   * Absent on a file assembled before this was recorded.
+   */
+  review_log?: {
+    org_id: string;
+    sequence: number;
+    entry_hash: string;
+    packet_id: string;
+  } | null;
   /** Released lines that stand: released, or disputed and shown with the dispute. */
   furnished_outcomes: FileLine[];
   /** Released lines the furnisher later withdrew or replaced. */
@@ -253,6 +279,8 @@ export type AssembleOptions = {
   furnishers?: Record<string, Furnisher>;
   /** Sigvara's standing for the subject, read by the caller, or null when there is none. */
   standing?: SigvaraStanding | null;
+  /** The review organization and how far its log was read, for the file to state. */
+  reviewLog?: { orgId: string; position: ReviewLogPosition | null };
 };
 
 /**
@@ -291,7 +319,8 @@ export function assembleFile(
         r.furnisherId === line.furnisherId &&
         r.relationTargetEventId === line.eventId
     );
-    const states = lineStates(line, relating, reviewsOf(line));
+    const reviews = reviewsOf(line);
+    const states = lineStates(line, relating, reviews);
     if (!states.released) continue;
     const display = displayStateFor(states);
     if (display === "unverified") continue;
@@ -309,6 +338,15 @@ export function assembleFile(
         : UNLISTED_CATEGORY,
       display_state: display,
       released: states.released,
+      ...(reviews.length > 0 && reviews.every(r => r.packetId)
+        ? {
+            review_decisions: reviews.map(r => ({
+              sequence: r.id,
+              packet_id: r.packetId as string,
+              decision: r.decision,
+            })),
+          }
+        : {}),
       evidence: states.evidence_verified
         ? evidenceLabel(line.outcome, "verified")
         : "waived_by_reviewers",
@@ -358,6 +396,18 @@ export function assembleFile(
       reviewers: options.testnetReviewers
         ? "operator_held_testnet"
         : "independent",
+      ...(options.reviewLog
+        ? {
+            review_log: options.reviewLog.position
+              ? {
+                  org_id: options.reviewLog.orgId,
+                  sequence: options.reviewLog.position.sequence,
+                  entry_hash: options.reviewLog.position.entryHash,
+                  packet_id: options.reviewLog.position.packetId,
+                }
+              : null,
+          }
+        : {}),
       furnished_outcomes: standing,
       history,
       third_party_standing: options.standing ? [options.standing] : [],
@@ -507,6 +557,8 @@ export type FileIO = {
   log(line: string): void;
   now(): Date;
   fetchProof: typeof fetchProof;
+  // CounterAudit, for the review log; the global fetch when not given.
+  fetch?: Fetch;
   jwks: Jwks;
   keys: Record<string, string>;
   furnishers: Record<string, Furnisher>;
@@ -607,6 +659,8 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   const missing = [
     ["DATABASE_URL", ENV.databaseUrl],
     ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
+    ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],
+    ["COUNTERAUDIT_REVIEW_READ_KEY", ENV.counterauditReviewReadKey],
   ].filter(([, value]) => !value);
   if (missing.length > 0) {
     io.log(
@@ -618,7 +672,27 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     io.log("The database is not reachable or lacks the outcome tables.");
     return 1;
   }
-  const log = await loadReviewLog();
+  // The whole review log as CounterAudit holds it now, not as the last pnpm review sync left
+  // it: a rejection sealed since then must hold its line on this file (review M-01).
+  let current: Awaited<ReturnType<typeof loadCurrentReviewLog>>;
+  try {
+    current = await loadCurrentReviewLog({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReviewReadKey,
+      orgId: ENV.counterauditReviewOrgId,
+      fetch: io.fetch,
+      now: io.now(),
+    });
+  } catch (error) {
+    current = { problem: describeError(error) };
+  }
+  if ("problem" in current) {
+    io.log(
+      `Not signed: the review log could not be brought up to date: ${printable(current.problem)}`
+    );
+    return 1;
+  }
+  const { log, position } = current;
   // Read before anything is signed: a file that should carry Sigvara's standing
   // and cannot is not signed without it.
   let standing: SigvaraStanding | null;
@@ -638,6 +712,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
       testnetReviewers: log.testnet,
       furnishers: io.furnishers,
       standing,
+      reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
     }
   );
   // A stored line whose signed event does not check means the store was
@@ -768,6 +843,15 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
   const standings = Array.isArray(signed.third_party_standing)
     ? (signed.third_party_standing as unknown[])
     : [];
+  // Where the review log stood when the file was assembled (review M-01).
+  const stated = signed.review_log;
+  io.log(
+    stated === undefined
+      ? "Review log: not stated (the file was assembled before files recorded it)"
+      : isRecord(stated)
+        ? `Review log: assembled at sequence ${printable(stated.sequence)} (packet ${printable(stated.packet_id)})`
+        : "Review log: empty when the file was assembled"
+  );
   if (offline) {
     io.log(
       `${entries.length} line(s) and ${standings.length} third-party fact(s); not checked against CounterAudit or the chain (--offline).`
@@ -848,7 +932,112 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
       io.log(`${printable(packetId)}: proof FAILED: ${bad.join("; ")}`);
     }
   }
+  failed += await checkReviewLog(signed, entries, io);
   return failed === 0 ? 0 : 1;
+}
+
+/**
+ * Checks a file's review-log references against the review organization (review M-01): the
+ * position it states, and the decisions each line names. Review packets are not public, so
+ * this needs the review organization's read key; without one it says they were not checked.
+ * Returns how many checks failed.
+ */
+async function checkReviewLog(
+  signed: SignedAgentFile,
+  entries: unknown[],
+  io: FileIO
+): Promise<number> {
+  const stated: Record<string, unknown> | null = isRecord(signed.review_log)
+    ? signed.review_log
+    : null;
+  if (!stated) return 0;
+  if (!ENV.counterauditReviewOrgId || !ENV.counterauditReviewReadKey) {
+    io.log(
+      "Review log: not checked against CounterAudit (needs COUNTERAUDIT_REVIEW_ORG_ID and COUNTERAUDIT_REVIEW_READ_KEY)"
+    );
+    return 0;
+  }
+  const options = {
+    apiUrl: ENV.counterauditApiUrl,
+    readKey: ENV.counterauditReviewReadKey,
+    fetch: io.fetch,
+  };
+  const read = async (id: unknown) => {
+    try {
+      return await readReviewPacket(String(id), options);
+    } catch (error) {
+      return { ok: false as const, reason: describeError(error) };
+    }
+  };
+  let failed = 0;
+  const fail = (what: string) => {
+    failed++;
+    io.log(`Review log: FAILED: ${printable(what)}`);
+  };
+  if (stated.org_id !== ENV.counterauditReviewOrgId) {
+    fail(
+      `the file names organization ${stated.org_id}, not the review organization`
+    );
+  }
+  const tip = await read(stated.packet_id);
+  if (!tip.ok) {
+    fail(`packet ${stated.packet_id}: ${tip.reason}`);
+  } else if (
+    tip.orgId !== stated.org_id ||
+    tip.sequence !== stated.sequence ||
+    tip.entryHash !== stated.entry_hash
+  ) {
+    fail(
+      `packet ${stated.packet_id} is not at sequence ${stated.sequence} with that entry hash`
+    );
+  }
+  let checked = 0;
+  for (const entry of entries) {
+    const line: Record<string, unknown> = isRecord(entry) ? entry : {};
+    const ca: Record<string, unknown> = isRecord(line.counteraudit)
+      ? line.counteraudit
+      : {};
+    if (
+      !Array.isArray(line.review_decisions) ||
+      line.review_decisions.length === 0
+    ) {
+      fail(
+        `line ${ca.packet_id} does not name the decisions it was released on`
+      );
+      continue;
+    }
+    for (const item of line.review_decisions as unknown[]) {
+      const ref: Record<string, unknown> = isRecord(item) ? item : {};
+      const got = await read(ref.packet_id);
+      if (!got.ok) {
+        fail(`decision ${ref.packet_id}: ${got.reason}`);
+        continue;
+      }
+      const record: Record<string, unknown> = isRecord(got.record)
+        ? got.record
+        : {};
+      if (
+        got.orgId !== stated.org_id ||
+        typeof ref.sequence !== "number" ||
+        got.sequence !== ref.sequence ||
+        ref.sequence > Number(stated.sequence) ||
+        record.decision !== ref.decision ||
+        record.signed_event_hash !== ca.signed_event_hash
+      ) {
+        fail(
+          `decision ${ref.packet_id} is not the ${ref.decision} at sequence ${ref.sequence} on line ${ca.packet_id}`
+        );
+        continue;
+      }
+      checked++;
+    }
+  }
+  if (failed === 0) {
+    io.log(
+      `Review log: position and ${checked} decision(s) verified against the review organization`
+    );
+  }
+  return failed;
 }
 
 export async function runFile(
