@@ -153,16 +153,19 @@ describe("reading the review log", () => {
     expect(await read(fakeCounterAudit(foreign))).toEqual({
       rows: [],
       listed: 3,
+      listedComplete: true,
       problem: `packet ${idOf(1)} belongs to another organization`,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(1)]: 410 } }))).toEqual({
       rows: [],
       listed: 3,
+      listedComplete: true,
       problem: `packet ${idOf(1)} has been erased; the review log must keep every packet`,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(0)]: 409 } }))).toEqual({
       rows: [],
       listed: 3,
+      listedComplete: true,
       problem: `CounterAudit could not verify packet ${idOf(0)} (409)`,
     });
   });

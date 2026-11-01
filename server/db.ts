@@ -20,6 +20,7 @@ import {
   InsertOutcomeEvent,
   InsertReviewLogRecord,
   ReviewLogRecordRow,
+  ReviewLogSyncRow,
   agents,
   dailyUsage,
   inquiries,
@@ -27,6 +28,7 @@ import {
   playQuestions,
   plays,
   reviewLogRecords,
+  reviewLogSync,
 } from "../drizzle/schema";
 import type { DisplayState, Line } from "./lineState";
 
@@ -255,6 +257,7 @@ const REQUIRED_TABLES = [
   "play_questions",
   "plays",
   "review_log_records",
+  "review_log_sync",
 ] as const;
 
 // Confirms the required schema is present, not just that the server answers.
@@ -268,7 +271,7 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records')`
+            and table_name in ('agents', 'daily_usage', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
     );
     const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       present?: number | string;
@@ -597,6 +600,30 @@ export async function listFileLines() {
     })
     .from(outcomeEvents)
     .orderBy(asc(outcomeEvents.id));
+}
+
+// The last pnpm review sync, or undefined before the first.
+export async function getReviewLogSync(): Promise<ReviewLogSyncRow | undefined> {
+  const db = await requireDb();
+  const [row] = await db.select().from(reviewLogSync).where(eq(reviewLogSync.id, 1));
+  return row;
+}
+
+// Records a pnpm review sync. A sync that stopped keeps the last success; one whose listing did
+// not finish keeps the last complete count.
+export async function recordReviewLogSync(sync: {
+  at: Date;
+  problem: string | null;
+  listedCount: number | null;
+}): Promise<void> {
+  const db = await requireDb();
+  const set = {
+    lastAttemptAt: sync.at,
+    problem: sync.problem ? sync.problem.slice(0, 500) : null,
+    ...(sync.problem ? {} : { lastSuccessAt: sync.at }),
+    ...(sync.listedCount === null ? {} : { listedCount: sync.listedCount, listedAt: sync.at }),
+  };
+  await db.insert(reviewLogSync).values({ id: 1, ...set }).onDuplicateKeyUpdate({ set });
 }
 
 // The review log's packets, in sequence order (server/reviewLog.ts).

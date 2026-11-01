@@ -274,6 +274,20 @@ export const reviewLogRecords = mysqlTable("review_log_records", {
 export type ReviewLogRecordRow = typeof reviewLogRecords.$inferSelect;
 export type InsertReviewLogRecord = typeof reviewLogRecords.$inferInsert;
 
+// The last pnpm review sync, one row (id 1), for the operator queue (server/review.ts): when it
+// last ran and last read the whole log without a problem, how many packets CounterAudit listed
+// the last time the listing finished, and why the last sync stopped, if it did.
+export const reviewLogSync = mysqlTable("review_log_sync", {
+  id: int("id").primaryKey(),
+  lastAttemptAt: datetime("lastAttemptAt", { fsp: 3 }).notNull(),
+  lastSuccessAt: datetime("lastSuccessAt", { fsp: 3 }),
+  listedCount: int("listedCount"),
+  listedAt: datetime("listedAt", { fsp: 3 }),
+  problem: varchar("problem", { length: 500 }),
+});
+
+export type ReviewLogSyncRow = typeof reviewLogSync.$inferSelect;
+
 export type Agent = typeof agents.$inferSelect;
 export type Play = typeof plays.$inferSelect;
 export type PlayQuestion = typeof playQuestions.$inferSelect;

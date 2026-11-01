@@ -28,9 +28,17 @@ type LogRow = {
   record: unknown;
   readAt: Date;
 };
+type SyncRow = {
+  lastAttemptAt: Date;
+  lastSuccessAt: Date | null;
+  listedCount: number | null;
+  listedAt: Date | null;
+  problem: string | null;
+};
 const store = vi.hoisted(() => ({
   rows: [] as Row[],
   log: [] as LogRow[],
+  sync: undefined as SyncRow | undefined,
 }));
 
 const db = vi.hoisted(() => ({
@@ -60,6 +68,22 @@ const db = vi.hoisted(() => ({
   setOutcomeEventDisplayState: vi.fn(async (id: number, state: string) => {
     store.rows.find(r => r.id === id)!.displayState = state;
   }),
+  // As server/db.ts recordReviewLogSync merges them.
+  getReviewLogSync: vi.fn(async () => store.sync && { ...store.sync }),
+  recordReviewLogSync: vi.fn(
+    async (s: { at: Date; problem: string | null; listedCount: number | null }) => {
+      store.sync = {
+        lastSuccessAt: null,
+        listedCount: null,
+        listedAt: null,
+        ...store.sync,
+        lastAttemptAt: s.at,
+        problem: s.problem,
+        ...(s.problem ? {} : { lastSuccessAt: s.at }),
+        ...(s.listedCount === null ? {} : { listedCount: s.listedCount, listedAt: s.at }),
+      };
+    }
+  ),
 }));
 vi.mock("./db", () => db);
 
@@ -257,6 +281,7 @@ const keys = () =>
 beforeEach(() => {
   store.rows = [];
   store.log = [];
+  store.sync = undefined;
   pin.genesis = genesisHash(TEAM);
   vi.stubEnv("DATABASE_URL", "mysql://bureau:secret@127.0.0.1/bureau");
   vi.stubEnv("COUNTERAUDIT_API_URL", API);
@@ -558,6 +583,26 @@ describe("pnpm review sync", () => {
     );
   });
 
+  it("records each run for the queue: the head CounterAudit listed, the last success and why it stopped", async () => {
+    const records = [...genesis(), decision("bob", { decision: "reject", reason: "related payer" }), decision("alice")];
+    expect(await runReview(["sync"], fakeIO({}, counterAudit(records.slice(0, 3))).io)).toBe(0);
+    expect(store.sync).toEqual({ lastAttemptAt: NOW, lastSuccessAt: NOW, listedCount: 3, listedAt: NOW, problem: null });
+
+    // A later run stopped at a gap keeps the last success and records the new head.
+    const later = new Date(NOW.getTime() + 3_600_000);
+    const gap = fakeIO({}, counterAudit(records, [3]));
+    gap.io.now = () => later;
+    expect(await runReview(["sync"], gap.io)).toBe(1);
+    expect(store.sync).toMatchObject({ lastAttemptAt: later, lastSuccessAt: NOW, listedCount: 4, listedAt: later });
+    expect(store.sync!.problem).toBe("the chain breaks between sequence 2 and 4; read up to 2");
+
+    // One that could not list at all keeps the last complete count.
+    const down = fakeIO({}, async () => new Response(null, { status: 503 }));
+    expect(await runReview(["sync"], down.io)).toBe(1);
+    expect(store.sync).toMatchObject({ listedCount: 4, listedAt: later });
+    expect(store.sync!.problem).toBe("CounterAudit answered 503 when listing the review log's packets");
+  });
+
   it("needs the review organization and the Bureau's read key", async () => {
     vi.stubEnv("COUNTERAUDIT_REVIEW_READ_KEY", "");
     const { io, printed } = fakeIO();
@@ -634,6 +679,34 @@ describe("pnpm review queue and settle", () => {
     expect(out).toContain(
       `  sign with: --line ${LINE} --hash ${HASH} --data-class test --evidence ${evidenceDigest({ reasons: ["no machine check exists for delivered outcomes"] })}`
     );
+  });
+
+  it("says where the review log stands against CounterAudit: never synced, up to date, behind, stopped, stale", async () => {
+    const queued = async () => {
+      const f = fakeIO();
+      await runReview(["queue"], f.io);
+      return f.printed();
+    };
+    expect(await queued()).toContain("Sync status: no pnpm review sync has run yet.");
+
+    await runReview(["sync"], fakeIO({}, counterAudit([...genesis(), decision("alice")])).io);
+    let printed = await queued();
+    expect(printed).toContain(
+      "Sync status: last run 2026-10-31T12:00:00.000Z (under an hour ago); last that read the whole log 2026-10-31T12:00:00.000Z (under an hour ago)."
+    );
+    expect(printed).toContain("CounterAudit's head: 4 packets listed (sequence 3) at 2026-10-31T12:00:00.000Z; 4 held here.");
+    expect(printed).toContain("Up to date as of the last sync.");
+
+    // CounterAudit lists more than was read, and the last sync stopped there.
+    store.sync = { ...store.sync!, listedCount: 6, problem: "the chain breaks between sequence 3 and 5; read up to 3" };
+    printed = await queued();
+    expect(printed).toContain("STOPPED at the last sync: the chain breaks between sequence 3 and 5; read up to 3.");
+    expect(printed).toContain("BEHIND: 2 listed packets not read here.");
+    expect(printed).not.toContain("Up to date");
+
+    // A day without a sync that read the whole log.
+    store.sync = { ...store.sync!, problem: null, listedCount: 4, lastSuccessAt: new Date(NOW.getTime() - 25 * 3_600_000) };
+    expect(await queued()).toContain("STALE: no sync has read the whole log in the last 24 hours; run pnpm review sync.");
   });
 
   it("passes over a line erased with its source, and counts it", async () => {

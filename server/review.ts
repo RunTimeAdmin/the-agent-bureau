@@ -7,9 +7,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
 import {
   findRelatingOutcomeLines,
+  getReviewLogSync,
   insertReviewLogRecords,
   listOutcomeLines,
   listReviewLogRecords,
+  recordReviewLogSync,
   schemaReady,
 } from "./db";
 import {
@@ -553,10 +555,45 @@ function describeScreen(screen: unknown): string {
   return `${screen.result}${reasons.length ? `: ${reasons.join("; ")}` : ""}`;
 }
 
+// A sync older than this leaves the queue's view of the review log stale.
+const SYNC_STALE_MS = 24 * 3_600_000;
+
+/**
+ * Where the operator's copy of the review log stands against CounterAudit, from the last
+ * pnpm review sync: how far it is read, the head CounterAudit listed, the last sync that read
+ * the whole log, and whether the copy is stopped at a problem, behind or stale. File assembly
+ * reads the log to its head itself (review M-01), so this is the operator's view, not a gate.
+ */
+async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
+  const sync = await getReviewLogSync();
+  const held = log.readTo === null ? 0 : log.readTo + 1;
+  const when = (at: Date) => {
+    const hours = Math.floor((now.getTime() - at.getTime()) / 3_600_000);
+    return `${at.toISOString()} (${hours < 1 ? "under an hour" : `${hours} hour${hours === 1 ? "" : "s"}`} ago)`;
+  };
+  if (!sync) return ["Sync status: no pnpm review sync has run yet."];
+  const out = [
+    `Sync status: last run ${when(sync.lastAttemptAt)}; last that read the whole log ${sync.lastSuccessAt ? when(sync.lastSuccessAt) : "never"}.`,
+    sync.listedCount === null || !sync.listedAt
+      ? "CounterAudit's head: no complete listing recorded yet."
+      : `CounterAudit's head: ${sync.listedCount} packet${sync.listedCount === 1 ? "" : "s"} listed${sync.listedCount > 0 ? ` (sequence ${sync.listedCount - 1})` : ""} at ${sync.listedAt.toISOString()}; ${held} held here.`,
+  ];
+  if (sync.problem) out.push(`STOPPED at the last sync: ${sync.problem}. Nothing past it counts until it is resolved.`);
+  if (sync.listedCount !== null && sync.listedCount > held) {
+    out.push(`BEHIND: ${sync.listedCount - held} listed packet${sync.listedCount - held === 1 ? "" : "s"} not read here.`);
+  }
+  if (!sync.lastSuccessAt || now.getTime() - sync.lastSuccessAt.getTime() > SYNC_STALE_MS) {
+    out.push("STALE: no sync has read the whole log in the last 24 hours; run pnpm review sync.");
+  }
+  if (out.length === 2) out.push("Up to date as of the last sync.");
+  return out;
+}
+
 async function queue(io: ReviewIO) {
   if (!(await needDatabase(io))) return 2;
   const log = await loadReviewLog();
   for (const line of describeLog(log)) io.log(line);
+  for (const line of await describeSync(log, io.now())) io.log(line);
   const lines = await listOutcomeLines();
   let waiting = 0;
   let released = 0;
@@ -673,9 +710,15 @@ async function sync(io: ReviewIO) {
     });
   } catch (error) {
     io.log(`Could not read the review log: ${describeError(error)}.`);
+    await recordReviewLogSync({ at: io.now(), problem: `could not read the review log: ${describeError(error)}`, listedCount: null });
     return 2;
   }
   const added = await insertReviewLogRecords(result.rows);
+  await recordReviewLogSync({
+    at: io.now(),
+    problem: result.problem,
+    listedCount: result.listedComplete ? result.listed : null,
+  });
   const fresh = new Set(result.rows.map(r => r.sequence));
   const log = await loadReviewLog();
   io.log(`Read ${added} new packet${added === 1 ? "" : "s"}.`);
