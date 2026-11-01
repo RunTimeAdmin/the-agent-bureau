@@ -1,8 +1,10 @@
 // Client for CounterAudit, the system of record for furnished outcome events.
 // Only the operator intake script (scripts/furnish-intake.ts) calls it. No
 // route of this server uses it, and nothing here accepts an event from
-// outside. See docs/counteraudit-intake.md.
+// outside. See docs/counteraudit-intake.md. pnpm dispute submit also seals
+// subject dispute records through it (docs/disputes.md).
 import { ENV } from "./_core/env";
+import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
 
 const TIMEOUT_MS = 15_000;
@@ -164,6 +166,71 @@ export async function ingestSignedEvent(
     return { kind: "refused", status: 422, error, message };
   }
   return { kind: "failed", status: res.status, error, message };
+}
+
+export type DisputeIngestResult =
+  /** 201 newly sealed, or 200 when this exact record was sealed before. */
+  | { kind: "sealed" | "already_sealed"; packet: SealedPacket }
+  /** Refused or not answered: nothing is known sealed. */
+  | { kind: "refused"; status: number | null; error: string; message: string };
+
+/**
+ * Seals one subject dispute record (server/dispute.ts) in the Bureau's
+ * organization through the agent-bureau-dispute-v1 connector, which checks its
+ * form. No public proof: dispute records hold the subject's reasons.
+ */
+export async function ingestDisputeRecord(
+  record: Record<string, unknown>
+): Promise<DisputeIngestResult> {
+  const key = ENV.counterauditIngestKey;
+  if (!key) {
+    return {
+      kind: "refused",
+      status: null,
+      error: "not_configured",
+      message: "COUNTERAUDIT_INGEST_KEY is not set",
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/v1/audit/ingest`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        connector_id: DISPUTE_CONNECTOR_ID,
+        raw_event: record,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (error) {
+    return {
+      kind: "refused",
+      status: null,
+      error: "network_error",
+      message: describeError(error),
+    };
+  }
+  const body = await readJson(res);
+  if (res.status === 201 || res.status === 200) {
+    const packet = readSealedPacket(body);
+    if (packet) {
+      return {
+        kind: res.status === 201 ? "sealed" : "already_sealed",
+        packet,
+      };
+    }
+    return {
+      kind: "refused",
+      status: res.status,
+      error: "unexpected_response",
+      message: "CounterAudit's answer is missing the packet fields",
+    };
+  }
+  return { kind: "refused", status: res.status, ...errorFields(body) };
 }
 
 export type ProofResult =

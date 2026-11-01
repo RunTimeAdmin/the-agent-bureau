@@ -23,7 +23,8 @@ import {
   signKeyApproval,
   type ApprovableOperation,
 } from "./keyApproval";
-import { lineStates, releaseFor } from "./lineState";
+import { currentDispute, deriveDisputes, type Dispute } from "./dispute";
+import { lineStates, releaseFor, type Line } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import {
   REVIEW_SCHEMA,
@@ -589,16 +590,47 @@ async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
   return out;
 }
 
+/**
+ * The queue's lines for a line's subject disputes (docs/disputes.md): each open dispute with its
+ * deadline, each lapsed one, and each open appeal with what decides it. Confirmed, corrected and
+ * withdrawn disputes with no open appeal wait on no one.
+ */
+function describeDisputes(line: Line, disputes: Dispute[]): string[] {
+  const ref = `${line.furnisherId}/${line.eventId}`;
+  const out: string[] = [];
+  for (const d of disputes) {
+    const id = `dispute ${d.disputeId} on ${ref}`;
+    if (d.state === "open") {
+      out.push(`  ${id}: open since ${d.filedAt.toISOString()}; the furnisher must answer by ${d.respondBy.toISOString()}`);
+    } else if (d.state === "lapsed") {
+      out.push(`  ${id}: lapsed at ${d.respondBy.toISOString()} without an answer from ${line.furnisherId}; the line is removed`);
+    }
+    const appeal = d.appeal;
+    if (appeal?.state === "open") {
+      out.push(
+        appeal.party === "subject"
+          ? `  ${id}: the subject's appeal, sealed ${appeal.sealedAt.toISOString()} (packet ${appeal.packetId}), is open: a reviewer's rejection of ${ref} upholds it, and the approvals a release needs dismiss it, counting decisions sealed after the appeal`
+          : `  ${id}: the furnisher's appeal, sealed ${appeal.sealedAt.toISOString()} (packet ${appeal.packetId}), is open: releasing its correction ${line.furnisherId}/${appeal.correctiveEventId} upholds it, and a rejection of that line dismisses it, counting decisions sealed after the appeal; ${ref} stays removed either way`
+      );
+    }
+  }
+  return out;
+}
+
 async function queue(io: ReviewIO) {
   if (!(await needDatabase(io))) return 2;
   const log = await loadReviewLog();
+  const now = io.now();
   for (const line of describeLog(log)) io.log(line);
-  for (const line of await describeSync(log, io.now())) io.log(line);
+  for (const line of await describeSync(log, now)) io.log(line);
   const lines = await listOutcomeLines();
   let waiting = 0;
   let released = 0;
   let closed = 0;
   let expired = 0;
+  let removed = 0;
+  const disputeLines: string[] = [];
+  const tally = { open: 0, lapsed: 0, appeals: 0 };
   for (const line of lines) {
     // Erased with its source (pnpm lines expire): nothing is left to review.
     if (line.expiredAt) {
@@ -610,7 +642,30 @@ async function queue(io: ReviewIO) {
       line.eventId
     );
     const reviews = reviewsFor(line, log);
-    const states = lineStates(line, relating, reviews);
+    const disputes = deriveDisputes({
+      line,
+      records: line.disputeRecords ?? [],
+      relating,
+      reviewsOf: l => reviewsFor(l, log),
+      now,
+    });
+    disputeLines.push(...describeDisputes(line, disputes));
+    for (const d of disputes) {
+      if (d.state === "open") tally.open++;
+      if (d.state === "lapsed") tally.lapsed++;
+      if (d.appeal?.state === "open") tally.appeals++;
+    }
+    const states = lineStates(
+      line,
+      relating,
+      reviews,
+      currentDispute(disputes)?.state ?? null
+    );
+    // Removed after a lapsed subject dispute: it can never be released again.
+    if (states.removed) {
+      removed++;
+      continue;
+    }
     if (states.withdrawn || states.superseded) {
       closed++;
       continue;
@@ -654,17 +709,25 @@ async function queue(io: ReviewIO) {
     );
   }
   io.log(
-    `${lines.length} line${lines.length === 1 ? "" : "s"}: ${waiting} waiting, ${released} released, ${closed} withdrawn or superseded${expired ? `, ${expired} expired with their source` : ""}.`
+    `${lines.length} line${lines.length === 1 ? "" : "s"}: ${waiting} waiting, ${released} released, ${closed} withdrawn or superseded${removed ? `, ${removed} removed after a lapsed dispute` : ""}${expired ? `, ${expired} expired with their source` : ""}.`
   );
+  if (disputeLines.length > 0) {
+    io.log("Subject disputes (docs/disputes.md):");
+    for (const line of disputeLines) io.log(line);
+    io.log(
+      `${tally.open} open, ${tally.lapsed} lapsed, ${tally.appeals} appeal${tally.appeals === 1 ? "" : "s"} open.`
+    );
+  }
   return 0;
 }
 
-// Re-settles every line against the review log.
+// Re-settles every line against the review log, and its subject disputes as of now.
 async function settleEvery(io: ReviewIO, log: ReviewLog) {
   const lines = await listOutcomeLines();
+  const now = io.now();
   let changes = 0;
   for (const line of lines) {
-    const changed = await settle(line, log);
+    const changed = await settle(line, log, now);
     if (changed) {
       changes++;
       io.log(
