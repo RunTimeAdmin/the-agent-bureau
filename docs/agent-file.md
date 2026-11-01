@@ -48,6 +48,8 @@ pnpm lines expire
 
 It needs `DATABASE_URL` and `COUNTERAUDIT_ORG_ID`, and the database must have migration `0013_line_expiry`, which the app applies when it starts. It is not scheduled yet.
 
+Tested end to end: `scripts/e2e/file-expiry.ts` runs this path against a CounterAudit server started from a checkout, from the furnisher's seal to `pnpm lines expire` and a file without the line ([docs/e2e-file-expiry.md](e2e-file-expiry.md)).
+
 ## The state names (review finding M-04)
 
 A line reviewers released shows as `released`. Phase 0 named that state `verified`; it was renamed before any file existed, because a release records what the checks and the reviewers found, not that the outcome happened. Migration 0012 renamed it on stored lines. Payment evidence uses the names decided in `docs/independent-payer.md`, and every file carries its disclosure:
