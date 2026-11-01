@@ -49,7 +49,7 @@ pnpm dispute settle                                                  # close lap
 pnpm file subject --subject '{"wallet":"0x..."}' --out <file>
 ```
 
-`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `settle` seals nothing and needs only `DATABASE_URL`. The production server runs it at start and every hour after (`server/disputeSchedule.ts`), so nobody has to; running it by hand as well does no harm. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
+`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `settle` seals nothing and needs only `DATABASE_URL`. The production server runs it at start and every hour after (`server/schedules.ts`), so nobody has to; running it by hand as well does no harm. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
 
 ## Choices in the code
 
