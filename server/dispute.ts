@@ -630,6 +630,11 @@ export async function readController(
       `the agent is not registered in SigvaraIdentity at block ${block.number}`
     );
   }
+  if (identity.agentAddress.toLowerCase() !== did.address) {
+    return none(
+      `SigvaraIdentity holds agent address ${identity.agentAddress} for the did, not the did's own address`
+    );
+  }
   return { ok: true, problem: null, controller: identity.agentAddress };
 }
 
@@ -655,11 +660,18 @@ export function subjectControlProblem(
       ? null
       : `signed by ${signerAddress}, not the wallet the line names (${ref.wallet})`;
   }
-  if (!ref || !parseSigvaraDid(ref)) {
+  const did = ref ? parseSigvaraDid(ref) : null;
+  if (!did) {
     return "only a line about an EVM wallet or a did:sigvara can be disputed yet; matching other subjects to a key is Phase 3";
   }
   if (controller === null) {
     return "no agent address was read from SigvaraIdentity for the did:sigvara when the record was submitted";
+  }
+  // SigvaraIdentity forms the did from the agent address and never changes it,
+  // so a genuine read is always the did's own address; a stored one that is
+  // not was not read from SigvaraIdentity.
+  if (controller.toLowerCase() !== did.address) {
+    return `the stored agent address (${controller}) is not the did:sigvara's own address (${did.address})`;
   }
   return controller.toLowerCase() === signer
     ? null
