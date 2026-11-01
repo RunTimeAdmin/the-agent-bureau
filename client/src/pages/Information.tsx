@@ -34,11 +34,12 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
             </p>
             <h2>Bureau files</h2>
             <p>
-              During the pilot, the Bureau assembles files about AI agent
-              operators from public chain records and from outcomes reported by
-              participating businesses. Files are shared only with pilot
-              participants who request them. If you operate an agent, you can
-              ask to see its file, dispute any line, or add a statement by
+              For now the Bureau holds test data only, so no file describes
+              real dealings. During the pilot, the Bureau assembles files about
+              AI agent operators from public chain records and from outcomes
+              reported by participating businesses. Files are shared only with
+              pilot participants who request them. If you operate an agent, you
+              can ask to see its file, dispute any line, or add a statement by
               choosing "I operate an agent" in the inquiry form.
             </p>
             <h2>The BUREAU game</h2>

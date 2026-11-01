@@ -42,7 +42,7 @@ Documents and review prompts name a `verified` result by what it proves (`docs/i
 
 Every result keeps its reasons and, when a charge was found, what the chain showed: chain, transaction, log index, block number, hash and time, contract, token, subscription, payer, recipient and amount.
 
-A `verified` result does not change how a line is shown. Showing a line as `verified` needs a passing proof, a `verified` evidence result, and (Phase 0 decision 4) the review states and two-person review, which also come before any negative line affects anyone. Those are the next build items. Until then every line stays `unverified`, and intake stays test-data only.
+A `verified` result does not change how a line is shown. A line shows as `released` only once reviewers release it, which needs a passing proof and evidence `verified` or waived by every approving reviewer (Phase 0 decision 4, `docs/two-person-review.md`). Intake stays test-data only.
 
 On a re-run the intake records a new evidence result only when the event is the one the line stores (same signed-event hash) and the check reached a verdict. A `pending` or `error` result never replaces an earlier one.
 
@@ -94,5 +94,4 @@ ARC_LIVE=1 pnpm vitest run server/evidence.test.ts
 - `refunded`, `delivered`, `disputed`, `not_delivered`, `access_revoked` and `policy_violation`: no machine check. They need signed provider logs or a CounterAudit packet plus human review (Phase 0 item 3).
 - Subjects named by a registry id or DID: matching them to a payer wallet is Phase 3 (decision 3).
 - Evidence fields inside the signed event that pin the chain id and log index. Today the event names only the transaction, and the verifier finds the log.
-- The review queue itself, review states and two-person review.
 - Wash payments between wallets that are not on the furnisher's account list. Testnet USDC is free, so a vetted furnisher could pay itself from a wallet it has not listed. Only review and furnisher vetting catch that.
