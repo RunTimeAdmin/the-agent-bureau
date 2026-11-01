@@ -45,6 +45,7 @@ import { readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
 import {
   loadCurrentReviewLog,
+  readReviewLogNow,
   reviewsFor,
   type ReviewLogPosition,
 } from "./settleLines";
@@ -640,7 +641,7 @@ export const USAGE = [
   "Usage:",
   "  pnpm file keygen <private-key-file>",
   "  pnpm file assemble --subject <subject_ref JSON> --key <private-key-file> --key-id <key id> --out <file>",
-  "  pnpm file verify <file> [--subject <subject_ref JSON>] [--max-age-days <days>] [--offline]",
+  "  pnpm file verify <file> [--subject <subject_ref JSON>] [--max-age-days <days>] [--current | --offline]",
   "  pnpm file subject --subject <subject_ref JSON> --out <file>",
 ].join("\n");
 
@@ -949,9 +950,16 @@ async function readSources(
   return { sources };
 }
 
+/** How long a file checked as current may have been issued before, unless --max-age-days says. */
+const CURRENT_MAX_AGE_DAYS = 30;
+/** pnpm file verify --current: the file's present standing could not be established. */
+const NOT_ESTABLISHED = 3;
+
 async function verifyCommand(args: string[], io: FileIO): Promise<number> {
   const offline = args.at(-1) === "--offline";
-  const [path, ...rest] = offline ? args.slice(0, -1) : args;
+  // A file checked as it was assembled (historical), or against the review log as it is now.
+  const current = args.at(-1) === "--current";
+  const [path, ...rest] = offline || current ? args.slice(0, -1) : args;
   const flags = readFlags(rest);
   if (
     !path ||
@@ -969,7 +977,11 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
     return 2;
   }
   const maxAgeDays =
-    flags["max-age-days"] === undefined ? null : Number(flags["max-age-days"]);
+    flags["max-age-days"] === undefined
+      ? current
+        ? CURRENT_MAX_AGE_DAYS
+        : null
+      : Number(flags["max-age-days"]);
   if (maxAgeDays !== null && !(Number.isFinite(maxAgeDays) && maxAgeDays > 0)) {
     io.log("--max-age-days is a positive number of days.");
     return 2;
@@ -1046,6 +1058,11 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
         ? `Review log: assembled at sequence ${printable(stated.sequence)} (packet ${printable(stated.packet_id)})`
         : "Review log: empty when the file was assembled"
   );
+  if (!current) {
+    io.log(
+      "Review status: as assembled. This does not say the file still stands; pnpm file verify --current checks it against the review log as it is now."
+    );
+  }
   if (offline) {
     io.log(
       `${entries.length} line(s) and ${standings.length} third-party fact(s); not checked against CounterAudit or the chain (--offline).`
@@ -1155,8 +1172,159 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
       );
     }
   }
-  failed += await checkReviewLog(signed, entries, io);
+  if (!current) {
+    failed += await checkReviewLog(signed, entries, io);
+    return failed === 0 ? 0 : 1;
+  }
+  const standing = await checkCurrentReviewStatus(signed, entries, io);
+  if (standing === null) {
+    return failed === 0 ? NOT_ESTABLISHED : 1;
+  }
+  failed += standing;
   return failed === 0 ? 0 : 1;
+}
+
+/**
+ * Whether each released line in a file still stands in the review log as CounterAudit holds it now
+ * (pnpm file verify --current, review F-03 of 1 November 2026): the whole log read and replayed,
+ * its head at or past the position the file states, that position the packet the file names, the
+ * decisions each line names still counted, and the line's current decisions, each reviewer's
+ * latest, holding no rejection or suspended reviewer and still the approvals it needs. Returns how
+ * many checks failed, or null when the log could not be read whole, so its standing is unknown.
+ */
+async function checkCurrentReviewStatus(
+  signed: SignedAgentFile,
+  entries: unknown[],
+  io: FileIO
+): Promise<number | null> {
+  const unknown = (why: string) => {
+    io.log(`Current standing: NOT ESTABLISHED: ${printable(why)}`);
+    return null;
+  };
+  if (!ENV.counterauditReviewOrgId || !ENV.counterauditReviewReadKey) {
+    return unknown(
+      "needs COUNTERAUDIT_REVIEW_ORG_ID and COUNTERAUDIT_REVIEW_READ_KEY to read the review log"
+    );
+  }
+  let now: Awaited<ReturnType<typeof readReviewLogNow>>;
+  try {
+    now = await readReviewLogNow({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReviewReadKey,
+      orgId: ENV.counterauditReviewOrgId,
+      fetch: io.fetch,
+      now: io.now(),
+    });
+  } catch (error) {
+    return unknown(`the review log could not be read: ${describeError(error)}`);
+  }
+  if ("problem" in now) {
+    return unknown(`the review log could not be read whole: ${now.problem}`);
+  }
+  let failed = 0;
+  const fail = (what: string) => {
+    failed++;
+    io.log(`Current standing: FAILED: ${printable(what)}`);
+  };
+  const stated: Record<string, unknown> | null = isRecord(signed.review_log)
+    ? signed.review_log
+    : null;
+  if (!stated) {
+    fail(
+      "the file does not state where the review log stood when it was assembled; assemble a new one"
+    );
+    return failed;
+  }
+  if (stated.org_id !== ENV.counterauditReviewOrgId) {
+    fail(
+      `the file names organization ${stated.org_id}, not the review organization`
+    );
+  }
+  const at = now.rows.find(r => r.sequence === stated.sequence);
+  if (
+    !at ||
+    at.packetId !== stated.packet_id ||
+    at.entryHash !== stated.entry_hash
+  ) {
+    fail(
+      `the review log has no packet ${stated.packet_id} at sequence ${stated.sequence} with that entry hash`
+    );
+  }
+  const counted = new Set(now.log.decisions.map(d => d.packetId));
+  let standing = 0;
+  for (const entry of entries) {
+    const line: Record<string, unknown> = isRecord(entry) ? entry : {};
+    if (!line.released) continue;
+    const ca: Record<string, unknown> = isRecord(line.counteraudit)
+      ? line.counteraudit
+      : {};
+    const named = Array.isArray(line.review_decisions)
+      ? (line.review_decisions as unknown[])
+      : [];
+    if (named.length === 0) {
+      fail(
+        `line ${ca.packet_id} does not name the decisions it was released on`
+      );
+      continue;
+    }
+    const lost = named
+      .map(item => (isRecord(item) ? item.packet_id : null))
+      .filter(id => typeof id !== "string" || !counted.has(id));
+    if (lost.length > 0) {
+      fail(
+        `line ${ca.packet_id}: decision ${lost.join(", ")} no longer counts in the review log`
+      );
+      continue;
+    }
+    // Each reviewer's latest decision on this exact event and data class, as releaseFor reads them.
+    const latest = new Map<string, (typeof now.log.decisions)[number]>();
+    for (const d of now.log.decisions) {
+      if (
+        d.decision.signed_event_hash !== ca.signed_event_hash ||
+        d.decision.data_class !== line.data_class
+      ) {
+        continue;
+      }
+      const seen = latest.get(d.decision.reviewer_id);
+      const t = new Date(d.decision.decided_at).getTime();
+      const seenAt = seen
+        ? new Date(seen.decision.decided_at).getTime()
+        : -Infinity;
+      if (!seen || t > seenAt || (t === seenAt && d.sequence > seen.sequence)) {
+        latest.set(d.decision.reviewer_id, d);
+      }
+    }
+    const decisions = [...latest.values()];
+    const suspended = decisions.filter(d => d.suspended);
+    const rejected = decisions.filter(d => d.decision.decision === "reject");
+    const approvals = decisions.filter(
+      d =>
+        d.decision.decision === "approve" ||
+        d.decision.decision === "approve_with_waiver"
+    ).length;
+    const needed = line.data_class === "test" ? 1 : 2;
+    if (suspended.length > 0) {
+      fail(
+        `line ${ca.packet_id} is held: ${suspended.map(d => d.decision.reviewer_id).join(", ")} decided on it and is suspended`
+      );
+    } else if (rejected.length > 0) {
+      fail(
+        `line ${ca.packet_id} was rejected by ${rejected.map(d => `${d.decision.reviewer_id} (sequence ${d.sequence})`).join(", ")}`
+      );
+    } else if (approvals < needed) {
+      fail(
+        `line ${ca.packet_id} has ${approvals} current approval(s) and needs ${needed}`
+      );
+    } else {
+      standing++;
+    }
+  }
+  if (failed === 0) {
+    io.log(
+      `Current standing: ${standing} released line(s) still stand in the review log, read whole to sequence ${now.position?.sequence ?? "none"}`
+    );
+  }
+  return failed;
 }
 
 /**

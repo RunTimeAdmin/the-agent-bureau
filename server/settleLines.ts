@@ -82,6 +82,37 @@ export async function loadCurrentReviewLog(options: {
   };
 }
 
+/**
+ * The whole review log as CounterAudit holds it now, read and replayed without the Bureau's
+ * database, for checking a file still stands (pnpm file verify --current). Anything short of the
+ * whole log, linked from sequence 0, is a problem, as for loadCurrentReviewLog.
+ */
+export async function readReviewLogNow(options: {
+  apiUrl: string;
+  readKey: string;
+  orgId: string;
+  fetch?: Fetch;
+  now?: Date;
+}): Promise<
+  | { log: ReviewLog; rows: ReviewLogRecordRow[]; position: ReviewLogPosition | null }
+  | { problem: string }
+> {
+  const read = await readReviewLog({ ...options, known: [] });
+  if (read.problem) return { problem: read.problem };
+  if (!read.listedComplete) return { problem: "CounterAudit's listing of the review log did not reach its end" };
+  const rows = read.rows as ReviewLogRecordRow[];
+  const linked = linkedRecords(rows);
+  if (linked.length !== rows.length || rows.length !== read.listed) {
+    return { problem: `CounterAudit lists ${read.listed} review-log packets, and ${linked.length} of them link from the start` };
+  }
+  const tip = linked.at(-1);
+  return {
+    log: replayLinked(linked),
+    rows: linked,
+    position: tip ? { sequence: tip.sequence, entryHash: tip.entryHash, packetId: tip.packetId } : null,
+  };
+}
+
 function replayLinked(linked: ReviewLogRecordRow[]): ReviewLog {
   return replayReviewLog(
     linked.map(row => {

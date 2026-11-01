@@ -455,6 +455,51 @@ describe("pnpm file verify and the review log", () => {
     );
   });
 
+  // Review F-03 (1 November 2026): a signed file stays signed after a reviewer rejects its line.
+  it("--current passes while the review log as it is now still releases each line", async () => {
+    const { records, text } = await signedFile();
+    const { io, out, files } = fileIO(counterAudit(records));
+    files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], io)).toBe(0);
+    expect(out.join("\n")).toContain(
+      "Current standing: 1 released line(s) still stand in the review log, read whole to sequence 4"
+    );
+  });
+
+  it("--current fails a file whose line a reviewer rejected after it was assembled", async () => {
+    const { records, text } = await signedFile();
+    const later = [
+      ...records,
+      decision("alice", "reject", "2026-11-01T11:00:00.000Z"),
+    ];
+    const historical = fileIO(counterAudit(later));
+    historical.files["one.json"] = text;
+    // As assembled, it still checks out, and says that is all it says.
+    expect(await runFile(["verify", "one.json"], historical.io)).toBe(0);
+    expect(historical.out.join("\n")).toContain("Review status: as assembled");
+
+    const { io, out, files } = fileIO(counterAudit(later));
+    files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], io)).toBe(1);
+    expect(out.join("\n")).toContain("was rejected by rev_alice (sequence 5)");
+  });
+
+  it("--current exits 3 when it cannot read the whole review log, or has no key for it", async () => {
+    const { records, text } = await signedFile();
+    const gap = fileIO(counterAudit(records, { skip: [2] }));
+    gap.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], gap.io)).toBe(3);
+    expect(gap.out.join("\n")).toContain("Current standing: NOT ESTABLISHED");
+
+    delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    const keyless = fileIO(counterAudit(records));
+    keyless.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], keyless.io)).toBe(
+      3
+    );
+    expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
+  });
+
   it("says the references were not checked without the read key, and states them offline", async () => {
     const { records, text } = await signedFile();
     delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
