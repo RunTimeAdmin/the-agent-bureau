@@ -73,8 +73,8 @@ proof passed; evidence needs_review: no machine check exists for delivered outco
   {
     position: "SYNC",
     title: "The Bureau reads the chain and releases the line",
-    text: "The operator's sync read the new packet and settled every line. One reviewer is enough for test data.",
-    output: `fur_bureaupilot01/pilot-test-20261030234110: unverified -> verified
+    text: "The operator's sync read the new packet and settled every line. One reviewer is enough for test data. The run printed the new state as verified, its name until review finding M-04 renamed it released: a release records what the checks and reviewers found, not that the outcome happened.",
+    output: `fur_bureaupilot01/pilot-test-20261030234110: unverified -> released
 sealed: rev_testnet1 approve_with_waiver at sequence 3
 released (one reviewer, test data)`,
     result: { ok: true, label: "Released through the review log" },
@@ -185,8 +185,7 @@ export default function ReviewLog() {
             <span className="serif">Nobody relays it.</span>
           </h1>
           <p className="rl-lede">
-            A line on a Bureau file shows as verified only when reviewers release
-            it. Their decisions never pass through the operator: each reviewer
+            A line goes on a Bureau file only when reviewers release it. Their decisions never pass through the operator: each reviewer
             seals their own signed record in a review log kept in CounterAudit, and
             the Bureau and CounterAudit each work out from that log who the
             reviewers are and what they decided. This is one run of the whole flow

@@ -8,7 +8,7 @@
 // A passing proof shows what was sealed and who signed it, not that the
 // outcome happened. Each line's evidence is checked against the chain where a
 // check exists (server/evidence.ts) and the result stored with it; a line
-// shows as verified only once reviewers release it (pnpm review). A
+// shows as released only once reviewers release it (pnpm review). A
 // furnisher's later line can withdraw, replace or dispute an earlier one
 // (server/lineState.ts); that takes effect here.
 import { readFile } from "node:fs/promises";
