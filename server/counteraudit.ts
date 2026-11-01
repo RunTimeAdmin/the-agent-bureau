@@ -168,7 +168,13 @@ export async function ingestSignedEvent(
 
 export type ProofResult =
   | { ok: true; proof: Record<string, unknown> }
-  | { ok: false; status: number | null; message: string };
+  | {
+      ok: false;
+      status: number | null;
+      message: string;
+      /** CounterAudit's record of erasing the packet under its retention policy (410). */
+      tombstone?: Record<string, unknown>;
+    };
 
 /** GET /v1/proofs/{packet_id}. Public: no key is sent. */
 export async function fetchProof(packetId: string): Promise<ProofResult> {
@@ -186,6 +192,14 @@ export async function fetchProof(packetId: string): Promise<ProofResult> {
   }
   const body = await readJson(res);
   if (res.status === 200 && isRecord(body)) return { ok: true, proof: body };
+  if (res.status === 410 && isRecord(body)) {
+    return {
+      ok: false,
+      status: 410,
+      message: "CounterAudit erased this packet under its retention policy",
+      tombstone: body,
+    };
+  }
   const { error, message } = errorFields(body);
   return { ok: false, status: res.status, message: message || error };
 }
