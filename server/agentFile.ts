@@ -61,6 +61,14 @@ export const FILE_SCHEMA = "agent-bureau/file/v1";
 // Domain separation: nothing else a file key signs can pass for a file.
 const SIGNING_CONTEXT = "agent-bureau/file/v1\n";
 
+/**
+ * Files with live lines wait for counsel's review of how the Bureau keeps and uses them (the
+ * owner's decision, 2026-11-02), and so does paid access to files, which is not built. Until a
+ * pull request that cites that review sets this to false, a file is signed only for a subject
+ * whose lines on it are all test data. The review log releasing a live line does not lift it.
+ */
+export const LIVE_FILES_HELD = true;
+
 // Review finding M-04 (docs/independent-payer.md): every file carries it.
 export const PAYMENT_DISCLOSURE =
   "A settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered.";
@@ -814,6 +822,16 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
   };
   const draft = assembleFile(subjectRef, rows, reviewsOf, assembleOptions);
+  // Left off, a live line would make the file say less than the Bureau holds, so the file waits.
+  const live = [...draft.file.furnished_outcomes, ...draft.file.history].filter(
+    l => l.data_class === "live"
+  ).length;
+  if (live > 0 && LIVE_FILES_HELD) {
+    io.log(
+      `Not signed: ${live} of the lines on this file are live data, and files with live lines are held until counsel has reviewed how the Bureau keeps and uses them (LIVE_FILES_HELD in server/agentFile.ts).`
+    );
+    return 1;
+  }
   // A stored line whose signed event does not check means the store was
   // changed or damaged; a withdrawal that stops acting that way could put a
   // line back on a file, so nothing is signed until it is fixed.

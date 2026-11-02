@@ -116,6 +116,16 @@ From §15 of the plan. Status as of 2026-10-29:
 5. **Pending counsel.** The provisional baseline was recorded 2026-10-31 (decision 5). Counsel must confirm retention for source envelopes, derived indexes, disputes, backups and operator access logs before external data is accepted. CounterAudit's expiry and crypto-erasure (built and deployed 2026-10-31) are rolled out: the daily expiry job runs, and the Bureau's organization has a 24-month policy.
 6. **Resolved.** Two-person review is required before any approval, match change, evidence waiver or negative-line release affects a third party. The solo-operator path is limited to test data and internal dry runs.
 
+## Owner decisions of 2026-11-02
+
+Recorded with the work each one needs; the choices are not reopened without the owner.
+
+- **Reviewers.** Three independent reviewers sign the genesis the Bureau pins (`REVIEW_GENESIS`, empty until they exist). Every API-key change in the review organization takes two of the three (CounterAudit `REVIEWER_APPROVALS`).
+- **Furnishers.** Only vetted, arm's-length furnishers are admitted, under two-person review and a probation period. The listing in `server/furnishers.ts` is not enough on its own; the admission and the probation are to be built.
+- **Live files and paid access** are held until counsel has reviewed retention and use (`LIVE_FILES_HELD`, `docs/agent-file.md`).
+- **Pricing.** Per-file pricing is a pilot hypothesis, not a set price.
+- **Event IDs** are random UUIDv4s with no identifying data, so an `event_id` kept after a line expires says nothing about the subject.
+
 ## Exit criteria
 
 Owner sign-off recorded 2026-10-29 on the v1 outcome scope, the publication rule and file-display states, the furnisher key and identity-matching model, and the receipt semantics. Two items stay open before any public endpoint accepts an external outcome:
