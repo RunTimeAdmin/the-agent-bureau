@@ -1,6 +1,6 @@
 # Two-person review
 
-No line shows as `released` until reviewers release it (Phase 0 item 6). Each reviewer signs their decisions with their own key on their own machine and seals them in the independent review log, a CounterAudit organization they write to with their own key (`docs/review-log-design.md`). The operator never handles a decision. The Bureau reads the log and counts only what is sealed there, checking every signature each time a line is settled. Code: `server/reviewDecision.ts` (decisions), `server/reviewLog.ts` (reviewer-key records and the log's rules), `server/reviewLogSync.ts` (reading and sealing), `server/lineState.ts` (`releaseFor`), `server/settleLines.ts` (`loadReviewLog`, `reviewsFor`) and `server/review.ts` (`pnpm review`).
+No line shows as `released` until reviewers release it (Phase 0 item 6). Each reviewer signs their decisions with their own key on their own machine and seals them in the independent review log, a CounterAudit organization they write to with their own key (`docs/review-log-design.md`). The operator never handles a decision. The Bureau reads the log and counts only what is sealed there, checking every signature each time a line is settled. Code: `server/reviewDecision.ts` (decisions), `server/reviewLog.ts` (reviewer-key records and the log's rules), `server/furnisherAdmission.ts` (furnisher admissions), `server/reviewLogSync.ts` (reading and sealing), `server/lineState.ts` (`releaseFor`), `server/settleLines.ts` (`loadReviewLog`, `reviewsFor`) and `server/review.ts` (`pnpm review`).
 
 ## Release rule
 
@@ -14,6 +14,7 @@ A line is released, and shows as `released`, when all of these hold:
 3. **It holds the claim on its charge**, if it is backed by one (`docs/evidence-verifier.md`), so no two released lines rest on one charge.
 4. **No reviewer currently rejects it, and none who decided on it is suspended.**
 5. **Enough approvals from different reviewers**: two for live data, one for test data (Phase 0 item 6 keeps the solo path for test data and dry runs). `pnpm review queue` reports a solo release as such, and a file must label it.
+6. **For live data, its furnisher is admitted** by two reviewers, for the CounterAudit organization and the key the line came from, as its receipt names them (below). A live line sealed before its furnisher's probation ends is released only on approvals that waive nothing: evidence that passed, and for a settled payment a clear funding screen. Test data needs no admission.
 
 **Approving a payment line.** `pnpm review queue` names what a payment line's evidence proved: `payment_settlement_verified` for a `paid` or `refunded` line whose evidence is `verified`, `payment_failure_verified` for `payment_failed`. Beside it are `subject_control` and `payer_independence_screen` (`docs/independent-payer.md`), and the reminder that a settled payment proves that money moved between two wallets, not who controls them or whether the service was delivered. Approving a payment line confirms you judged whether the payer is related to the furnisher, and you may reject on relatedness alone. The queue lists the funding screen's flags and gaps. Subject control is Phase 3, so it reads `unproven` until then.
 
@@ -34,6 +35,21 @@ The stored copy is still the operator's. They can stop syncing, drop the newest 
 The review log says who the reviewers are (`docs/review-log-design.md`, Rules). The first reviewers are named in a genesis record that each of them signs, and that the Bureau's code pins. After that, adding a reviewer, rotating a key, re-enabling a suspended reviewer or removing one takes the same change signed by two reviewers. Any one reviewer can suspend another at once: a line on which the suspended reviewer holds a current decision is held until the reviewers re-enable, rotate or remove them. A suspended reviewer still votes, so no one key can lock the others out. Ids are `rev_` and 3 to 32 lowercase letters or digits; no two reviewers share a key. Until a genesis has taken effect, nothing can be released.
 
 **Testnet (2026-10-31).** The pinned genesis is a testnet one: three reviewers the operator holds (`rev_testnet1` to `rev_testnet3`, named "Testnet reviewer N (operator-held)") in a testnet review organization, so the flow runs end to end on testnet. While it is pinned (`TESTNET_GENESIS` in `server/reviewLog.ts`), a decision on live data counts for nothing and `pnpm review queue` says so: only test data can be released, and the two-person guarantee does not hold, because one party holds every key. Before any live data, independent reviewers seal a genesis in a review organization of their own and its hash replaces the pin; the testnet reviewers' decisions then stop counting.
+
+## Furnisher admission
+
+Only vetted, arm's-length furnishers' live lines are released (the owner's decision, 2026-11-02). Vetting is people's work: who the furnisher is, that it deals at arm's length with the subjects it reports on, and that the organization and key are its own, confirmed over a second channel. Reviewers record the outcome in the review log (`docs/review-log-design.md`, rule 7):
+
+```sh
+pnpm review admit --key ~/bureau-review.pem --reviewer rev_alice --furnisher fur_example01 --probation-days 90 --out admit.json
+pnpm review revoke-admission --key ~/bureau-review.pem --reviewer rev_alice --furnisher fur_example01 --reason "..." --out revoke.json
+pnpm review submit admit.json
+pnpm review admissions
+```
+
+`admit` signs the reviewer's admission. For a furnisher listed in `server/furnishers.ts` it names that organization and every key listed as active there; for one not listed, name them with `--org <org_id> --furnisher-key <key_id>=<ed25519:...>`. `--probation-days` is 90 to 365, 90 when left out. The furnisher is admitted once a second reviewer seals an admission naming the same organization and keys, and its probation runs from that sealing; the longer of the two periods counts. A key added later needs a new pair of admissions naming every key to keep, and the probation starts again from that pair. `revoke-admission` ends the admission once sealed, by one reviewer: none of the furnisher's live lines is released until two reviewers admit it again. `admissions` (operator) lists each furnisher's admission as the synced log stands: who admitted it and when, its probation, its organization and keys, a revocation, and admissions waiting for a second reviewer. `pnpm review queue` shows on each live line whether its furnisher is admitted for it and whether the line was sealed during probation.
+
+A key `server/furnishers.ts` lists for the furnisher must also still be active there. An admission counts only from a reviewer active when they sealed it and still active with the same key, so a reviewer's key rotation, suspension or removal drops the admissions they signed: admit again what should stand. A revocation stands whatever happens to its reviewer afterwards. A reviewer's newer admission replaces their pending one for other keys. A file marks a live line sealed during probation `furnisher_on_probation` (`docs/agent-file.md`). The subject's view takes a furnisher's admission as it stands now, so a line whose furnisher's admission was revoked is no longer among the lines ever released there unless the subject disputed it.
 
 ## Setup (once)
 

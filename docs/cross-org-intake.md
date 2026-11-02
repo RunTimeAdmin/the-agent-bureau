@@ -46,6 +46,7 @@ The run seals nothing. It fetches each packet's public proof, without a key, and
 - **Holds.** A legal hold set in the furnisher's own organization can keep a packet past `expires_at`, and the proof does not show holds.
 - **One furnisher id, one party.** A furnisher listed here and a signer registered in the Bureau's own CounterAudit organization under the same `furnisher_id` act on each other's lines (withdrawals, replacements, charges). They must be the same business. A furnisher listed under the Bureau's own organization is refused.
 - **Test furnishers only.** Until the retention conditions close (decision 5), list only test furnishers: one reviewer can release a test line.
+- **Listed is not admitted.** A listing lets the intake store a furnisher's lines. A live line is released only once two reviewers have admitted the furnisher in the review log, for its organization and key, and its probation limits waivers (`docs/two-person-review.md`, "Furnisher admission").
 
 ## Adding a furnisher
 

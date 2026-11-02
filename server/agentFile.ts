@@ -19,6 +19,7 @@ import {
   type DisputeState,
 } from "./dispute";
 import { readEventFields } from "./furnishIntake";
+import { admissionGate, type AdmissionGate } from "./furnisherAdmission";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
   displayStateFor,
@@ -41,9 +42,11 @@ import {
 } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { newReviewerKey, reviewerPublicKey } from "./reviewDecision";
+import type { ReviewLog } from "./reviewLog";
 import { readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
 import {
+  admissionFor,
   loadCurrentReviewLog,
   readReviewLogNow,
   reviewsFor,
@@ -85,6 +88,8 @@ const EXPIRY_DISCLOSURE =
   "A line can be checked against CounterAudit until its counteraudit.checkable_until, when CounterAudit erases its source under its retention policy. After that its proof URL answers with CounterAudit's signed record of the erasure, which still shows where the packet sat in its chain but no longer its outcome, and the line rests on the Bureau's signature alone. Lines whose source is erased are left off new files.";
 const HISTORY_DISCLOSURE =
   "history lists released lines the same furnisher later withdrew or replaced. They are kept as a record of what was reported, not as current facts.";
+const PROBATION_DISCLOSURE =
+  "A line marked furnisher_on_probation was sealed before its furnisher's probation ended. The probation starts when two reviewers admit the furnisher. Such a line is released only on approvals that waive nothing: no reviewer can waive its evidence or a settled payment's funding screen.";
 const DISPUTE_DISCLOSURE =
   "A line with a dispute was disputed by its subject, who signed the dispute with the wallet the line names. While a dispute is open the furnisher has until respond_by to confirm the line with evidence, correct it or withdraw it, and a line it does not answer by then is removed from every file. A line the furnisher confirmed stays and may carry the subject's statement. A dispute records that the subject contests the line, not which side is right.";
 
@@ -116,6 +121,11 @@ export type FileLine = {
   /** The subject's dispute on the line (docs/disputes.md). Absent when there is none. */
   dispute?: FileDispute;
   released: Release;
+  /**
+   * Live data sealed before its furnisher's probation ended (server/furnisherAdmission.ts).
+   * Absent otherwise, and on a file assembled before admissions were recorded.
+   */
+  furnisher_on_probation?: true;
   /**
    * The review-log decisions on this line, by their packets in the review organization, so a
    * reader with access to it can see which decisions the release was taken from. Absent on a
@@ -339,6 +349,11 @@ export type AssembleOptions = {
   /** The review organization and how far its log was read, for the file to state. */
   reviewLog?: { orgId: string; position: ReviewLogPosition | null };
   /**
+   * Whether a line's furnisher is admitted (admissionFor in server/settleLines.ts). Without it
+   * no live line is released.
+   */
+  admissionOf?: (line: Line) => AdmissionGate;
+  /**
    * Each line's source, by packet id, as CounterAudit's proof stated it just before assembling
    * (readSources). A line whose source is erased or past its retention date is left off and
    * listed in `expired`; one with no entry is skipped. Without this the file states no
@@ -394,9 +409,10 @@ export function assembleFile(
         r.relationTargetEventId === line.eventId
     );
     const reviews = reviewsOf(line);
+    const admission = options.admissionOf?.(line);
     // A lapsed subject dispute removes the line from every file, history included.
-    const dispute = disputeOf(line, relating, reviewsOf, options.now);
-    const states = lineStates(line, relating, reviews, dispute?.state ?? null);
+    const dispute = disputeOf(line, relating, reviewsOf, options.now, options.admissionOf);
+    const states = lineStates(line, relating, reviews, dispute?.state ?? null, admission);
     if (!states.released) continue;
     const display = displayStateFor(states);
     if (display === "unverified" || display === "removed") continue;
@@ -429,6 +445,9 @@ export function assembleFile(
       display_state: display,
       ...(dispute ? { dispute: fileDispute(dispute) } : {}),
       released: states.released,
+      ...(line.dataClass === "live" && admission?.admitted && admission.onProbation
+        ? { furnisher_on_probation: true as const }
+        : {}),
       ...(reviews.length > 0 && reviews.every(r => r.packetId)
         ? {
             review_decisions: reviews.map(r => ({
@@ -475,6 +494,7 @@ export function assembleFile(
   const disclosures = [FACTS_DISCLOSURE, PAYMENT_DISCLOSURE];
   if (history.length > 0) disclosures.push(HISTORY_DISCLOSURE);
   if (all.some(l => l.dispute)) disclosures.push(DISPUTE_DISCLOSURE);
+  if (all.some(l => l.furnisher_on_probation)) disclosures.push(PROBATION_DISCLOSURE);
   if (all.some(l => typeof l.counteraudit.checkable_until === "string"))
     disclosures.push(EXPIRY_DISCLOSURE);
   if (all.some(l => l.released === "solo_test"))
@@ -818,6 +838,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     bureauOrgId: ENV.counterauditOrgId,
     testnetReviewers: log.testnet,
     furnishers: io.furnishers,
+    admissionOf: line => admissionFor(line, log, io.furnishers),
     standing,
     reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
   };
@@ -1118,6 +1139,8 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
       io.log(`Sigvara standing: FAILED: ${printable(result.detail)}`);
     }
   }
+  // Each line's proof that verified, by packet: --current checks its furnisher's admission by it.
+  const proofs = new Map<string, Record<string, unknown>>();
   // The signature held, but each line is still read as untrusted JSON.
   for (const entry of entries) {
     const line: Record<string, unknown> = isRecord(entry) ? entry : {};
@@ -1180,6 +1203,7 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
       sealedAt: String(line.sealed_at ?? ""),
     });
     if (result.ok) {
+      proofs.set(packetId, fetched.proof);
       io.log(
         `${printable(packetId)}: proof verified (${printable(line.outcome)}, sealed in ${printable(ca.org_id)})`
       );
@@ -1194,7 +1218,7 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
     failed += await checkReviewLog(signed, entries, io);
     return failed === 0 ? 0 : 1;
   }
-  const standing = await checkCurrentReviewStatus(signed, entries, io);
+  const standing = await checkCurrentReviewStatus(signed, entries, io, proofs);
   if (standing === null) {
     return failed === 0 ? NOT_ESTABLISHED : 1;
   }
@@ -1207,13 +1231,15 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
  * (pnpm file verify --current, review F-03 of 1 November 2026): the whole log read and replayed,
  * its head at or past the position the file states, that position the packet the file names, the
  * decisions each line names still counted, and the line's current decisions, each reviewer's
- * latest, holding no rejection or suspended reviewer and still the approvals it needs. Returns how
+ * latest, holding no rejection or suspended reviewer and still the approvals it needs, and a live
+ * line's furnisher still admitted for the organization and key its verified proof names. Returns how
  * many checks failed, or null when the log could not be read whole, so its standing is unknown.
  */
 async function checkCurrentReviewStatus(
   signed: SignedAgentFile,
   entries: unknown[],
-  io: FileIO
+  io: FileIO,
+  proofs: Map<string, Record<string, unknown>>
 ): Promise<number | null> {
   const unknown = (why: string) => {
     io.log(`Current standing: NOT ESTABLISHED: ${printable(why)}`);
@@ -1333,6 +1359,14 @@ async function checkCurrentReviewStatus(
       fail(
         `line ${ca.packet_id} has ${approvals} current approval(s) and needs ${needed}`
       );
+    } else if (line.data_class === "live") {
+      const problem = proofAdmissionProblem(
+        now.log,
+        proofs.get(String(ca.packet_id)),
+        io.furnishers
+      );
+      if (problem) fail(`line ${ca.packet_id}: ${problem}`);
+      else standing++;
     } else {
       standing++;
     }
@@ -1343,6 +1377,33 @@ async function checkCurrentReviewStatus(
     );
   }
   return failed;
+}
+
+// Why a live line's furnisher is not admitted now for the organization and key CounterAudit's
+// verified proof of the line names, the same gate release applies, or null when it is.
+function proofAdmissionProblem(
+  log: ReviewLog,
+  proof: Record<string, unknown> | undefined,
+  furnishers: Record<string, Furnisher>
+): string | null {
+  if (!proof) {
+    return "its proof did not verify, so its furnisher's admission cannot be checked";
+  }
+  const claim = isRecord(proof.outcome_claim) ? proof.outcome_claim : {};
+  const signer = isRecord(claim.signer) ? claim.signer : {};
+  const gate = admissionGate(
+    {
+      furnisherId: String(signer.furnisher_id ?? ""),
+      dataClass: "live",
+      caCreatedAt:
+        typeof proof.created_at === "string" ? proof.created_at : undefined,
+      signedEvent: { key_id: signer.key_id },
+      receipt: proof,
+    },
+    log.admissions,
+    furnishers
+  );
+  return gate.admitted ? null : gate.problem;
 }
 
 /**

@@ -420,6 +420,8 @@ export async function updateOutcomeEventProof(
   await db.update(outcomeEvents).set(proof).where(eq(outcomeEvents.id, id));
 }
 
+// What a line's states depend on (server/lineState.ts). A live line's release also reads when
+// CounterAudit sealed it and the organization and key its receipt names (furnisher admission).
 const LINE_COLUMNS = {
   id: outcomeEvents.id,
   furnisherId: outcomeEvents.furnisherId,
@@ -434,6 +436,9 @@ const LINE_COLUMNS = {
   displayState: outcomeEvents.displayState,
   relationType: outcomeEvents.relationType,
   relationTargetEventId: outcomeEvents.relationTargetEventId,
+  caCreatedAt: outcomeEvents.caCreatedAt,
+  signedEvent: outcomeEvents.signedEvent,
+  receipt: outcomeEvents.receipt,
 };
 
 // The columns compare without case under the server's default collation, but

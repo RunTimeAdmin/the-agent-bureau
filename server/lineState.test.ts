@@ -10,6 +10,7 @@ import {
   type Review,
 } from "./lineState";
 import { chargeKey, type LevyCharge } from "./evidence";
+import type { AdmissionGate } from "./furnisherAdmission";
 import { evidenceDigest } from "./reviewDecision";
 
 const WALLET = "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77";
@@ -205,9 +206,15 @@ describe("releaseFor: two-person review", () => {
     evidenceResult: EVIDENCE,
   });
   const onLive = { dataClass: "live" as const };
+  // Two reviewers admitted the live line's furnisher, and its probation is over.
+  const ADMITTED: AdmissionGate = {
+    admitted: true,
+    onProbation: false,
+    probationUntil: new Date("2026-01-01T00:00:00.000Z"),
+  };
 
   it("releases a live line only with two different reviewers", () => {
-    expect(releaseFor(live, [review("rev_alice", "approve", onLive)])).toEqual({
+    expect(releaseFor(live, [review("rev_alice", "approve", onLive)], ADMITTED)).toEqual({
       released: null,
       holdingBack: "needs 1 more approval from different reviewers",
     });
@@ -218,13 +225,13 @@ describe("releaseFor: two-person review", () => {
         decidedAt: "2026-10-31T11:00:00.000Z",
       }),
     ];
-    expect(releaseFor(live, sameTwice).released).toBeNull();
+    expect(releaseFor(live, sameTwice, ADMITTED).released).toBeNull();
     const two = [
       review("rev_alice", "approve", onLive),
       review("rev_bob", "approve", onLive),
     ];
-    expect(releaseFor(live, two).released).toBe("two_person");
-    expect(displayStateFor(lineStates(live, [], two))).toBe("released");
+    expect(releaseFor(live, two, ADMITTED).released).toBe("two_person");
+    expect(displayStateFor(lineStates(live, [], two, null, ADMITTED))).toBe("released");
   });
 
   it("lets one reviewer release test data, flagged as solo", () => {
@@ -238,10 +245,11 @@ describe("releaseFor: two-person review", () => {
 
   it("counts only decisions signed for the line's data class", () => {
     expect(
-      releaseFor(live, [
-        review("rev_alice", "approve"),
-        review("rev_bob", "approve"),
-      ]).released
+      releaseFor(
+        live,
+        [review("rev_alice", "approve"), review("rev_bob", "approve")],
+        ADMITTED
+      ).released
     ).toBeNull();
     expect(
       releaseFor(test, [review("rev_alice", "approve", onLive)]).released
@@ -254,7 +262,7 @@ describe("releaseFor: two-person review", () => {
       review("rev_bob", "approve", onLive),
       review("rev_carol", "reject", onLive),
     ];
-    expect(releaseFor(live, decisions)).toEqual({
+    expect(releaseFor(live, decisions, ADMITTED)).toEqual({
       released: null,
       holdingBack: "rejected by rev_carol",
     });
@@ -288,18 +296,23 @@ describe("releaseFor: two-person review", () => {
     });
     const digest = { ...onLive, evidenceDigest: evidenceDigest(evidence) };
     expect(
-      releaseFor(unchecked, [
-        review("rev_alice", "approve", digest),
-        review("rev_bob", "approve", digest),
-      ]).holdingBack
+      releaseFor(
+        unchecked,
+        [review("rev_alice", "approve", digest), review("rev_bob", "approve", digest)],
+        ADMITTED
+      ).holdingBack
     ).toBe(
       "needs 2 more approvals that waive the evidence from different reviewers"
     );
     expect(
-      releaseFor(unchecked, [
-        review("rev_alice", "approve_with_waiver", digest),
-        review("rev_bob", "approve_with_waiver", digest),
-      ]).released
+      releaseFor(
+        unchecked,
+        [
+          review("rev_alice", "approve_with_waiver", digest),
+          review("rev_bob", "approve_with_waiver", digest),
+        ],
+        ADMITTED
+      ).released
     ).toBe("two_person");
   });
 
@@ -322,13 +335,17 @@ describe("releaseFor: two-person review", () => {
     });
     const stale = { ...onLive, evidenceDigest: evidenceDigest(before) };
     expect(
-      releaseFor(changed, [
-        review("rev_alice", "approve_with_waiver", stale),
-        review("rev_bob", "approve_with_waiver", stale),
-      ]).released
+      releaseFor(
+        changed,
+        [
+          review("rev_alice", "approve_with_waiver", stale),
+          review("rev_bob", "approve_with_waiver", stale),
+        ],
+        ADMITTED
+      ).released
     ).toBeNull();
     expect(
-      releaseFor(changed, [review("rev_carol", "reject", stale)]).holdingBack
+      releaseFor(changed, [review("rev_carol", "reject", stale)], ADMITTED).holdingBack
     ).toBe("rejected by rev_carol");
   });
 

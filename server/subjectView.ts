@@ -14,6 +14,7 @@ import {
   type CheckedDisputeRecord,
   type Dispute,
 } from "./dispute";
+import type { AdmissionGate } from "./furnisherAdmission";
 import type { Furnisher } from "./furnishers";
 import {
   displayStateFor,
@@ -29,7 +30,7 @@ import {
 import { isRecord } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import type { ReviewLog } from "./reviewLog";
-import { reviewsFor, type ReviewLogPosition } from "./settleLines";
+import { admissionFor, reviewsFor, type ReviewLogPosition } from "./settleLines";
 
 export const SUBJECT_VIEW_SCHEMA = "agent-bureau/subject-view/v1";
 
@@ -77,11 +78,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-/** Whether reviewers released the line at some point: after any decision in the log, in order. */
-function everReleased(line: Line, reviews: Review[]): boolean {
+/**
+ * Whether reviewers released the line at some point: after any decision in the log, in order.
+ * A live line's furnisher admission is taken as it stands now.
+ */
+function everReleased(line: Line, reviews: Review[], admission: AdmissionGate): boolean {
   const ordered = [...reviews].sort((a, b) => a.id - b.id);
   return ordered.some(
-    (_, i) => releaseFor(line, ordered.slice(0, i + 1)).released !== null
+    (_, i) => releaseFor(line, ordered.slice(0, i + 1), admission).released !== null
   );
 }
 
@@ -150,6 +154,7 @@ export function assembleSubjectView(
 ) {
   const key = subjectKey(subjectRef);
   const reviewsOf = (line: Line) => reviewsFor(line, log);
+  const admissionOf = (line: Line) => admissionFor(line, log, options.furnishers);
   const proofBase = options.proofBase.replace(/\/+$/, "");
   const out = [];
   for (const line of lines) {
@@ -172,15 +177,17 @@ export function assembleSubjectView(
       relating,
       reviewsOf,
       now: options.now,
+      admissionOf,
     });
+    const admission = admissionOf(line);
     const disputes = disputeEntries(records, derived);
-    if (!everReleased(line, reviews) && disputes.length === 0) continue;
+    if (!everReleased(line, reviews, admission) && disputes.length === 0) continue;
     const dispute = currentDispute(derived);
     const display: DisplayState = displayStateFor(
-      lineStates(line, relating, reviews, dispute?.state ?? null)
+      lineStates(line, relating, reviews, dispute?.state ?? null, admission)
     );
     const release: { released: Release | null; holdingBack: string | null } =
-      releaseFor(line, reviews);
+      releaseFor(line, reviews, admission);
     const evidence = asRecord(line.evidenceResult);
     const listed = Object.hasOwn(options.furnishers, line.furnisherId)
       ? options.furnishers[line.furnisherId].counterauditOrgId

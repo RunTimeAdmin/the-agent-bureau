@@ -40,7 +40,7 @@ vi.mock("./reviewLog", async importOriginal => {
   };
 });
 
-import { runFile, type FileIO, type SignedAgentFile } from "./agentFile";
+import { runFile, signFile, type FileIO, type SignedAgentFile } from "./agentFile";
 import type { ProofResult } from "./counteraudit";
 import { canonicalizeJson, signedEventHash } from "./outcomeProof";
 import {
@@ -50,6 +50,7 @@ import {
   signReviewDecision,
 } from "./reviewDecision";
 import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
+import { ADMISSION_SCHEMA, signAdmission } from "./furnisherAdmission";
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
 const API = "https://api.counteraudit.test";
@@ -141,6 +142,24 @@ const decision = (
       // A rejection is counted only with a reason.
       ...(verdict === "reject" ? { reason: "related payer" } : {}),
       decided_at: decidedAt,
+    },
+    people[reviewer].privateKeyPem
+  );
+
+// The pilot furnisher's signing key, and a reviewer's admission of the furnisher with it.
+const pilotKey = newReviewerKey().publicKey;
+const admit = (reviewer: Person, publicKey = pilotKey) =>
+  signAdmission(
+    {
+      schema: ADMISSION_SCHEMA,
+      reviewer_id: `rev_${reviewer}`,
+      furnisher_id: LINE.furnisherId,
+      decision: "admit",
+      counteraudit_org_id: BUREAU_ORG,
+      keys: [{ key_id: event.key_id, public_key: publicKey }],
+      arms_length: true,
+      probation_days: 90,
+      decided_at: "2026-11-01T09:30:00.000Z",
     },
     people[reviewer].privateKeyPem
   );
@@ -351,9 +370,21 @@ describe("pnpm file assemble and the review log", () => {
   });
 
   it("signs no file with a live line, though two reviewers released it, until counsel's review", async () => {
-    store.lines = [{ ...LINE, dataClass: "live" as const }];
+    // Its furnisher admitted by two reviewers, for the organization and key its receipt names.
+    store.lines = [
+      {
+        ...LINE,
+        dataClass: "live" as const,
+        receipt: {
+          org_id: BUREAU_ORG,
+          outcome_claim: { signer: { key_id: event.key_id, public_key: pilotKey } },
+        },
+      },
+    ];
     const released = [
       ...genesis(),
+      admit("alice"),
+      admit("bob"),
       decision("alice", "approve", "2026-11-01T10:00:00.000Z", "live"),
       decision("bob", "approve", "2026-11-01T10:05:00.000Z", "live"),
     ];
@@ -498,6 +529,72 @@ describe("pnpm file verify and the review log", () => {
     files["one.json"] = text;
     expect(await runFile(["verify", "one.json", "--current"], io)).toBe(1);
     expect(out.join("\n")).toContain("was rejected by rev_alice (sequence 5)");
+  });
+
+  it("--current fails a live line whose furnisher is no longer admitted for the key its proof names", async () => {
+    // A live line's file, as it would be signed once counsel lifts LIVE_FILES_HELD.
+    source.answer = () => ({
+      ok: true,
+      proof: proofFor({
+        outcome_claim: {
+          outcome: event.outcome,
+          asserted_by: "signature",
+          signer: { furnisher_id: event.furnisher_id, key_id: event.key_id, public_key: pilotKey },
+          signed_event_hash: LINE.signedEventHash,
+        },
+      }),
+    });
+    const records = [
+      ...genesis(),
+      admit("alice"),
+      admit("bob"),
+      decision("alice", "approve", "2026-11-01T10:00:00.000Z", "live"),
+      decision("bob", "approve", "2026-11-01T10:05:00.000Z", "live"),
+    ];
+    const { text } = await signedFile();
+    const { signature: _signature, ...draft } = JSON.parse(text) as SignedAgentFile;
+    const line = { ...draft.furnished_outcomes[0], data_class: "live" as const, released: "two_person" as const };
+    line.review_decisions = [5, 6].map(n => ({ sequence: n, packet_id: idOf(n), decision: "approve" }));
+    const liveFile = signFile(
+      {
+        ...draft,
+        furnished_outcomes: [line],
+        review_log: { org_id: REVIEW_ORG, sequence: 6, entry_hash: hashOf(6), packet_id: idOf(6) },
+      },
+      fileKey.privateKeyPem,
+      "test-file-1",
+      { "test-file-1": fileKey.publicKey }
+    );
+    const verifyAgainst = async (log: unknown[]) => {
+      const { io, out, files } = fileIO(counterAudit(log));
+      files["live.json"] = JSON.stringify(liveFile);
+      return { code: await runFile(["verify", "live.json", "--current"], io), printed: out.join("\n") };
+    };
+
+    const standing = await verifyAgainst(records);
+    expect(standing.printed).toContain("Current standing: 1 released line(s) still stand");
+    expect(standing.code).toBe(0);
+
+    const revoke = signAdmission(
+      {
+        schema: ADMISSION_SCHEMA,
+        reviewer_id: "rev_carol",
+        furnisher_id: LINE.furnisherId,
+        decision: "revoke",
+        reason: "its key may have leaked",
+        decided_at: "2026-11-01T11:00:00.000Z",
+      },
+      people.carol.privateKeyPem
+    );
+    const revoked = await verifyAgainst([...records, revoke]);
+    expect(revoked.code).toBe(1);
+    expect(revoked.printed).toContain("its furnisher's admission was revoked by rev_carol at sequence 7");
+
+    // Admitted again, with another key only.
+    const otherKey = newReviewerKey().publicKey;
+    const rekeyed = await verifyAgainst([...records, revoke, admit("alice", otherKey), admit("bob", otherKey)]);
+    expect(rekeyed.code).toBe(1);
+    expect(rekeyed.printed).toContain(`its key ${event.key_id} is not one its furnisher was admitted with`);
   });
 
   it("--current exits 3 when it cannot read the whole review log, or has no key for it", async () => {

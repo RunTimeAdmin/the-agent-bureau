@@ -1,5 +1,5 @@
 {
-  "description": "Shared test vectors for the Agent Bureau's review log (docs/review-log-design.md): review_log cases give a pinned genesis and the review organization's records in sequence order, and the reviewers they establish (null when no genesis takes effect); key_approvals cases give a reviewer's approval of a CounterAudit approval request. Built by scripts/review-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
+  "description": "Shared test vectors for the Agent Bureau's review log (docs/review-log-design.md): review_log cases give a pinned genesis and the review organization's records in sequence order, and the reviewers they establish (null when no genesis takes effect); key_approvals cases give a reviewer's approval of a CounterAudit approval request; admission_forms give furnisher admission records and whether their form is valid. Built by scripts/review-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
   "keys": {
     "alice": {
       "seed": "dbdf40ab5c474a7bf651bba0a29800df8bfda96a9904480d5a69d194d221a346",
@@ -3300,6 +3300,176 @@
       }
     },
     {
+      "id": "furnisher_admissions_do_not_change_reviewers",
+      "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
+      "records": [
+        {
+          "sequence": 0,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_alice",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:fVB9QUP0uk31FpySKq5GJFT0q0uPLUXHpkcU9-UZiJSeznDlj7OdWlTDFMj6HhbnNglYV9Oip--3TlgYnF46Cw"
+          }
+        },
+        {
+          "sequence": 1,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_bob",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:GDI_PDbcLNFXDqxbtp725bfMG-jIgjybVNKlXxP_7s_jMeWSV7O8Pij_LWpQ6AxKyHb0iVQ-Fi7cN0n95l0MBA"
+          }
+        },
+        {
+          "sequence": 2,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/reviewer-key/v1",
+            "signer_id": "rev_carol",
+            "change": {
+              "type": "genesis",
+              "reviewers": [
+                {
+                  "reviewer_id": "rev_alice",
+                  "name": "Alice",
+                  "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0"
+                },
+                {
+                  "reviewer_id": "rev_bob",
+                  "name": "Bob",
+                  "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw"
+                },
+                {
+                  "reviewer_id": "rev_carol",
+                  "name": "Carol",
+                  "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM"
+                }
+              ]
+            },
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:cNxDD1P6h6V5LvYDDi5hBe7H7J-RIqNZxMaVRWFV52jJD1WlUkiPFeWFm0AZ97DHdo5Tnp5mDXyQfnsuAfeDAw"
+          }
+        },
+        {
+          "sequence": 3,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/furnisher-admission/v1",
+            "reviewer_id": "rev_alice",
+            "furnisher_id": "fur_vectors01",
+            "decision": "admit",
+            "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+            "keys": [
+              {
+                "key_id": "vectors-1",
+                "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+              }
+            ],
+            "arms_length": true,
+            "probation_days": 90,
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+          }
+        },
+        {
+          "sequence": 4,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/furnisher-admission/v1",
+            "reviewer_id": "rev_bob",
+            "furnisher_id": "fur_vectors01",
+            "decision": "admit",
+            "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+            "keys": [
+              {
+                "key_id": "vectors-1",
+                "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+              }
+            ],
+            "arms_length": true,
+            "probation_days": 90,
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:m6nnBRlkKDHdu4yaQLowp9Aa3OTZ3qH5mWI1rT3iiaYaI9iYofqj28HcahtEStJY1Fdcxv5OoRAyKygv09XJAA"
+          }
+        },
+        {
+          "sequence": 5,
+          "sealed_at": "2026-11-01T12:00:00.000Z",
+          "record": {
+            "schema": "agent-bureau/furnisher-admission/v1",
+            "reviewer_id": "rev_carol",
+            "furnisher_id": "fur_vectors01",
+            "decision": "revoke",
+            "reason": "related to its subjects",
+            "decided_at": "2026-11-01T11:00:00.000Z",
+            "signature": "ed25519:_EPHKpUOKjkgkF70N5a1QADGx7MYbfgbA5TW_0xoTeFuv48aRVau2b3Okb1uRnF-0STBnuJcHOyi_270RZd4DA"
+          }
+        }
+      ],
+      "expect": {
+        "reviewers": {
+          "rev_alice": {
+            "name": "Alice",
+            "public_key": "ed25519:-PLFKf7BEamGLxRZGPWUpG7INv-A1bfssXg8GpZ_6-0",
+            "status": "active"
+          },
+          "rev_bob": {
+            "name": "Bob",
+            "public_key": "ed25519:Vc40Cp8FCJQnBIdEQidPxOIr92t_5pKo4ID1lsJwyVw",
+            "status": "active"
+          },
+          "rev_carol": {
+            "name": "Carol",
+            "public_key": "ed25519:RRBUhIBUFf0xgUXzzU8aRelfE3WZPbhlOUXqqHSVYFM",
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
       "id": "an_own_proto_key_is_refused",
       "pinned_genesis": "0ab88b55877b0e98b4555bd6df3a07d9a3bb24f6e4abb49df6461ea62c2c4097",
       "records": [
@@ -3704,6 +3874,659 @@
         "payload_matches": true,
         "payload_sha256": "5e54684c5c2d0f2e7a3ba8067f85a8b5c36e24471b6f26a628c8ac5010991b4e"
       }
+    }
+  ],
+  "admission_forms": [
+    {
+      "id": "admit",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "valid"
+    },
+    {
+      "id": "admit_two_keys_sorted",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "vectors-2",
+            "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 365,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:j3cDIhgCIjXgJLF8r_JBUlUmohtVgtotjeQ9GbWJtgaRBOegyN8Xd_rgJLrFWxntnUGPqhrS1iHBQv7C9RGuCw"
+      },
+      "expect": "valid"
+    },
+    {
+      "id": "revoke",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "related to its subjects",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ"
+      },
+      "expect": "valid"
+    },
+    {
+      "id": "revoke_reason_500",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:c0qE0c2ymOYBObxqjNxmuJWpiOALLqXh-68H_sohAdvwrqGQK4LXHCw6yZ4i4QBt3TGHscIO-lNbojnJREeqDg"
+      },
+      "expect": "valid"
+    },
+    {
+      "id": "unknown_field",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ",
+        "note": "x"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "admit_with_a_reason",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ",
+        "reason": "vetted"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "admit_without_arms_length",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "arms_length_false",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": false,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "probation_89_days",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 89,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "probation_366_days",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 366,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "probation_fractional",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90.5,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "probation_as_text",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": "90",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "keys_out_of_order",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-2",
+            "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+          },
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "key_id_twice",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:65uRVUYQO1SpMEhp9l5lP5DDVwJZF_Cvcj3SbtxzFcU"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "public_key_twice",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "vectors-2",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "no_keys",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "twenty_one_keys",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "k00",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k01",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k02",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k03",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k04",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k05",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k06",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k07",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k08",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k09",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k10",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k11",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k12",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k13",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k14",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k15",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k16",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k17",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k18",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k19",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          },
+          {
+            "key_id": "k20",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "key_with_an_extra_field",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U",
+            "status": "active"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "key_in_a_second_spelling",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8_"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "uppercase_org",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000B2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "revoke_naming_keys",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "related to its subjects",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ]
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "revoke_naming_an_org",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "related to its subjects",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "revoke_without_a_reason",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "revoke_blank_reason",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "   ",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "revoke_reason_501",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_bob",
+        "furnisher_id": "fur_vectors01",
+        "decision": "revoke",
+        "reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:1P4lHegqXHQaTT83vHup-KX5jy9No0TMG1xIQrgPiJxGZDqjf8hSE4NIiWfDjqoEfOX2U8ocePSxPtSXvOa1CQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "another_decision",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "suspend",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "bad_furnisher_id",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_X",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "time_without_milliseconds",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00Z",
+        "signature": "ed25519:YUbu4lR6qcMxO87hOj14ixpGWyQAuROoxuv5jRHcqp5t3ijzAfdFzyB4sAo6W0PrO6YpjXMC9KZBDcQP0_aDBQ"
+      },
+      "expect": "invalid"
+    },
+    {
+      "id": "unsigned",
+      "record": {
+        "schema": "agent-bureau/furnisher-admission/v1",
+        "reviewer_id": "rev_alice",
+        "furnisher_id": "fur_vectors01",
+        "decision": "admit",
+        "counteraudit_org_id": "00000000-0000-4000-8000-0000000000b2",
+        "keys": [
+          {
+            "key_id": "vectors-1",
+            "public_key": "ed25519:uKAbQ5gAu0iB1XM3KnuUSJchPEGEyLNjj3fgCaOba8U"
+          }
+        ],
+        "arms_length": true,
+        "probation_days": 90,
+        "decided_at": "2026-11-01T11:00:00.000Z"
+      },
+      "expect": "invalid"
     }
   ]
 }

@@ -17,6 +17,7 @@ import type {
   StoredDisputeRecord,
 } from "./dispute";
 import { chargeKey, type LevyCharge } from "./evidence";
+import type { AdmissionGate } from "./furnisherAdmission";
 import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
 
@@ -164,14 +165,22 @@ export function currentDecisions(line: Line, reviews: Review[]): Review[] {
  * person must judge; a failed check cannot be waived. An approval counts only
  * while the line's evidence result is the one the reviewer signed for, so a
  * later change (a reused charge, say) needs a new review. Any current
- * rejection holds the line, whatever evidence it was signed against.
+ * rejection holds the line, whatever evidence it was signed against. A live
+ * line also needs its furnisher admitted by two reviewers for the organization
+ * and key it came from (admissionFor in server/settleLines.ts), and while the
+ * furnisher is on probation an approval cannot waive anything for it.
  */
 export function releaseFor(
   line: Line,
-  reviews: Review[]
+  reviews: Review[],
+  admission?: AdmissionGate
 ): { released: Release | null; holdingBack: string | null } {
   const hold = (holdingBack: string) => ({ released: null, holdingBack });
   if (!line.proofOk) return hold("its proof has not passed");
+  const live = line.dataClass === "live";
+  if (live && !admission) return hold("its furnisher's admission was not read");
+  if (live && admission && !admission.admitted) return hold(admission.problem);
+  const probation = live && admission?.admitted === true && admission.onProbation;
   // A MariaDB server older than 10.5.2 returns the JSON column as text.
   let result: unknown = line.evidenceResult;
   if (typeof result === "string") {
@@ -224,6 +233,12 @@ export function releaseFor(
       charge.kind === "charged" &&
       !(isRecord(screened) && screened.result === "clear"));
   const plain = evidence === "verified" && !screenHolds;
+  if (!plain && probation) {
+    const until = admission?.admitted && admission.probationUntil ? ` until ${admission.probationUntil.toISOString()}` : "";
+    return hold(
+      `its furnisher is on probation${until}, when no approval can waive the ${evidence === "verified" ? "funding screen's result" : "evidence"} for its lines`
+    );
+  }
   const digest = evidenceDigest(line.evidenceResult);
   const approvals = decisions.filter(
     d =>
@@ -265,13 +280,15 @@ export function takesOverClaim(relating: Line, holder: Line): boolean {
  * any (server/dispute.ts). A dispute the furnisher has since withdrawn stops
  * acting (owner decision, 2026-10-31). A withdrawn correction or withdrawal
  * stays in force: to bring a line back, the furnisher sends a new one. A line
- * whose subject dispute lapsed is removed, and never released again.
+ * whose subject dispute lapsed is removed, and never released again. A live
+ * line needs its furnisher's admission (releaseFor).
  */
 export function lineStates(
   line: Line,
   relating: Line[],
   reviews: Review[] = [],
-  subjectDispute: DisputeState | null = null
+  subjectDispute: DisputeState | null = null,
+  admission?: AdmissionGate
 ): LineStates {
   const acting = relating.filter(
     r =>
@@ -288,7 +305,7 @@ export function lineStates(
     disputed: has("disputes"),
     withdrawn: has("withdraws"),
     superseded: has("supersedes", "corrects"),
-    released: removed ? null : releaseFor(line, reviews).released,
+    released: removed ? null : releaseFor(line, reviews, admission).released,
     ...(subjectDispute ? { subject_dispute: subjectDispute, removed } : {}),
   };
 }

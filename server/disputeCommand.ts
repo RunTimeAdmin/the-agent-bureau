@@ -45,7 +45,7 @@ import {
 import { canonicalizeJson, isRecord } from "./outcomeProof";
 import { reviewerPublicKey } from "./reviewDecision";
 import type { ReviewLog } from "./reviewLog";
-import { loadReviewLog, reviewsFor, settle } from "./settleLines";
+import { admissionFor, loadReviewLog, reviewsFor, settle } from "./settleLines";
 import { rpcSigvaraClient, type SigvaraClient } from "./sigvaraStanding";
 
 export const USAGE = [
@@ -268,7 +268,7 @@ function refusal(
   if (record.kind === "dispute") {
     const reviews = reviewsFor(line, log);
     const shown = currentDispute(disputes);
-    const states = lineStates(line, relating, reviews, shown?.state ?? null);
+    const states = lineStates(line, relating, reviews, shown?.state ?? null, admissionFor(line, log));
     const display = displayStateFor(states);
     if (
       !states.released ||
@@ -424,6 +424,7 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
 
   const log = await loadReviewLog();
   const reviewsOf = (l: Line) => reviewsFor(l, log);
+  const admissionOf = (l: Line) => admissionFor(l, log);
   const relating = await findRelatingOutcomeLines(
     line.furnisherId,
     line.eventId
@@ -435,6 +436,7 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
     relating,
     reviewsOf,
     now,
+    admissionOf,
   });
   const refused = refusal(record, line, relating, log, before);
   if (refused) {
@@ -534,6 +536,7 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
     relating,
     reviewsOf,
     now,
+    admissionOf,
   }).find(d => d.disputeId === record.dispute_id);
   if (dispute) io.log(describeDispute(dispute));
   const ref = `${line.furnisherId}/${line.eventId}`;
@@ -574,6 +577,7 @@ async function settleCommand(io: DisputeIO): Promise<number> {
       relating,
       reviewsOf: l => reviewsFor(l, log),
       now,
+      admissionOf: l => admissionFor(l, log),
     })
       .filter(d => d.state === "lapsed")
       .map(

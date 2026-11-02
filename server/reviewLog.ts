@@ -21,6 +21,12 @@ import {
   checkReviewDecision,
   type ReviewDecision,
 } from "./reviewDecision";
+import {
+  ADMISSION_SCHEMA,
+  replayAdmissions,
+  type AdmissionRecord,
+  type AdmissionState,
+} from "./furnisherAdmission";
 
 export const REVIEWER_KEY_SCHEMA = "agent-bureau/reviewer-key/v1";
 export const REVIEW_CONNECTOR_ID = "agent-bureau-review-v1";
@@ -211,7 +217,10 @@ export type ReviewLog = {
   // null until a genesis has taken effect.
   reviewers: Map<string, ReviewerState> | null;
   decisions: CountedDecision[];
-  // What each reviewer-key record did, in order, for the operator and the reviewers to read.
+  // Furnisher admissions (server/furnisherAdmission.ts), by furnisher id. Empty under the testnet
+  // genesis, which releases no live line anyway.
+  admissions: Map<string, AdmissionState>;
+  // What each reviewer-key and admission record did, in order, for the operator and the reviewers to read.
   events: { sequence: number; text: string }[];
   // The last sequence read, or null for an empty log.
   readTo: number | null;
@@ -269,6 +278,7 @@ export function replayReviewLog(
   // Key records already taken, by signature: one sealed again counts for nothing.
   const seen = new Set<string>();
   const decisions: LogRecord[] = [];
+  const admissionRecords: AdmissionRecord[] = [];
   const events: { sequence: number; text: string }[] = [];
 
   for (const entry of ordered) {
@@ -276,6 +286,13 @@ export function replayReviewLog(
     if (!isRecord(value)) continue;
     if (value.schema === REVIEW_SCHEMA) {
       decisions.push(entry);
+      continue;
+    }
+    if (value.schema === ADMISSION_SCHEMA) {
+      // Kept with its reviewer as they stand now, at its place in the log: a revocation counts
+      // by the key its reviewer held when it was sealed (server/furnisherAdmission.ts).
+      const signer = reviewers && typeof value.reviewer_id === "string" ? reviewers.get(value.reviewer_id) : undefined;
+      admissionRecords.push({ ...entry, signer: signer ? { publicKey: signer.publicKey, status: signer.status } : null });
       continue;
     }
     if (value.schema !== REVIEWER_KEY_SCHEMA) continue;
@@ -391,9 +408,22 @@ export function replayReviewLog(
       });
     }
   }
+  // Admissions are counted once the reviewers are known: each by its reviewer as they stood when
+  // it was sealed, and an admission also as the log leaves them.
+  let admissions = new Map<string, AdmissionState>();
+  const noteAdmission = (sequence: number, text: string) => events.push({ sequence, text });
+  if (!reviewers) {
+    for (const entry of admissionRecords) noteAdmission(entry.sequence, "admission ignored, no genesis has taken effect");
+  } else if (testnet) {
+    for (const entry of admissionRecords) noteAdmission(entry.sequence, "admission ignored, admissions do not count under the testnet genesis");
+  } else {
+    admissions = replayAdmissions(admissionRecords, reviewers, noteAdmission);
+  }
+  events.sort((a, b) => a.sequence - b.sequence);
   return {
     reviewers,
     decisions: counted,
+    admissions,
     events,
     readTo: ordered.length ? ordered[ordered.length - 1].sequence : null,
     testnet,

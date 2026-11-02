@@ -1,8 +1,8 @@
 // The review log's shared test vectors (docs/review-log-design.md, build step 2):
 // server/fixtures/review-vectors/review-log-v1.json. CounterAudit replays the review
 // organization's chain with its own port of the rules in server/reviewLog.ts, and checks
-// reviewers' key approvals (server/keyApproval.ts); it copies this file, pinned by SHA-256,
-// and runs the same cases. Each case's expected result is written here by hand, and
+// reviewers' key approvals (server/keyApproval.ts) and the form of furnisher admissions
+// (server/furnisherAdmission.ts); it copies this file, pinned by SHA-256, and runs the same cases. Each case's expected result is written here by hand, and
 // server/reviewVectors.test.ts checks both this code's answers and that the file is what this
 // script builds. Rebuild with: pnpm review:vectors
 //
@@ -11,6 +11,11 @@
 import { createHash, createPrivateKey } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  ADMISSION_SCHEMA,
+  signAdmission,
+  type UnsignedAdmission,
+} from "../server/furnisherAdmission";
 import {
   KEY_APPROVAL_SCHEMA,
   payloadDigest,
@@ -44,6 +49,7 @@ const DECIDED = "2026-11-01T11:00:00.000Z";
 const ORG = "00000000-0000-4000-8000-0000000000a1";
 const SMALL_ORDER_KEY = `ed25519:${Buffer.concat([Buffer.from([1]), Buffer.alloc(31)]).toString("base64url")}`;
 const REQUEST = "5b0c1f2e-8a4d-4c3b-9e1f-0a2b3c4d5e6f";
+const FURNISHER_ORG = "00000000-0000-4000-8000-0000000000b2";
 
 type TestKey = { seed: string; privateKeyPem: string; public_key: string };
 
@@ -95,6 +101,7 @@ export type ReviewVectors = {
       payload_matches: boolean;
     };
   }[];
+  admission_forms: { id: string; record: unknown; expect: "valid" | "invalid" }[];
 };
 
 export function buildReviewVectors(): ReviewVectors {
@@ -136,6 +143,35 @@ export function buildReviewVectors(): ReviewVectors {
         data_class: "test",
         evidence_digest: "cd".repeat(32),
         decision: "approve",
+        decided_at: DECIDED,
+      },
+      keys[reviewer].privateKeyPem
+    );
+
+  const admission = (reviewer: "alice" | "bob" | "carol", overrides: Record<string, unknown> = {}) =>
+    signAdmission(
+      {
+        schema: ADMISSION_SCHEMA,
+        reviewer_id: `rev_${reviewer}`,
+        furnisher_id: "fur_vectors01",
+        decision: "admit",
+        counteraudit_org_id: FURNISHER_ORG,
+        keys: [{ key_id: "vectors-1", public_key: pub("dave") }],
+        arms_length: true,
+        probation_days: 90,
+        decided_at: DECIDED,
+        ...overrides,
+      } as UnsignedAdmission,
+      keys[reviewer].privateKeyPem
+    );
+  const revocation = (reviewer: "alice" | "bob" | "carol", reason = "related to its subjects") =>
+    signAdmission(
+      {
+        schema: ADMISSION_SCHEMA,
+        reviewer_id: `rev_${reviewer}`,
+        furnisher_id: "fur_vectors01",
+        decision: "revoke",
+        reason,
         decided_at: DECIDED,
       },
       keys[reviewer].privateKeyPem
@@ -366,6 +402,12 @@ export function buildReviewVectors(): ReviewVectors {
       expect: { reviewers: reviewers({ alice: "active", bob: "active", carol: "removed" }) },
     },
     {
+      id: "furnisher_admissions_do_not_change_reviewers",
+      pinned_genesis: PIN,
+      records: chain(...signedGenesis(), admission("alice"), admission("bob"), revocation("carol")),
+      expect: { reviewers: all() },
+    },
+    {
       id: "an_own_proto_key_is_refused",
       pinned_genesis: PIN,
       records: chain(
@@ -466,11 +508,57 @@ export function buildReviewVectors(): ReviewVectors {
 
   return {
     description:
-      "Shared test vectors for the Agent Bureau's review log (docs/review-log-design.md): review_log cases give a pinned genesis and the review organization's records in sequence order, and the reviewers they establish (null when no genesis takes effect); key_approvals cases give a reviewer's approval of a CounterAudit approval request. Built by scripts/review-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
+      "Shared test vectors for the Agent Bureau's review log (docs/review-log-design.md): review_log cases give a pinned genesis and the review organization's records in sequence order, and the reviewers they establish (null when no genesis takes effect); key_approvals cases give a reviewer's approval of a CounterAudit approval request; admission_forms give furnisher admission records and whether their form is valid. Built by scripts/review-vectors.ts in the-agent-bureau. The keys are test keys from fixed seeds.",
     keys: Object.fromEntries(NAMES.map(n => [n, { seed: keys[n].seed, public_key: keys[n].public_key }])) as ReviewVectors["keys"],
     review_log,
     key_approvals,
+    admission_forms: admissionForms(admission, revocation, pub),
   };
+}
+
+// The form of a furnisher admission (agent-bureau/furnisher-admission/v1), which CounterAudit's
+// review connector checks before sealing one. Signatures are the review log's to check.
+function admissionForms(
+  admission: (reviewer: "alice" | "bob" | "carol", overrides?: Record<string, unknown>) => unknown,
+  revocation: (reviewer: "alice" | "bob" | "carol", reason?: string) => unknown,
+  pub: (n: KeyName) => string
+): ReviewVectors["admission_forms"] {
+  const admit = admission("alice") as Record<string, unknown>;
+  const revoke = revocation("bob") as Record<string, unknown>;
+  const key = (id: string, n: KeyName) => ({ key_id: id, public_key: pub(n) });
+  const twentyOne = Array.from({ length: 21 }, (_, i) => ({ key_id: `k${String(i).padStart(2, "0")}`, public_key: pub("dave") }));
+  const forms: [string, unknown, "valid" | "invalid"][] = [
+    ["admit", admit, "valid"],
+    ["admit_two_keys_sorted", admission("alice", { keys: [key("vectors-1", "dave"), key("vectors-2", "bob_k1")], probation_days: 365 }), "valid"],
+    ["revoke", revoke, "valid"],
+    ["revoke_reason_500", revocation("bob", "x".repeat(500)), "valid"],
+    ["unknown_field", { ...admit, note: "x" }, "invalid"],
+    ["admit_with_a_reason", { ...admit, reason: "vetted" }, "invalid"],
+    ["admit_without_arms_length", (({ arms_length: _a, ...rest }) => rest)(admit), "invalid"],
+    ["arms_length_false", { ...admit, arms_length: false }, "invalid"],
+    ["probation_89_days", { ...admit, probation_days: 89 }, "invalid"],
+    ["probation_366_days", { ...admit, probation_days: 366 }, "invalid"],
+    ["probation_fractional", { ...admit, probation_days: 90.5 }, "invalid"],
+    ["probation_as_text", { ...admit, probation_days: "90" }, "invalid"],
+    ["keys_out_of_order", { ...admit, keys: [key("vectors-2", "bob_k1"), key("vectors-1", "dave")] }, "invalid"],
+    ["key_id_twice", { ...admit, keys: [key("vectors-1", "dave"), key("vectors-1", "bob_k1")] }, "invalid"],
+    ["public_key_twice", { ...admit, keys: [key("vectors-1", "dave"), key("vectors-2", "dave")] }, "invalid"],
+    ["no_keys", { ...admit, keys: [] }, "invalid"],
+    ["twenty_one_keys", { ...admit, keys: twentyOne }, "invalid"],
+    ["key_with_an_extra_field", { ...admit, keys: [{ ...key("vectors-1", "dave"), status: "active" }] }, "invalid"],
+    ["key_in_a_second_spelling", { ...admit, keys: [{ key_id: "vectors-1", public_key: `${pub("dave").slice(0, -1)}_` }] }, "invalid"],
+    ["uppercase_org", { ...admit, counteraudit_org_id: FURNISHER_ORG.replace("b2", "B2") }, "invalid"],
+    ["revoke_naming_keys", { ...revoke, keys: admit.keys }, "invalid"],
+    ["revoke_naming_an_org", { ...revoke, counteraudit_org_id: FURNISHER_ORG }, "invalid"],
+    ["revoke_without_a_reason", (({ reason: _r, ...rest }) => rest)(revoke), "invalid"],
+    ["revoke_blank_reason", { ...revoke, reason: "   " }, "invalid"],
+    ["revoke_reason_501", { ...revoke, reason: "x".repeat(501) }, "invalid"],
+    ["another_decision", { ...admit, decision: "suspend" }, "invalid"],
+    ["bad_furnisher_id", { ...admit, furnisher_id: "fur_X" }, "invalid"],
+    ["time_without_milliseconds", { ...admit, decided_at: "2026-11-01T11:00:00Z" }, "invalid"],
+    ["unsigned", (({ signature: _s, ...rest }) => rest)(admit), "invalid"],
+  ];
+  return forms.map(([id, record, expect]) => ({ id, record, expect }));
 }
 
 /** The file's exact text: two-space JSON and a final newline. */

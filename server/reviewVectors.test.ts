@@ -6,6 +6,7 @@ import {
   type ExpectedReviewer,
   type ReviewVectors,
 } from "../scripts/review-vectors";
+import { checkAdmissionForm } from "./furnisherAdmission";
 import {
   checkKeyApprovalForm,
   keyApprovalVerifies,
@@ -45,6 +46,13 @@ describe("the review log's shared vectors", () => {
           )
         : null;
       expect(got).toEqual(c.expect.reviewers);
+    }
+  );
+
+  it.each(vectors.admission_forms.map(c => [c.id, c] as const))(
+    "admission form: %s",
+    (_id, c) => {
+      expect(checkAdmissionForm(c.record).ok ? "valid" : "invalid").toBe(c.expect);
     }
   );
 

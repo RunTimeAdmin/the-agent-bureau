@@ -13,6 +13,7 @@ import { createPrivateKey, sign, verify } from "node:crypto";
 import { recoverMessageAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { DISPUTE_KINDS } from "../drizzle/schema";
+import type { AdmissionGate } from "./furnisherAdmission";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
   currentDecisions,
@@ -892,6 +893,8 @@ export type DisputeInput = {
   /** The review log's decisions on a line. */
   reviewsOf: (line: Line) => Review[];
   now: Date;
+  /** Whether a line's furnisher is admitted (admissionFor in server/settleLines.ts); a live line without it is not released. */
+  admissionOf?: (line: Line) => AdmissionGate;
 };
 
 /**
@@ -972,7 +975,7 @@ export function deriveDisputes(input: DisputeInput): Dispute[] {
           party: "subject",
           state: rejected
             ? "upheld"
-            : releaseFor(line, decisions).released
+            : releaseFor(line, decisions, input.admissionOf?.(line)).released
               ? "dismissed"
               : "open",
           sealedAt,
@@ -998,7 +1001,7 @@ export function deriveDisputes(input: DisputeInput): Dispute[] {
         party: "furnisher",
         state: rejected
           ? "dismissed"
-          : releaseFor(corrective, decisions).released
+          : releaseFor(corrective, decisions, input.admissionOf?.(corrective)).released
             ? "upheld"
             : "open",
         sealedAt,
@@ -1047,7 +1050,8 @@ export function disputeOf(
   line: Line,
   relating: Line[],
   reviewsOf: (line: Line) => Review[],
-  now: Date
+  now: Date,
+  admissionOf?: (line: Line) => AdmissionGate
 ): Dispute | null {
   if (!line.checkedDisputes) {
     if (line.disputeRecords && line.disputeRecords.length > 0) {
@@ -1065,6 +1069,7 @@ export function disputeOf(
       relating,
       reviewsOf,
       now,
+      admissionOf,
     })
   );
 }
