@@ -542,7 +542,8 @@ async function main(): Promise<void> {
     schema_version: "1",
     furnisher_id: furnisherId,
     key_id: keyId,
-    event_id: `e2e-${now}`,
+    // A random UUIDv4, as CounterAudit requires of a new event since 2026-11-02.
+    event_id: randomUUID(),
     subject_ref: { did: `did:example:e2e-${tag}` },
     occurred_at: new Date(receivedAt.getTime() - 3_600_000)
       .toISOString()

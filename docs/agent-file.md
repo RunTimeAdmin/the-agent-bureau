@@ -90,7 +90,7 @@ A reader of a file checks these, which `pnpm file verify <file>` does:
 
 A pass on a line says nothing about its subject, data class or release, which only the Bureau's signature vouches for. A file leaves out the signed event, which names the furnisher and holds the evidence, so a subscriber cannot check the furnisher's signature or the binding to the subject alone; for those it relies on the Bureau's signature and on CounterAudit's check at seal time. The subject and the reviewers get the signed events and can run the full proof check (`server/outcomeProof.ts`).
 
-The public proof behind `proof_url` shows more than the file does: the furnisher's id (`fur_...`), key id and key, and the furnisher's own `event_id`. These are pseudonymous (`server/furnishers.ts` lists organizations and keys, not business names), but they link one furnisher's lines across files, and for a furnisher sealing in its own organization the `org_id` alone does.
+The public proof behind `proof_url` shows more than the file does: the furnisher's id (`fur_...`), key id and key, and the event's `event_id`, a random UUIDv4 since 2026-11-02. These are pseudonymous (`server/furnishers.ts` lists organizations and keys, not business names), but they link one furnisher's lines across files, and for a furnisher sealing in its own organization the `org_id` alone does.
 
 ## Running it
 
