@@ -46,7 +46,7 @@ pnpm lines expire --dry-run
 pnpm lines expire
 ```
 
-It needs `DATABASE_URL` and `COUNTERAUDIT_ORG_ID`, and the database must have migration `0013_line_expiry`, which the app applies when it starts. The production server runs it at start and once a day after (`server/schedules.ts`), so nobody has to; a run that holds a line or cannot check one logs `[lines expire] exited with 1` in the app's runtime log. Running it by hand as well does no harm.
+It needs `DATABASE_URL` and `COUNTERAUDIT_ORG_ID`, and the database must have migration `0013_line_expiry`, which the app applies when it starts. The production server runs it at start and once a day after (`server/schedules.ts`), so nobody has to; a run that holds a line or cannot check one logs `[lines expire] exited with 1` in the app's runtime log, turns `/api/jobs` to `attention` (which the monitor mails), and is tried again an hour later. Running it by hand as well does no harm.
 
 Tested end to end: `scripts/e2e/file-expiry.ts` runs this path against a CounterAudit server started from a checkout, from the furnisher's seal to `pnpm lines expire` and a file without the line ([docs/e2e-file-expiry.md](e2e-file-expiry.md)).
 
