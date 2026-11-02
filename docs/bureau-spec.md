@@ -118,7 +118,7 @@ The format and the signing tool live in the public repo [RunTimeAdmin/agent-bure
 | `schema_version` | yes | `"1"` |
 | `furnisher_id` | yes | Issued when the furnisher is vetted: `fur_` plus 6 to 32 lowercase letters or digits |
 | `key_id` | yes | The name the furnisher gave the key that signed the event, registered with its public key: up to 64 letters, digits or `. _ : -` |
-| `event_id` | yes | The furnisher's own reference, unique per furnisher. Disputes and corrections point at it. |
+| `event_id` | yes | A random UUIDv4 in lowercase, new for every event (`furnish ids` prints them). It stays after the outcome expires, so it must say nothing about the subject or the furnisher's records: the furnisher keeps the pairing with its own reference. CounterAudit seals no new event with any other kind of id since 2026-11-02; older events keep theirs. Disputes and corrections point at it. |
 | `relation` | no | `{type, target_event_id}`: this event `disputes`, `corrects`, `supersedes` or `withdraws` an earlier `event_id` of the same furnisher |
 | `subject_ref` | yes | One of: `{chain, registry, id}`, `{wallet}`, `{did}` |
 | `outcome` | yes | `paid`, `payment_failed`, `delivered`, `not_delivered`, `disputed`, `refunded`, `access_revoked`, `policy_violation` |
