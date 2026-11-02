@@ -40,7 +40,7 @@ import {
   type UnsignedAdmission,
 } from "./furnisherAdmission";
 import { FURNISHERS, type Furnisher } from "./furnishers";
-import { lineStates, releaseFor, type Line } from "./lineState";
+import { lineStates, releaseFor, signedEvidenceStatus, type Line } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import {
   REVIEW_SCHEMA,
@@ -885,7 +885,7 @@ async function queue(io: ReviewIO) {
       [
         `${line.furnisherId}/${line.eventId}  ${line.outcome}  ${line.dataClass} data  shown ${line.displayState}`,
         `  hash ${line.signedEventHash}`,
-        `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${evidenceLabel(line.outcome, line.evidenceStatus)}${reasons ? `: ${reasons}` : ""}`,
+        `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${evidenceLabel(line.outcome, signedEvidenceStatus(line))}${reasons ? `: ${reasons}` : ""}`,
         // Live data needs its furnisher admitted by two reviewers (pnpm review admissions).
         ...(line.dataClass === "live" ? [`  furnisher ${describeGate(admission)}`] : []),
         // Subject control is Phase 3, so it is unproven for every line

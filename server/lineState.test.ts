@@ -4,6 +4,7 @@ import {
   lineStates,
   relationProblem,
   releaseFor,
+  signedEvidenceStatus,
   subjectKey,
   takesOverClaim,
   type Line,
@@ -57,12 +58,18 @@ describe("lineStates", () => {
       superseded: false,
       released: null,
     });
-    expect(lineStates(line({ evidenceStatus: "verified" }), [])).toMatchObject({
+    const verified = { status: "verified", reasons: [] };
+    expect(lineStates(line({ evidenceStatus: "verified", evidenceResult: verified }), [])).toMatchObject({
       source_signed: true,
       evidence_verified: true,
     });
     expect(
-      lineStates(line({ evidenceStatus: "needs_review" }), [])
+      lineStates(line({ evidenceStatus: "needs_review", evidenceResult: { ...verified, status: "needs_review" } }), [])
+    ).toMatchObject({ evidence_verified: false });
+    // The column alone does not make the evidence verified: reviewers sign the result.
+    expect(lineStates(line({ evidenceStatus: "verified" }), [])).toMatchObject({ evidence_verified: false });
+    expect(
+      lineStates(line({ evidenceStatus: "verified", evidenceResult: { ...verified, status: "needs_review" } }), [])
     ).toMatchObject({ evidence_verified: false });
   });
 
@@ -108,8 +115,18 @@ describe("lineStates", () => {
     ).toBe(true);
   });
 
+  it("reads the evidence status reviewers sign, and none when the column disagrees", () => {
+    const needs = { status: "needs_review", reasons: [] };
+    expect(signedEvidenceStatus(line({ evidenceStatus: "needs_review", evidenceResult: needs }))).toBe("needs_review");
+    expect(signedEvidenceStatus(line({ evidenceStatus: "verified", evidenceResult: needs }))).toBeNull();
+    // A MariaDB server older than 10.5.2 returns the JSON column as text.
+    const asText = JSON.stringify({ ...needs, status: "verified" }) as unknown as Line["evidenceResult"];
+    expect(signedEvidenceStatus(line({ evidenceStatus: "verified", evidenceResult: asText }))).toBe("verified");
+    expect(signedEvidenceStatus(line({ evidenceStatus: null }))).toBeNull();
+  });
+
   it("is not shown released without reviewers, even when every check passed", () => {
-    const states = lineStates(line({ evidenceStatus: "verified" }), []);
+    const states = lineStates(line({ evidenceStatus: "verified", evidenceResult: { status: "verified", reasons: [] } }), []);
     expect(displayStateFor(states)).toBe("unverified");
   });
 });
@@ -372,13 +389,38 @@ describe("releaseFor: two-person review", () => {
     ];
     expect(
       releaseFor(
-        line({ dataClass: "test", evidenceResult: EVIDENCE, ...overrides }),
+        line({
+          dataClass: "test",
+          ...overrides,
+          evidenceResult: { ...EVIDENCE, status: "evidenceStatus" in overrides ? overrides.evidenceStatus : null },
+        }),
         all
       )
     ).toEqual({
       released: null,
       holdingBack,
     });
+  });
+
+  it("takes the evidence status from the result reviewers signed, not the column", () => {
+    // The column edited to say verified over a result that needs review: plain approvals of
+    // that result would otherwise count without anyone waiving the evidence.
+    const evidence = { status: "needs_review", reasons: ["no machine check exists for delivered outcomes"] };
+    const edited = line({ dataClass: "live", evidenceStatus: "verified", evidenceResult: evidence });
+    const digest = { ...onLive, evidenceDigest: evidenceDigest(evidence) };
+    for (const decision of ["approve", "approve_with_waiver"] as const) {
+      expect(
+        releaseFor(edited, [review("rev_alice", decision, digest), review("rev_bob", decision, digest)], ADMITTED)
+      ).toEqual({
+        released: null,
+        holdingBack: "its evidenceStatus does not match the evidence result reviewers sign; run the intake again",
+      });
+    }
+    // Nor the other way round: a result that passed under a column that says it did not.
+    const passed = line({ evidenceStatus: "needs_review", evidenceResult: EVIDENCE });
+    expect(releaseFor(passed, [review("rev_alice", "approve")]).holdingBack).toBe(
+      "its evidenceStatus does not match the evidence result reviewers sign; run the intake again"
+    );
   });
 
   it("ignores decisions about a different version of the event", () => {
@@ -521,9 +563,13 @@ describe("releaseFor: a settled payment's funding screen (review M-04)", () => {
     const clear = screened("clear");
     const clearText = { ...clear, evidenceResult: JSON.stringify(clear.evidenceResult) } as unknown as Line;
     expect(releaseFor(clearText, [decide(clearText, "approve")]).released).toBe("solo_test");
+    // One it cannot read has no status reviewers signed, so not even a waiver releases it.
     const garbled = { ...clear, evidenceResult: "{not json" } as unknown as Line;
     expect(releaseFor(garbled, [decide(garbled, "approve")]).released).toBeNull();
-    expect(releaseFor(garbled, [decide(garbled, "approve_with_waiver")]).released).toBe("solo_test");
+    expect(releaseFor(garbled, [decide(garbled, "approve_with_waiver")])).toEqual({
+      released: null,
+      holdingBack: "its evidenceStatus does not match the evidence result reviewers sign; run the intake again",
+    });
   });
 });
 

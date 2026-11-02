@@ -157,6 +157,32 @@ export function currentDecisions(line: Line, reviews: Review[]): Review[] {
   return [...latest.values()];
 }
 
+// A MariaDB server older than 10.5.2 returns the JSON column as text.
+function evidenceResultOf(line: Pick<Line, "evidenceResult">): unknown {
+  const result: unknown = line.evidenceResult;
+  if (typeof result !== "string") return result;
+  try {
+    return JSON.parse(result);
+  } catch {
+    return null;
+  }
+}
+
+const statusIn = (result: unknown): string | null =>
+  isRecord(result) && typeof result.status === "string" ? result.status : null;
+
+/**
+ * The line's evidence status as reviewers sign it: the status in its evidence result, while the
+ * evidenceStatus column agrees. Null when they disagree, which only an edit to the row outside
+ * intake can cause.
+ */
+export function signedEvidenceStatus(
+  line: Pick<Line, "evidenceStatus" | "evidenceResult">
+): string | null {
+  const status = statusIn(evidenceResultOf(line));
+  return status === line.evidenceStatus ? status : null;
+}
+
 /**
  * Whether reviewers have released the line (Phase 0 item 6), and if not, why.
  * reviews must already be limited to listed reviewers. A line needs its proof
@@ -181,15 +207,7 @@ export function releaseFor(
   if (live && !admission) return hold("its furnisher's admission was not read");
   if (live && admission && !admission.admitted) return hold(admission.problem);
   const probation = live && admission?.admitted === true && admission.onProbation;
-  // A MariaDB server older than 10.5.2 returns the JSON column as text.
-  let result: unknown = line.evidenceResult;
-  if (typeof result === "string") {
-    try {
-      result = JSON.parse(result);
-    } catch {
-      result = null;
-    }
-  }
+  const result = evidenceResultOf(line);
   // A line backed by a charge counts only while it holds that charge's claim,
   // which is unique, so no two released lines can rest on one charge (review
   // M-02).
@@ -202,7 +220,15 @@ export function releaseFor(
       "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it"
     );
   }
-  const evidence = line.evidenceStatus;
+  // Reviewers sign the evidence result's digest, so its status is the one that counts. Intake
+  // writes the evidenceStatus column from the same result; a column that disagrees was changed
+  // outside intake, and could otherwise turn a waiver into a plain approval.
+  const evidence = statusIn(result);
+  if (evidence !== line.evidenceStatus) {
+    return hold(
+      "its evidenceStatus does not match the evidence result reviewers sign; run the intake again"
+    );
+  }
   if (evidence === "failed") {
     return hold("its evidence check failed, which cannot be waived");
   }
@@ -224,14 +250,12 @@ export function releaseFor(
   }
   // A settled payment counts on a plain approval only when its funding screen
   // is clear; a flag, an inconclusive screen or none needs a person to waive it
-  // with a reason (review M-04, decided 2026-10-31). An evidence result that
-  // cannot be read at all is held the same way.
+  // with a reason (review M-04, decided 2026-10-31).
   const screened = isRecord(result) ? result.funding_screen : undefined;
   const screenHolds =
-    !isRecord(result) ||
-    (isRecord(charge) &&
-      charge.kind === "charged" &&
-      !(isRecord(screened) && screened.result === "clear"));
+    isRecord(charge) &&
+    charge.kind === "charged" &&
+    !(isRecord(screened) && screened.result === "clear");
   const plain = evidence === "verified" && !screenHolds;
   if (!plain && probation) {
     const until = admission?.admitted && admission.probationUntil ? ` until ${admission.probationUntil.toISOString()}` : "";
@@ -301,7 +325,7 @@ export function lineStates(
   return {
     sealed: true,
     source_signed: line.proofOk,
-    evidence_verified: line.evidenceStatus === "verified",
+    evidence_verified: signedEvidenceStatus(line) === "verified",
     disputed: has("disputes"),
     withdrawn: has("withdraws"),
     superseded: has("supersedes", "corrects"),

@@ -463,6 +463,12 @@ describe("releasing a live line", () => {
     const undated = liveLine({ evidenceStatus: "needs_review", evidenceResult: evidence, caCreatedAt: undefined });
     expect(gate(undated)).toMatchObject({ onProbation: true });
 
+    // Editing the evidenceStatus column to verified does not make a waiver plain.
+    const edited = { ...during, evidenceStatus: "verified" };
+    expect(releaseFor(edited, approvals(edited, "approve_with_waiver"), gate(edited)).holdingBack).toBe(
+      "its evidenceStatus does not match the evidence result reviewers sign; run the intake again"
+    );
+
     const after = liveLine({ evidenceStatus: "needs_review", evidenceResult: evidence, caCreatedAt: until });
     expect(releaseFor(after, approvals(after, "approve_with_waiver"), gate(after)).released).toBe("two_person");
   });
