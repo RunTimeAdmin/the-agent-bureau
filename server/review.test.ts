@@ -686,11 +686,31 @@ describe("pnpm review queue and settle", () => {
     expect(evidenceLabel("paid", null)).toBe("not checked");
   });
 
+  it("labels evidence from the result reviewers sign, and holds a line whose column disagrees", async () => {
+    store.rows.push(
+      row({
+        evidenceStatus: "verified",
+        evidenceResult: { status: "needs_review", reasons: ["no machine check exists for delivered outcomes"] },
+        outcome: "delivered",
+      })
+    );
+    seal(...genesis());
+    const { io, printed } = fakeIO();
+
+    expect(await runReview(["queue"], io)).toBe(0);
+    const out = printed();
+    expect(out).toContain("evidence not checked: no machine check exists for delivered outcomes");
+    expect(out).toContain(
+      "review: its evidenceStatus does not match the evidence result reviewers sign; run the intake again"
+    );
+  });
+
   it("lists each open line with its hash, its sealed decisions and what holds it back", async () => {
     store.rows.push(
       row({
         evidenceStatus: "needs_review",
         evidenceResult: {
+          status: "needs_review",
           reasons: ["no machine check exists for delivered outcomes"],
         },
         outcome: "delivered",
@@ -726,7 +746,7 @@ describe("pnpm review queue and settle", () => {
     );
     expect(out).not.toContain("fur_levymerchant1/gone ");
     expect(out).toContain(
-      `  sign with: --line ${LINE} --hash ${HASH} --data-class test --evidence ${evidenceDigest({ reasons: ["no machine check exists for delivered outcomes"] })}`
+      `  sign with: --line ${LINE} --hash ${HASH} --data-class test --evidence ${evidenceDigest({ status: "needs_review", reasons: ["no machine check exists for delivered outcomes"] })}`
     );
   });
 

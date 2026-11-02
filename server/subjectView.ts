@@ -21,6 +21,7 @@ import {
   lineStates,
   relationProblem,
   releaseFor,
+  signedEvidenceStatus,
   subjectKey,
   type DisplayState,
   type Line,
@@ -215,9 +216,9 @@ export function assembleSubjectView(
         proof_url: `${proofBase}/v1/proofs/${encodeURIComponent(line.packetId)}`,
       },
       evidence: {
-        status: line.evidenceStatus,
+        status: signedEvidenceStatus(line),
         proved:
-          line.evidenceStatus === "verified"
+          signedEvidenceStatus(line) === "verified"
             ? evidenceLabel(line.outcome, "verified")
             : null,
         not_proved: payment

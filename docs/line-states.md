@@ -8,7 +8,7 @@ What the Bureau knows about each stored line, kept as separate facts instead of 
 | ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------- |
 | `sealed`            | Always, for a stored line: CounterAudit sealed it as a packet.                                 | CounterAudit ingest         |
 | `source_signed`     | The packet's public proof passed every check, including the furnisher's signature (`proofOk`). | `server/outcomeProof.ts`    |
-| `evidence_verified` | The evidence check returned `verified` (`evidenceStatus`).                                     | `docs/evidence-verifier.md` |
+| `evidence_verified` | The evidence check returned `verified`, in the result reviewers sign and in `evidenceStatus`.  | `docs/evidence-verifier.md` |
 | `disputed`          | A later line from the same furnisher `disputes` it.                                            | Furnisher relation          |
 | `subject_dispute`   | The subject's dispute counts: `open`, `confirmed`, `corrected`, `withdrawn` or `lapsed`.       | `docs/disputes.md`          |
 | `removed`           | The subject's dispute lapsed: the furnisher did not answer within 15 days.                     | `docs/disputes.md`          |
