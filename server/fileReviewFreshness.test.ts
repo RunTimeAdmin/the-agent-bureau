@@ -125,7 +125,8 @@ const genesis = () =>
 const decision = (
   reviewer: Person,
   verdict: "approve" | "reject",
-  decidedAt: string
+  decidedAt: string,
+  dataClass: "test" | "live" = "test"
 ) =>
   signReviewDecision(
     {
@@ -134,7 +135,7 @@ const decision = (
       furnisher_id: LINE.furnisherId,
       event_id: LINE.eventId,
       signed_event_hash: LINE.signedEventHash,
-      data_class: "test",
+      data_class: dataClass,
       evidence_digest: evidenceDigest(EVIDENCE),
       decision: verdict,
       // A rejection is counted only with a reason.
@@ -347,6 +348,21 @@ describe("pnpm file assemble and the review log", () => {
       { sequence: 3, packet_id: idOf(3), decision: "approve" },
       { sequence: 4, packet_id: idOf(4), decision: "approve" },
     ]);
+  });
+
+  it("signs no file with a live line, though two reviewers released it, until counsel's review", async () => {
+    store.lines = [{ ...LINE, dataClass: "live" as const }];
+    const released = [
+      ...genesis(),
+      decision("alice", "approve", "2026-11-01T10:00:00.000Z", "live"),
+      decision("bob", "approve", "2026-11-01T10:05:00.000Z", "live"),
+    ];
+    const { io, files, out } = fileIO(counterAudit(released));
+    expect(await assemble(io, "live.json")).toBe(1);
+    expect(files["live.json"]).toBeUndefined();
+    expect(out.join("\n")).toContain(
+      "Not signed: 1 of the lines on this file are live data, and files with live lines are held until counsel has reviewed"
+    );
   });
 
   it("never signs the old release after a rejection sealed since the last sync", async () => {
