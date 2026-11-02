@@ -24,7 +24,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 | ------------------------- | --------------------------------------------------------------------------------------------- |
 | `COUNTERAUDIT_API_URL`    | CounterAudit's API. Default `https://api.counteraudit.io`.                                    |
 | `COUNTERAUDIT_ORG_ID`     | The Bureau's CounterAudit organization. Every proof must name this org, or its check fails.   |
-| `COUNTERAUDIT_INGEST_KEY` | An API key of that org with the `ingest` role. Secret: the script never prints it.            |
+| `COUNTERAUDIT_INGEST_KEY` | An API key of that org with the `ingest` role. Secret: the script never prints it. A `--sealed` run needs it too, to seal evidence results. |
 | `DATABASE_URL`            | The Bureau's MySQL database, as for the server.                                               |
 | `ARC_TESTNET_RPC_URL`     | Arc testnet JSON-RPC for the evidence check, read-only. Default `https://rpc.testnet.arc.io`. |
 | `ARC_TESTNET_EXPLORER_URL` | Arc testnet's explorer for the funding screen, read-only. Default `https://explorer.testnet.arc.io`. |
@@ -39,7 +39,7 @@ pnpm furnish:intake --test-data signed.jsonl
 
 A furnisher that seals its events in its own CounterAudit organization sends packet ids with them instead; `--sealed` takes those, checks their public proofs against the furnisher's listed organization and key, and seals nothing. See `docs/cross-org-intake.md`.
 
-For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
+For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. Each evidence result it stores it also seals in the Bureau's organization with the `agent-bureau-evidence-v1` connector (`docs/agent-file.md`, "Evidence seals"), and says `evidence sealed as packet ...`; a result it stored but could not seal makes the run exit 1, and no file carries that line until a run seals it. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
 
 Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. An event sealed before 2026-11-02 with an `event_id` that is not a UUIDv4 is the exception: CounterAudit now refuses it with 422 even though it sealed it before, so a re-run does not refresh its checks. A line taken with `--sealed` is not affected, since that run seals nothing. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
 

@@ -13,7 +13,7 @@
 // (server/lineState.ts); that takes effect here.
 import { readFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
-import { fetchProof, ingestSignedEvent } from "./counteraudit";
+import { fetchProof, ingestEvidenceRecord, ingestSignedEvent } from "./counteraudit";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import {
   findOtherOutcomeEventWithEvidence,
@@ -30,8 +30,10 @@ import {
   verifyEvidence,
   type EvidenceResult,
 } from "./evidence";
+import { evidenceRecordFor, readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
 import { SCREEN, type FundingScreen } from "./fundingScreen";
 import { takesOverClaim, type Line } from "./lineState";
+import { evidenceDigest } from "./reviewDecision";
 import {
   PROOF_CHECKS,
   isRecord,
@@ -403,6 +405,30 @@ function sealedChecks(
 
 const PACKET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** The evidence seals as CounterAudit holds them, or why they could not be read. */
+type SealsNow = () => Promise<Map<string, SealedEvidence> | string>;
+
+// Reads the evidence seals at most once a run, and only when a line needs them.
+function sealsReader(): SealsNow {
+  let read: Promise<Map<string, SealedEvidence> | string> | undefined;
+  return () =>
+    (read ??= (async () => {
+      if (!ENV.counterauditOrgId || !ENV.counterauditReadKey) {
+        return "COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY are not both set, so it cannot be checked against its seal";
+      }
+      try {
+        const got = await readEvidenceSeals({
+          apiUrl: ENV.counterauditApiUrl,
+          readKey: ENV.counterauditReadKey,
+          orgId: ENV.counterauditOrgId,
+        });
+        return "problem" in got ? `the evidence seals could not be read: ${got.problem}` : got.seals;
+      } catch (error) {
+        return `the evidence seals could not be read: ${describeError(error)}`;
+      }
+    })());
+}
+
 // One line of a sealed file: `{"packet_id": ..., "event": {...}}`, a packet the
 // furnisher sealed in its own CounterAudit organization and the signed event in
 // it. Nothing is sent to CounterAudit; the proof is fetched without a key.
@@ -411,7 +437,8 @@ async function intakeSealedLine(
   receivedAt: Date,
   io: IntakeIO,
   tally: Tally,
-  furnishers: Record<string, Furnisher>
+  furnishers: Record<string, Furnisher>,
+  sealsNow: SealsNow
 ): Promise<{ report: string; clean: boolean }> {
   let line: unknown;
   try {
@@ -531,6 +558,7 @@ async function intakeSealedLine(
     retryHint: "",
     io,
     tally,
+    sealsNow,
   });
 }
 
@@ -540,7 +568,8 @@ async function intakeLine(
   text: string,
   receivedAt: Date,
   io: IntakeIO,
-  tally: Tally
+  tally: Tally,
+  sealsNow: SealsNow
 ): Promise<{ report: string; clean: boolean }> {
   let event: unknown;
   try {
@@ -648,6 +677,7 @@ async function intakeLine(
     allowInsert: true,
     io,
     tally,
+    sealsNow,
   });
 }
 
@@ -674,6 +704,7 @@ type RecordContext = {
   retryHint?: string;
   io: IntakeIO;
   tally: Tally;
+  sealsNow: SealsNow;
 };
 
 // The half of a line both intakes share once its packet and proof are known:
@@ -694,6 +725,7 @@ async function recordLine({
   retryHint = ", CounterAudit will answer 200 with the same packet",
   io,
   tally,
+  sealsNow,
 }: RecordContext): Promise<{ report: string; clean: boolean }> {
   const checked = await verifyEvidence(event);
   const evidenceCheckedAt = io.now();
@@ -701,6 +733,7 @@ async function recordLine({
   let evidence = checked;
 
   let stored = false;
+  let sealedAs: string | null = null;
   try {
     const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
     const holder = claim
@@ -723,12 +756,29 @@ async function recordLine({
         claim = null;
       }
     }
-    // Writes the evidence, and if the unique key shows another run claimed the
-    // same charge in the meantime, writes it again as that run's second line.
+    // Seals the result in the Bureau's organization before the store holds it, so the result
+    // sealed last is never older than the stored one: if the write then fails, a file stops
+    // rather than count an older result (server/evidenceSeal.ts).
+    const seal = async () => {
+      const sealed = await ingestEvidenceRecord(
+        evidenceRecordFor(
+          { furnisherId: fields.furnisherId, eventId: fields.eventId, signedEventHash: signedEventHash(event) },
+          evidence,
+          evidenceCheckedAt
+        )
+      );
+      if (sealed.kind === "refused") {
+        throw new Error(`evidence not sealed (${sealed.status ?? "no answer"}: ${sealed.message})`);
+      }
+      sealedAs = sealed.packet.packet_id;
+    };
+    // Seals and writes the evidence, and if the unique key shows another run claimed the
+    // same charge in the meantime, seals and writes it again as that run's second line.
     const writeEvidence = async (
       write: (columns: ReturnType<typeof evidenceColumns>) => Promise<void>
     ) => {
       try {
+        await seal();
         if (takeoverFrom && claim) {
           await releaseEvidenceClaim(takeoverFrom.id, claim);
           takeover = `takes over the charge from ${takeoverFrom.furnisherId}/${takeoverFrom.eventId}, which it ${fields.relationType}`;
@@ -738,6 +788,7 @@ async function recordLine({
         if (!claim || !isEvidenceKeyConflict(error)) throw error;
         evidence = reusedCharge(checked, await settlementHolder(claim, fields));
         claim = null;
+        await seal();
         await write(evidenceColumns(evidence, claim, evidenceCheckedAt));
       }
     };
@@ -814,7 +865,24 @@ async function recordLine({
         evidence.charge &&
         storedChargeKey(storedResult.charge) === chargeKey(evidence.charge)
       ) {
-        evidence = { ...evidence, funding_screen: storedScreen as unknown as FundingScreen };
+        // Kept only from the result CounterAudit sealed last for the line: a screen put back in
+        // the store would otherwise be sealed again as a new result.
+        const seals = await sealsNow();
+        const last =
+          typeof seals === "string"
+            ? undefined
+            : sealFor(seals, {
+                furnisherId: fields.furnisherId,
+                eventId: fields.eventId,
+                signedEventHash: signedEventHash(event),
+              });
+        if (last && last.record.evidence_digest === evidenceDigest(existing.evidenceResult)) {
+          evidence = { ...evidence, funding_screen: storedScreen as unknown as FundingScreen };
+        } else {
+          parts.push(
+            `the stored funding screen is not kept: ${typeof seals === "string" ? seals : "the stored result is not the one CounterAudit sealed last for this line"}`
+          );
+        }
       }
       if (evidenceReached)
         await writeEvidence(columns =>
@@ -845,6 +913,7 @@ async function recordLine({
   else if (evidence.status === "failed") tally.evidenceFailed++;
   else tally.evidenceNotChecked++;
   parts.push(describeEvidence(evidence));
+  if (sealedAs) parts.push(`evidence sealed as packet ${sealedAs}`);
 
   let settled = true;
   if (stored) {
@@ -891,10 +960,14 @@ export async function runIntake(
   }
 
   // Names only: the values are secrets or connection strings. A sealed run
-  // sends nothing to CounterAudit, so it needs no key of the Bureau's.
+  // sends no event to CounterAudit, but it seals each evidence result in the
+  // Bureau's organization, so it needs the ingest key too.
   const missing = (
     sealed
-      ? [["DATABASE_URL", ENV.databaseUrl]]
+      ? [
+          ["COUNTERAUDIT_INGEST_KEY", ENV.counterauditIngestKey],
+          ["DATABASE_URL", ENV.databaseUrl],
+        ]
       : [
           ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
           ["COUNTERAUDIT_INGEST_KEY", ENV.counterauditIngestKey],
@@ -930,6 +1003,7 @@ export async function runIntake(
       : `Test-data intake into CounterAudit org ${ENV.counterauditOrgId} at ${ENV.counterauditApiUrl}`
   );
   const tally = newTally();
+  const sealsNow = sealsReader();
   let lines = 0;
   let allClean = true;
   const fileLines = text.split(/\r?\n/);
@@ -938,8 +1012,8 @@ export async function runIntake(
     if (line === "") continue;
     lines++;
     const { report, clean } = sealed
-      ? await intakeSealedLine(line, io.now(), io, tally, furnishers)
-      : await intakeLine(line, io.now(), io, tally);
+      ? await intakeSealedLine(line, io.now(), io, tally, furnishers, sealsNow)
+      : await intakeLine(line, io.now(), io, tally, sealsNow);
     if (!clean) allClean = false;
     io.log(`line ${index + 1}: ${report}`);
   }

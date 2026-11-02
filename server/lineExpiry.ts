@@ -18,6 +18,7 @@ import {
   listExpiryLines,
   schemaReady,
 } from "./db";
+import { runSealEvidence } from "./evidenceBackfill";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import { relationProblem, type Line } from "./lineState";
 import {
@@ -71,7 +72,11 @@ const defaultIO: LinesIO = {
   furnishers: FURNISHERS,
 };
 
-export const USAGE = ["Usage:", "  pnpm lines expire [--dry-run]"].join("\n");
+export const USAGE = [
+  "Usage:",
+  "  pnpm lines expire [--dry-run]",
+  "  pnpm lines seal-evidence [--dry-run]",
+].join("\n");
 
 const iso = (value: Date | string) =>
   (value instanceof Date ? value : new Date(value)).toISOString();
@@ -237,10 +242,14 @@ export async function runLines(
   io: LinesIO = defaultIO
 ): Promise<number> {
   const [command, ...flags] = args;
-  if (command !== "expire" || flags.some(f => f !== "--dry-run")) {
+  if (
+    (command !== "expire" && command !== "seal-evidence") ||
+    flags.some(f => f !== "--dry-run")
+  ) {
     io.log(USAGE);
     return 2;
   }
+  if (command === "seal-evidence") return runSealEvidence(flags, io);
   const dryRun = flags.includes("--dry-run");
   const missing = [
     ["DATABASE_URL", ENV.databaseUrl],

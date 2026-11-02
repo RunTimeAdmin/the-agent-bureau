@@ -1,0 +1,336 @@
+{
+  "description": "Shared test vectors for the Agent Bureau's evidence records (server/evidenceSeal.ts), which CounterAudit seals through the agent-bureau-evidence-v1 connector in the Bureau's own organization. valid records pass the form check; each invalid record breaks the one rule named. Built by scripts/evidence-vectors.ts in the-agent-bureau.",
+  "schema": "agent-bureau/evidence-result/v1",
+  "connector_id": "agent-bureau-evidence-v1",
+  "valid": [
+    {
+      "id": "verified_plain",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "needs_review_needs_waiver",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "needs_review",
+        "needs_waiver": true,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "verified_with_a_screen_to_waive",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": true,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "failed",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "failed",
+        "needs_waiver": true,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "pending",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "pending",
+        "needs_waiver": true,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "error",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "error",
+        "needs_waiver": true,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "event_id_from_before_uuids",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "levy-sub8-charge1",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "not_an_object",
+      "rule": "not a JSON object",
+      "record": [
+        {
+          "schema": "agent-bureau/evidence-result/v1",
+          "furnisher_id": "fur_vectors01",
+          "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+          "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+          "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "status": "verified",
+          "needs_waiver": false,
+          "checked_at": "2026-11-02T12:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "unknown_field",
+      "rule": "unknown field reason",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z",
+        "reason": "extra"
+      }
+    },
+    {
+      "id": "no_schema",
+      "rule": "schema is missing",
+      "record": {
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "no_event_id",
+      "rule": "event_id is missing",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "no_evidence_digest",
+      "rule": "evidence_digest is missing",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "no_needs_waiver",
+      "rule": "needs_waiver is missing",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "no_checked_at",
+      "rule": "checked_at is missing",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false
+      }
+    },
+    {
+      "id": "another_schema",
+      "rule": "schema is not agent-bureau/evidence-result/v1",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v2",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "furnisher_id_not_fur",
+      "rule": "furnisher_id is not a furnisher id (fur_...)",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "levymerchant1",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "event_id_with_a_space",
+      "rule": "event_id is not an event id",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "charge 1",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "signed_event_hash_uppercase",
+      "rule": "signed_event_hash is not 64 lowercase hex characters",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "evidence_digest_short",
+      "rule": "evidence_digest is not 64 lowercase hex characters",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "status_unknown",
+      "rule": "status is not one of verified, failed, needs_review, pending, error",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "waived",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "needs_waiver_text",
+      "rule": "needs_waiver is not true or false",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": "false",
+        "checked_at": "2026-11-02T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "checked_at_without_milliseconds",
+      "rule": "checked_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T12:00:00Z"
+      }
+    },
+    {
+      "id": "checked_at_with_an_offset",
+      "rule": "checked_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-11-02T13:00:00.000+01:00"
+      }
+    },
+    {
+      "id": "checked_at_not_a_day",
+      "rule": "checked_at is not a UTC time with milliseconds",
+      "record": {
+        "schema": "agent-bureau/evidence-result/v1",
+        "furnisher_id": "fur_vectors01",
+        "event_id": "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        "signed_event_hash": "abababababababababababababababababababababababababababababababab",
+        "evidence_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "status": "verified",
+        "needs_waiver": false,
+        "checked_at": "2026-02-30T12:00:00.000Z"
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@
 // subject dispute records through it (docs/disputes.md).
 import { ENV } from "./_core/env";
 import { DISPUTE_CONNECTOR_ID } from "./dispute";
+import { EVIDENCE_CONNECTOR_ID } from "./evidenceSeal";
 import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
 
 const TIMEOUT_MS = 15_000;
@@ -182,6 +183,26 @@ export type DisputeIngestResult =
 export async function ingestDisputeRecord(
   record: Record<string, unknown>
 ): Promise<DisputeIngestResult> {
+  return ingestRecord(DISPUTE_CONNECTOR_ID, record);
+}
+
+/**
+ * Seals one evidence record (server/evidenceSeal.ts) in the Bureau's
+ * organization through the agent-bureau-evidence-v1 connector, which checks its
+ * form. No public proof: a file and verify --current read it with the Bureau's
+ * read key.
+ */
+export async function ingestEvidenceRecord(
+  record: Record<string, unknown>
+): Promise<DisputeIngestResult> {
+  return ingestRecord(EVIDENCE_CONNECTOR_ID, record);
+}
+
+// A record of the Bureau's own, sealed in its organization without a public proof.
+async function ingestRecord(
+  connectorId: string,
+  record: Record<string, unknown>
+): Promise<DisputeIngestResult> {
   const key = ENV.counterauditIngestKey;
   if (!key) {
     return {
@@ -201,7 +222,7 @@ export async function ingestDisputeRecord(
         accept: "application/json",
       },
       body: JSON.stringify({
-        connector_id: DISPUTE_CONNECTOR_ID,
+        connector_id: connectorId,
         raw_event: record,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),

@@ -17,6 +17,7 @@ const db = vi.hoisted(() => ({
 }));
 const ca = vi.hoisted(() => ({
   fetchProof: vi.fn(),
+  ingestEvidenceRecord: vi.fn(),
   ingestSignedEvent: vi.fn(),
 }));
 // The keys the intake checks proofs against, pinned in counterauditKeys.ts;
@@ -25,6 +26,8 @@ const pinned = vi.hoisted(() => ({ keys: [] as Record<string, unknown>[] }));
 // The real evidence check unless a test says otherwise. The fixture event is a
 // "delivered" line, which it sends to review without reading any chain.
 const evidence = vi.hoisted(() => ({ verifyEvidence: vi.fn() }));
+// The evidence seals as CounterAudit holds them, for a test that reads them.
+const seals = vi.hoisted(() => ({ readEvidenceSeals: vi.fn() }));
 
 vi.mock("./db", () => db);
 vi.mock("./counteraudit", () => ca);
@@ -34,10 +37,16 @@ vi.mock("./evidence", async importOriginal => {
   evidence.verifyEvidence.mockImplementation(actual.verifyEvidence);
   return { ...actual, verifyEvidence: evidence.verifyEvidence };
 });
+vi.mock("./evidenceSeal", async importOriginal => {
+  const actual = await importOriginal<typeof import("./evidenceSeal")>();
+  return { ...actual, readEvidenceSeals: seals.readEvidenceSeals };
+});
 
 import bs58 from "bs58";
 import { runIntake, type IntakeIO } from "./furnishIntake";
+import { EVIDENCE_SCHEMA } from "./evidenceSeal";
 import { canonicalizeJson } from "./outcomeProof";
+import { evidenceDigest } from "./reviewDecision";
 
 // The real CounterAudit output in fixtures/counteraudit (see
 // outcomeProof.test.ts), so the proof check below runs for real.
@@ -106,6 +115,11 @@ beforeEach(() => {
   vi.stubEnv("DATABASE_URL", `mysql://bureau:${DB_PASSWORD}@127.0.0.1/bureau`);
   db.schemaReady.mockResolvedValue(true);
   ca.fetchProof.mockResolvedValue({ ok: true, proof });
+  // Each stored evidence result is sealed in the Bureau's organization.
+  ca.ingestEvidenceRecord.mockResolvedValue({
+    kind: "sealed",
+    packet: { ...packet, packet_id: "00000000-0000-4000-8000-0000000000e1" },
+  });
   pinned.keys = [...jwks.keys];
 });
 
@@ -242,6 +256,56 @@ describe("runIntake", () => {
     expect(printed()).toContain(`evidence verified (arc-testnet tx ${TX}, log 14)`);
   });
 
+  it("seals each evidence result it stores in the Bureau's organization, and exits 1 when it cannot", async () => {
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const first = fakeIO();
+    expect(await runIntake(["--test-data", "events.jsonl"], first.io)).toBe(0);
+    const row = db.insertOutcomeEvent.mock.calls[0][0];
+    expect(ca.ingestEvidenceRecord).toHaveBeenCalledWith({
+      schema: EVIDENCE_SCHEMA,
+      furnisher_id: "fur_e2etest01",
+      event_id: "e2e-20261030185449",
+      signed_event_hash: row.signedEventHash,
+      evidence_digest: evidenceDigest(row.evidenceResult),
+      status: "verified",
+      // A settled payment with no funding screen needs a waiver.
+      needs_waiver: true,
+      checked_at: NOW.toISOString(),
+    });
+    expect(first.printed()).toContain("evidence sealed as packet 00000000-0000-4000-8000-0000000000e1");
+
+    // Sealed before it is stored: a result CounterAudit does not seal is not stored either.
+    ca.ingestEvidenceRecord.mockResolvedValueOnce({
+      kind: "refused",
+      status: 503,
+      error: "unavailable",
+      message: "try later",
+    });
+    db.insertOutcomeEvent.mockClear();
+    evidence.verifyEvidence.mockResolvedValueOnce(VERIFIED);
+    const refused = fakeIO();
+    expect(await runIntake(["--test-data", "events.jsonl"], refused.io)).toBe(1);
+    expect(refused.printed()).toContain("not stored (evidence not sealed (503: try later)); run again to store it");
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+    // So is a re-run's result for a line already stored: its evidence is left as it was.
+    db.findOutcomeEvent.mockResolvedValueOnce({ ...stored, evidenceResult: VERIFIED });
+    ca.ingestSignedEvent.mockResolvedValueOnce({ kind: "already_sealed", status: 200, packet });
+    ca.ingestEvidenceRecord.mockResolvedValueOnce({ kind: "refused", status: 429, error: "rate", message: "slow down" });
+    evidence.verifyEvidence.mockResolvedValueOnce({ ...VERIFIED, status: "needs_review" });
+    expect(await runIntake(["--test-data", "events.jsonl"], fakeIO().io)).toBe(1);
+    expect(db.updateOutcomeEventEvidence).not.toHaveBeenCalled();
+
+    // A re-run whose check reaches no result writes and seals nothing.
+    ca.ingestEvidenceRecord.mockClear();
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: VERIFIED });
+    evidence.verifyEvidence.mockResolvedValueOnce({ ...VERIFIED, status: "pending" });
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(ca.ingestEvidenceRecord).not.toHaveBeenCalled();
+  });
+
   it("fails a line whose charge another line already holds, so no review can release it", async () => {
     ca.ingestSignedEvent.mockResolvedValue({ kind: "sealed", status: 201, packet });
     db.findOutcomeEvent.mockResolvedValue(undefined);
@@ -295,6 +359,12 @@ describe("runIntake", () => {
     expect(printed()).toContain(
       "evidence FAILED: the same charge already backs fur_e2etest01/parallel-1"
     );
+    // Each result is sealed before it is written, so the one stored is the one sealed last.
+    expect(ca.ingestEvidenceRecord).toHaveBeenCalledTimes(2);
+    expect(ca.ingestEvidenceRecord.mock.calls[1][0]).toMatchObject({
+      status: "failed",
+      evidence_digest: evidenceDigest(row.evidenceResult),
+    });
   });
 
   it("keeps a complete funding screen when a re-run's screen could not read", async () => {
@@ -315,9 +385,53 @@ describe("runIntake", () => {
     ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
     db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: complete });
     db.updateOutcomeEventEvidence.mockResolvedValue(undefined);
+    // The stored result is the one CounterAudit sealed last for the line.
+    vi.stubEnv("COUNTERAUDIT_READ_KEY", "ca_read_bureau");
+    const sealedLast = (result: unknown) =>
+      new Map([
+        [
+          stored.signedEventHash,
+          {
+            packetId: "00000000-0000-4000-8000-0000000000e0",
+            sequence: 4,
+            record: {
+              schema: "agent-bureau/evidence-result/v1",
+              furnisher_id: "fur_e2etest01",
+              event_id: "e2e-20261030185449",
+              signed_event_hash: stored.signedEventHash,
+              evidence_digest: evidenceDigest(result),
+              status: "verified",
+              needs_waiver: false,
+              checked_at: "2026-10-30T18:00:00.000Z",
+            },
+          },
+        ],
+      ]);
+    seals.readEvidenceSeals.mockResolvedValue({ seals: sealedLast(complete) });
     evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
     await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
     expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen).toEqual(screen("clear"));
+
+    // A clear screen put back in the store, over a result sealed since: not kept, and not sealed
+    // again as new.
+    const flaggedSince = { ...VERIFIED, funding_screen: screen("flagged", { flags: ["first seen"] }) };
+    seals.readEvidenceSeals.mockResolvedValue({ seals: sealedLast(flaggedSince) });
+    evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
+    const planted = fakeIO();
+    await runIntake(["--test-data", "events.jsonl"], planted.io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.read_failed).toBe(true);
+    expect(planted.printed()).toContain(
+      "the stored funding screen is not kept: the stored result is not the one CounterAudit sealed last for this line"
+    );
+    // Nor without the read key to check it.
+    vi.stubEnv("COUNTERAUDIT_READ_KEY", "");
+    seals.readEvidenceSeals.mockResolvedValue({ seals: sealedLast(complete) });
+    evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
+    const keyless = fakeIO();
+    await runIntake(["--test-data", "events.jsonl"], keyless.io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.read_failed).toBe(true);
+    expect(keyless.printed()).toContain("cannot be checked against its seal");
+    vi.stubEnv("COUNTERAUDIT_READ_KEY", "ca_read_bureau");
 
     // A screen that read everything replaces the stored one.
     const flagged = { ...VERIFIED, funding_screen: screen("flagged", { flags: ["first seen"] }) };
@@ -809,9 +923,9 @@ describe("runIntake --sealed", () => {
   const sealedLine = JSON.stringify({ packet_id: proof.packet_id, event });
 
   beforeEach(() => {
-    // A sealed run needs no Bureau CounterAudit key.
+    // A sealed run sends no event, so it needs no Bureau organization id; it seals each
+    // evidence result with the Bureau's ingest key.
     vi.stubEnv("COUNTERAUDIT_ORG_ID", "");
-    vi.stubEnv("COUNTERAUDIT_INGEST_KEY", "");
     pinned.keys = [...jwks.keys, ...testJwks.keys];
     ca.fetchProof.mockResolvedValue({ ok: true, proof: sealedProof() });
     db.findOutcomeEvent.mockResolvedValue(undefined);
@@ -822,6 +936,14 @@ describe("runIntake --sealed", () => {
     const code = await runIntake(["--test-data", "--sealed", "sealed.jsonl"], io, furnishers);
     return { code, printed };
   }
+
+  it("needs the Bureau's ingest key, to seal the evidence results it stores", async () => {
+    vi.stubEnv("COUNTERAUDIT_INGEST_KEY", "");
+    const { code, printed } = await run();
+    expect(code).toBe(2);
+    expect(printed()).toContain("Not set: COUNTERAUDIT_INGEST_KEY");
+    expect(ca.fetchProof).not.toHaveBeenCalled();
+  });
 
   it("stores a packet from the furnisher's own organization once its proof verifies, sending nothing", async () => {
     const signed = sealedProof();

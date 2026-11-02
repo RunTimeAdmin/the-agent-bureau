@@ -19,6 +19,8 @@ import {
 } from "./agentFile";
 import { BUREAU_FILE_KEYS } from "./bureauFileKeys";
 import { DISPUTE_SCHEMA, checkLineDisputes, signWithWallet, walletAddress } from "./dispute";
+import type { EvidenceResult } from "./evidence";
+import { evidenceRecordFor, type SealedEvidence } from "./evidenceSeal";
 import type { Furnisher } from "./furnishers";
 import type { Line, Review } from "./lineState";
 import {
@@ -574,6 +576,47 @@ describe("assembleFile", () => {
     expect(checked.file.history.map(l => [l.counteraudit.packet_id, l.display_state])).toEqual([
       [line.packetId, "withdrawn"],
     ]);
+  });
+
+  it("with evidenceSeals, counts approvals only while the stored result is the one sealed last", () => {
+    const log = reviewLog();
+    const line = log.approve(stored());
+    const seals = (digest: string) =>
+      new Map<string, SealedEvidence>([
+        [
+          line.signedEventHash,
+          {
+            packetId: "e0000000-0000-4000-8000-000000000001",
+            sequence: 3,
+            record: { ...evidenceRecordFor(line, EVIDENCE as EvidenceResult, NOW), evidence_digest: digest },
+          },
+        ],
+      ]);
+    const assembled = (evidenceSeals: Map<string, SealedEvidence>, rows: StoredLine[] = [line]) =>
+      assembleFile({ wallet: WALLET }, rows, log.reviewsOf, { ...OPTIONS, evidenceSeals });
+
+    const sealedLast = assembled(seals(evidenceDigest(EVIDENCE)));
+    expect(sealedLast.skipped).toEqual([]);
+    expect(sealedLast.file.furnished_outcomes[0].evidence_seal).toEqual({
+      org_id: BUREAU_ORG,
+      packet_id: "e0000000-0000-4000-8000-000000000001",
+      sequence: 3,
+      evidence_digest: evidenceDigest(EVIDENCE),
+    });
+
+    // The store holds a result reviewers approved, but CounterAudit sealed another since.
+    const rolledBack = assembled(seals("f".repeat(64)));
+    expect(rolledBack.file.furnished_outcomes).toEqual([]);
+    expect(rolledBack.skipped).toEqual([
+      `${line.packetId}: its stored evidence result is not the one CounterAudit sealed last for it`,
+    ]);
+
+    // A line its stored data does not release either is left off without a word.
+    const unreviewed = stored();
+    expect(assembled(new Map(), [unreviewed]).skipped).toEqual([]);
+    // A rejection holds a line whatever result it was signed against.
+    const rejected = log.approve(log.approve(stored()), "reject");
+    expect(assembled(new Map(), [rejected]).skipped).toEqual([]);
   });
 
   it("carries the disclosures every file needs, and says who the reviewers were", () => {

@@ -158,8 +158,7 @@ export function currentDecisions(line: Line, reviews: Review[]): Review[] {
 }
 
 // A MariaDB server older than 10.5.2 returns the JSON column as text.
-function evidenceResultOf(line: Pick<Line, "evidenceResult">): unknown {
-  const result: unknown = line.evidenceResult;
+function parsedResult(result: unknown): unknown {
   if (typeof result !== "string") return result;
   try {
     return JSON.parse(result);
@@ -168,8 +167,29 @@ function evidenceResultOf(line: Pick<Line, "evidenceResult">): unknown {
   }
 }
 
+function evidenceResultOf(line: Pick<Line, "evidenceResult">): unknown {
+  return parsedResult(line.evidenceResult);
+}
+
 const statusIn = (result: unknown): string | null =>
   isRecord(result) && typeof result.status === "string" ? result.status : null;
+
+/**
+ * Whether an approval must waive something for this evidence result to count: true unless the
+ * evidence was verified and, for a settled payment, its funding screen is clear. A flag, an
+ * inconclusive screen or none needs a person to waive it with a reason (review M-04, decided
+ * 2026-10-31). An evidence seal records it (server/evidenceSeal.ts).
+ */
+export function needsWaiver(evidenceResult: unknown): boolean {
+  const result = parsedResult(evidenceResult);
+  const charge = isRecord(result) ? result.charge : undefined;
+  const screened = isRecord(result) ? result.funding_screen : undefined;
+  const screenHolds =
+    isRecord(charge) &&
+    charge.kind === "charged" &&
+    !(isRecord(screened) && screened.result === "clear");
+  return !(statusIn(result) === "verified" && !screenHolds);
+}
 
 /**
  * The line's evidence status as reviewers sign it: the status in its evidence result, while the
@@ -253,15 +273,7 @@ export function releaseFor(
   if (rejected.length > 0) {
     return hold(`rejected by ${rejected.map(d => d.reviewerId).join(", ")}`);
   }
-  // A settled payment counts on a plain approval only when its funding screen
-  // is clear; a flag, an inconclusive screen or none needs a person to waive it
-  // with a reason (review M-04, decided 2026-10-31).
-  const screened = isRecord(result) ? result.funding_screen : undefined;
-  const screenHolds =
-    isRecord(charge) &&
-    charge.kind === "charged" &&
-    !(isRecord(screened) && screened.result === "clear");
-  const plain = evidence === "verified" && !screenHolds;
+  const plain = !needsWaiver(result);
   if (!plain && probation) {
     const until = admission?.admitted && admission.probationUntil ? ` until ${admission.probationUntil.toISOString()}` : "";
     return hold(

@@ -27,7 +27,7 @@ export function counterauditBase(raw: string): string {
   return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
 }
 
-async function call(
+export async function call(
   fetchImpl: Fetch,
   url: string,
   key: string,
