@@ -67,7 +67,7 @@ Beyond the outline below it needs: a two-of-three reviewer quorum for key change
 
 ## Build design (owner's choices, 2026-10-31)
 
-The owner chose four things for the build: the first reviewers come from a genesis record in the review chain, signed by each of them; creating or revoking CounterAudit API keys in the review organization needs a reviewer as second approver; that approval is signed with the reviewer's own review key over the exact request; and the redacted release bundle is built with file assembly, from what this build records.
+The owner chose four things for the build: the first reviewers come from a genesis record in the review chain, signed by each of them; creating or revoking CounterAudit API keys in the review organization needs a reviewer as second approver (two reviewers since the owner's decision of 2026-11-02); that approval is signed with the reviewer's own review key over the exact request; and the redacted release bundle is built with file assembly, from what this build records.
 
 ### Where authority lives
 
@@ -106,7 +106,7 @@ The Bureau reads the review chain in sequence order and applies each record as i
 ### CounterAudit
 
 - **The connector** `agent-bureau-review-v1`, global like `agent-bureau-outcome-v1`. It refuses a record that is not one of the three forms above, seals the signed record in the packet body, and returns a receipt. Review packets are not public (`public_proof` is refused): reasons are for the subject and the reviewers.
-- **Signed approvals for the review organization's keys.** Creating or revoking any API key in the review organization needs a reviewer's approval. CounterAudit's approvals today go through its admin plane, which answers only on the server, as a one-time code: a code shows the approver was there, not which request they meant, so one relayed through the operator could approve another request. Here an approval is instead a record signed with the reviewer's own review key over the request's id, operation and payload, which the operator can carry to CounterAudit but cannot spend on anything else. CounterAudit checks it against the reviewer set the review chain itself establishes, by the rules above. CounterAudit's key approvals are one global setting today (`CA_KEY_APPROVAL_THRESHOLD`), so this is also the first per-organization rule.
+- **Signed approvals for the review organization's keys.** Creating or revoking any API key in the review organization needs two different reviewers' approvals. CounterAudit's approvals today go through its admin plane, which answers only on the server, as a one-time code: a code shows the approver was there, not which request they meant, so one relayed through the operator could approve another request. Here an approval is instead a record signed with the reviewer's own review key over the request's id, operation and payload, which the operator can carry to CounterAudit but cannot spend on anything else. CounterAudit checks it against the reviewer set the review chain itself establishes, by the rules above. CounterAudit's key approvals are one global setting today (`CA_KEY_APPROVAL_THRESHOLD`), so this is also the first per-organization rule.
 
 ### Not in this build
 

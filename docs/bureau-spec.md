@@ -98,7 +98,7 @@ No field rolls these up into a score, grade or recommendation.
 
 Furnisher names are always shown to the subject, so they can dispute. Subscribers see only the furnisher's category ("x402 API seller", "MCP server operator", "marketplace") unless the furnisher opts in to being named.
 
-Retention (proposed): outcome events leave the file after 24 months. Lines removed by a dispute leave at once. The sealed log in CounterAudit keeps everything for audit.
+Retention (provisional baseline, pending counsel): a line leaves files when CounterAudit erases its source, 24 months after the Bureau received it, and `pnpm lines expire` erases the Bureau's copy. A line whose dispute lapsed leaves at once. CounterAudit keeps a signed record of each erasure, not the event.
 
 ## Furnishers
 
@@ -132,7 +132,7 @@ The format and the signing tool live in the public repo [RunTimeAdmin/agent-bure
 - Every event lands in CounterAudit before it can reach a file. CounterAudit refuses an event whose key is not registered for its furnisher, whose signature does not verify, or that reuses an `event_id` the furnisher already used for a different event. A correction is a new event with a `relation` pointing at the old one.
 - Negative outcomes (`payment_failed`, `not_delivered`, `access_revoked`, `policy_violation`) without evidence are held, not shown.
 - A furnisher reports every outcome of a type for the agents it reports on, good and bad. Reporting only negatives gets the furnisher dropped. Credit bureaus require complete reporting for the same reason.
-- **Pilot fallback, unsigned CSV.** During the 90-day pilot only, a furnisher that hasn't set up signing can send an unsigned CSV through a channel agreed at onboarding, either email from its registered contact with DKIM passing or a private upload link issued to it. The Bureau runs `furnish check` on the file and seals it in CounterAudit together with the channel details. Files label those events "unsigned". After the pilot, signatures are required.
+- **Pilot fallback, unsigned CSV.** (Not built yet.) During the 90-day pilot only, a furnisher that hasn't set up signing can send an unsigned CSV through a channel agreed at onboarding, either email from its registered contact with DKIM passing or a private upload link issued to it. The Bureau runs `furnish check` on the file and seals it in CounterAudit together with the channel details. Files label those events "unsigned". After the pilot, signatures are required.
 
 ### Terms (hypotheses to test, not final)
 
@@ -154,7 +154,7 @@ The format and the signing tool live in the public repo [RunTimeAdmin/agent-bure
 
 ## Disputes
 
-A subject disputes by proving control of the agent, the same way Nooscape claims work today: one message signed by the wallet that owns the registration. A furnisher can correct or withdraw its own events at any time.
+A subject disputes by signing the dispute with the wallet the line names, or for a `did:sigvara` the agent address SigvaraIdentity holds (`docs/disputes.md`). Lines about a registry id cannot be disputed until subject matching (Phase 3). A furnisher can correct or withdraw its own events at any time.
 
 1. The subject disputes a specific line, with an optional explanation and evidence.
 2. The line is marked "disputed" on the file at once.
@@ -218,7 +218,7 @@ Only arm's-length parties count. Our own projects, and anyone we pay, don't.
 
 ## Resolved issues
 
-- **Getting the signing tool to furnishers** (decided 2026-10-26). The tool started in this private repo, where outside businesses couldn't run it. Options were (a) publish it, (b) accept unsigned CSV during the pilot, or (c) both. Chose (c): the tool is public at [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish), and unsigned CSV is the pilot fallback described under Furnishers, Rules.
+- **Getting the signing tool to furnishers** (decided 2026-10-26). The tool started in this repository, while it was private, where outside businesses couldn't run it. Options were (a) publish it, (b) accept unsigned CSV during the pilot, or (c) both. Chose (c): the tool is public at [RunTimeAdmin/agent-bureau-furnish](https://github.com/RunTimeAdmin/agent-bureau-furnish), and unsigned CSV is the pilot fallback described under Furnishers, Rules.
 
 ## Alternatives considered
 

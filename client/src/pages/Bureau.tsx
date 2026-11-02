@@ -91,7 +91,7 @@ const furnisherCards = [
     icon: ScrollText,
     code: "01 / REPORT",
     title: "What you send",
-    text: "One line per outcome: paid, payment failed, delivered, not delivered, disputed, refunded, access revoked or policy violation. Your reference, the agent, the time, an amount for payments, and evidence for negatives.",
+    text: "One line per outcome: paid, payment failed, delivered, not delivered, disputed, refunded, access revoked or policy violation. A fresh random id (furnish ids prints them; keep the pairing with your own reference in your records), the agent, the time, an amount for payments, and evidence for negatives.",
     link: { label: "Event format", href: `${FURNISH_TOOL_URL}#csv-columns` },
   },
   {
@@ -140,13 +140,13 @@ const parties = [
     label: "02 / SUBSCRIBERS",
     name: "Check an agent before you transact",
     state: "BY REQUEST",
-    copy: "Ask for a file before you serve an agent, bill it later or give it terms. During the pilot, files are assembled by hand and sent signed. Pricing after the pilot is still being set.",
+    copy: "Ask for a file before you serve an agent, bill it later or give it terms. During the pilot, files with real data are held until counsel has reviewed how the Bureau keeps and uses them. Today only test-data files are signed. Per-file pricing is a pilot hypothesis.",
   },
   {
     label: "03 / AGENT OWNERS",
     name: "See and dispute your file",
     state: "FREE",
-    copy: "Not built yet. An owner will prove control by signing one message with the wallet that owns the registration, then dispute any line: the business that reported it has 15 days to back it up, or the line comes off. Owners will also be able to add a statement to their file.",
+    copy: "Built for test data. An owner signs a dispute with the wallet the line names (or a did:sigvara agent's registered address) and sends it to the Bureau's operator. The business that reported the line has 15 days to confirm, correct or withdraw it, or the line comes off. Owners can add a statement to a confirmed line. A page where owners file disputes themselves, and disputes on registry ids, are not built yet.",
   },
   {
     label: "04 / LIMITS",
@@ -351,9 +351,10 @@ export default function Bureau() {
               <a href="https://nooscape.si" target="_blank" rel="noreferrer">
                 Nooscape
               </a>
-              's agent atlas, payment history, and owners' disputes and
-              statements. Outside reports wait on a legal review of retention
-              and on independent reviewers.
+              's agent atlas, payment history, and a page where owners file
+              disputes themselves. Files with real data, and paid access, are
+              held for counsel. Outside reports wait on a legal review of
+              retention and on independent reviewers.
             </span>
           </p>
         </section>
@@ -381,8 +382,8 @@ export default function Bureau() {
             <div className="provider-list">
               <span className="mini-label">WHAT YOU GET</span>
               {[
-                "Free Bureau files during the pilot",
-                "Alerts on agents you reported on",
+                "Free Bureau files during the pilot, once counsel clears files with real data",
+                "Alerts on agents you reported on (planned)",
                 "A record bad operators can't rename away",
               ].map((item, index) => (
                 <div key={item}>

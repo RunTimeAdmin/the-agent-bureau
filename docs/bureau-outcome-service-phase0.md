@@ -92,7 +92,7 @@ Proposed: keep three timestamps distinct and never present the furnisher's as in
 These are implemented in the v1 draft and are what the owner is approving as the shape of a v1 event. They do not go live until Phase 2.
 
 - `schema_version` is the literal `"1"`. Unknown fields are rejected (strict objects).
-- Required: `furnisher_id` (`fur_…`), `key_id`, unique `event_id`, `subject_ref`, `occurred_at` (UTC, RFC 3339), `outcome`.
+- Required: `furnisher_id` (`fur_…`), `key_id`, a random UUIDv4 `event_id`, `subject_ref`, `occurred_at` (UTC, RFC 3339), `outcome`.
 - `amount` is required for payment outcomes; evidence with at least one pointer is required for `payment_failed`, `not_delivered`, `access_revoked` and `policy_violation`. (Same rules as v0.)
 - `relation` is optional. When present it carries a `type` (`disputes` | `corrects` | `supersedes` | `withdraws`) and a `target_event_id`. The tool rejects a relation that points at the event's own id.
 - Signature is Ed25519 over `agent-bureau/outcome-event/v1\n` followed by the RFC 8785 canonical JSON of the event without its signature. `key_id` and every semantically relevant field are inside the signed payload. `received_at` is not.
