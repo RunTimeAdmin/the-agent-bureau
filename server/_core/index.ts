@@ -7,7 +7,7 @@ import { MAX_TRPC_BATCH } from "@shared/transformer";
 import { createAgentApi } from "../agentApi";
 import { BUREAU_FILE_KEYS } from "../bureauFileKeys";
 import { pingDb, runMigrations, schemaReady } from "../db";
-import { startSchedules } from "../schedules";
+import { jobStatus, startSchedules } from "../schedules";
 import { parsePublicKey } from "../outcomeProof";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -100,6 +100,12 @@ async function startServer() {
     res
       .status(ready ? 200 : 503)
       .json({ status: ready ? "ready" : "degraded", checks: { db, schema } });
+  });
+  // How the commands the server runs on a timer last ended (server/schedules.ts):
+  // "ok", or "attention" with the problem, for the monitor that watches /api/ready.
+  app.get("/api/jobs", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json(jobStatus(process.env.NODE_ENV === "production" && Boolean(ENV.databaseUrl)));
   });
   // tRPC API
   app.use(
