@@ -19,7 +19,7 @@ import {
 // public keys, and CounterAudit's proof. To update: copy the new file from
 // agent-bureau-furnish and change VECTORS_SHA256.
 const VECTORS_SHA256 =
-  "662e1e4ab48130f413bab306fef3bec52eb254f6297358d823baac7ea1c16b0f";
+  "1c9fe7ab0bb1e884061e3274a38a8c5d30c837bf09853d882cb4ad3d21c0aecb";
 
 type Json = Record<string, unknown>;
 type Vectors = {
