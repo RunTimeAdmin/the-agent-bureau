@@ -1,3 +1,4 @@
+import { createPrivateKey, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { assembleFile, type StoredLine } from "./agentFile";
 import {
@@ -6,11 +7,12 @@ import {
   checkAdmissionForm,
   signAdmission,
   type AdmissionGate,
+  type AdmittedKey,
   type UnsignedAdmission,
 } from "./furnisherAdmission";
 import type { Furnisher } from "./furnishers";
 import { releaseFor, type Line, type Review } from "./lineState";
-import { signedEventHash } from "./outcomeProof";
+import { canonicalizeJson, signedEventHash } from "./outcomeProof";
 import { evidenceDigest, newReviewerKey } from "./reviewDecision";
 import {
   REVIEWER_KEY_SCHEMA,
@@ -26,8 +28,10 @@ const DAY = 24 * 60 * 60 * 1000;
 const ORG = "99999999-8888-4777-8666-555555555555";
 const OTHER_ORG = "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1";
 const FURNISHER = "fur_levymerchant1";
-const KEY = { key_id: "levy-1", public_key: newReviewerKey().publicKey };
-const SECOND_KEY = { key_id: "levy-2", public_key: newReviewerKey().publicKey };
+// The furnisher's two signing keys, by key_id.
+const levyKeys: Record<string, ReturnType<typeof newReviewerKey>> = { "levy-1": newReviewerKey(), "levy-2": newReviewerKey() };
+const KEY = { key_id: "levy-1", public_key: levyKeys["levy-1"].publicKey };
+const SECOND_KEY = { key_id: "levy-2", public_key: levyKeys["levy-2"].publicKey };
 const people = { alice: newReviewerKey(), bob: newReviewerKey(), carol: newReviewerKey() };
 type Person = keyof typeof people;
 const TEAM = (["alice", "bob", "carol"] as const).map(p => ({
@@ -298,8 +302,25 @@ describe("replaying admissions from the review log", () => {
   });
 });
 
-// A live line, as stored, with the organization and key its receipt names.
-function liveLine(overrides: Partial<Line> = {}, receiptSigner: Record<string, unknown> = KEY, orgId = ORG): Line {
+// An outcome event signed as the furnisher tool signs it.
+function signEvent(unsigned: Record<string, unknown>, privateKeyPem: string) {
+  const payload = Buffer.from(`agent-bureau/outcome-event/v1\n${canonicalizeJson(unsigned)}`, "utf8");
+  return { ...unsigned, signature: `ed25519:${sign(null, payload, createPrivateKey(privateKeyPem)).toString("base64url")}` };
+}
+const unsignedEvent = (keyId: string, overrides: Record<string, unknown> = {}) => ({
+  schema_version: "1",
+  furnisher_id: FURNISHER,
+  key_id: keyId,
+  event_id: "charge-1",
+  subject_ref: { wallet: "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77" },
+  occurred_at: "2026-11-03T10:00:00.000Z",
+  outcome: "delivered",
+  ...overrides,
+});
+
+// A live line, as stored: its event signed with the key its receipt names, in that organization.
+function liveLine(overrides: Partial<Line> = {}, receiptSigner: AdmittedKey = KEY, orgId = ORG): Line {
+  const event = signEvent(unsignedEvent(receiptSigner.key_id), levyKeys[receiptSigner.key_id].privateKeyPem);
   return {
     id: 1,
     furnisherId: FURNISHER,
@@ -310,12 +331,12 @@ function liveLine(overrides: Partial<Line> = {}, receiptSigner: Record<string, u
     evidenceStatus: "verified",
     evidenceResult: { status: "verified", reasons: [] },
     evidenceKey: null,
-    signedEventHash: "a".repeat(64),
+    signedEventHash: signedEventHash(event),
     displayState: "unverified",
     relationType: null,
     relationTargetEventId: null,
     caCreatedAt: new Date(T0.getTime() + 200 * DAY),
-    signedEvent: { key_id: receiptSigner.key_id },
+    signedEvent: event,
     receipt: { org_id: orgId, outcome_claim: { signer: { key_id: receiptSigner.key_id, public_key: receiptSigner.public_key } } },
     ...overrides,
   };
@@ -373,6 +394,52 @@ describe("releasing a live line", () => {
     );
   });
 
+  it("holds a line whose signed event the key its receipt names did not sign", () => {
+    const held = (line: Line) => releaseFor(line, approvals(line), gate(line)).holdingBack;
+    // A receipt edited to name the admitted key, over an event another key signed.
+    const forged = signEvent(unsignedEvent(KEY.key_id), levyKeys[SECOND_KEY.key_id].privateKeyPem);
+    expect(held(liveLine({ signedEvent: forged, signedEventHash: signedEventHash(forged) }))).toBe(
+      "its signed event does not verify with levy-1, the key its receipt names"
+    );
+    // An event changed after signing, with its hash changed to match.
+    const line = liveLine();
+    const changed = { ...(line.signedEvent as Record<string, unknown>), outcome: "paid" };
+    expect(held(liveLine({ signedEvent: changed, signedEventHash: signedEventHash(changed) }))).toBe(
+      "its signed event does not verify with levy-1, the key its receipt names"
+    );
+    // Another event the admitted key signed, in place of the one reviewers approved.
+    const other = signEvent(unsignedEvent(KEY.key_id, { event_id: "charge-2" }), levyKeys[KEY.key_id].privateKeyPem);
+    const swapped = { ...line, signedEvent: other };
+    expect(releaseFor(swapped, approvals(line), gate(swapped)).holdingBack).toBe(
+      "its signed event does not hash to the signedEventHash reviewers sign"
+    );
+    // An event the admitted key signed for another furnisher.
+    const elsewhere = signEvent(unsignedEvent(KEY.key_id, { furnisher_id: "fur_othermerchant" }), levyKeys[KEY.key_id].privateKeyPem);
+    expect(held(liveLine({ signedEvent: elsewhere, signedEventHash: signedEventHash(elsewhere) }))).toBe(
+      "its signed event names another furnisher"
+    );
+    // A receipt whose key does not parse fails the same way, without throwing.
+    const badKey = liveLine({}, { key_id: KEY.key_id, public_key: "ed25519:short" });
+    expect(gate(badKey)).toEqual({ admitted: false, problem: "its signed event does not verify with levy-1, the key its receipt names" });
+  });
+
+  it("holds a line whose stored event is nested too deep to hash, without throwing", () => {
+    let nested: Record<string, unknown> = {};
+    for (let i = 0; i < 5000; i++) nested = { a: nested };
+    const deep = liveLine({ signedEvent: { ...(liveLine().signedEvent as Record<string, unknown>), nested } });
+    expect(gate(deep)).toEqual({ admitted: false, problem: "its signed event does not hash to the signedEventHash reviewers sign" });
+    expect(admissionGate(deep, new Map(), {})).toEqual({
+      admitted: false,
+      problem: "its furnisher is not admitted by two reviewers (pnpm review admissions)",
+    });
+  });
+
+  it("reads the signed event and receipt when the database returns JSON as text", () => {
+    const line = liveLine();
+    const asText = { ...line, signedEvent: JSON.stringify(line.signedEvent), receipt: JSON.stringify(line.receipt) };
+    expect(releaseFor(asText, approvals(line), gate(asText)).released).toBe("two_person");
+  });
+
   it("says so when the admission was revoked", () => {
     const revoked = replay(sealed(...genesis(), admit("alice"), admit("bob"), revoke("carol"))).admissions;
     const line = liveLine();
@@ -409,17 +476,8 @@ describe("releasing a live line", () => {
 
 describe("a file with a line sealed during probation", () => {
   it("marks the line and says what that means", () => {
-    const event = {
-      schema_version: "1",
-      furnisher_id: FURNISHER,
-      key_id: KEY.key_id,
-      event_id: "charge-1",
-      subject_ref: { wallet: "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77" },
-      occurred_at: "2026-11-03T10:00:00.000Z",
-      outcome: "delivered",
-      signature: "ed25519:test",
-    };
-    const base = liveLine({ caCreatedAt: new Date(T0.getTime() + DAY), signedEventHash: signedEventHash(event) });
+    const base = liveLine({ caCreatedAt: new Date(T0.getTime() + DAY) });
+    const event = base.signedEvent as ReturnType<typeof unsignedEvent> & { signature: string };
     const line: StoredLine = {
       ...base,
       outcome: "delivered",

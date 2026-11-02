@@ -2,7 +2,7 @@
 // rejection sealed since the last pnpm review sync must hold its line on the next file, and a
 // file is not signed against a log the Bureau could not read to its head. Also each line against
 // its source's retention date: checkable until then, and expired, not failed, once erased.
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import bs58 from "bs58";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -76,8 +76,9 @@ const hashOf = (n: number) =>
     ? "0".repeat(64)
     : createHash("sha256").update(`packet ${n}`).digest("hex");
 
-// One stored line, read from its signed event.
-const event = {
+// One stored line, read from its signed event, signed with the pilot furnisher's key.
+const pilot = newReviewerKey();
+const unsignedEvent = {
   schema_version: "1",
   furnisher_id: "fur_bureaupilot01",
   key_id: "pilot-2026-10",
@@ -85,7 +86,10 @@ const event = {
   subject_ref: { wallet: WALLET },
   occurred_at: "2026-10-31T10:00:00.000Z",
   outcome: "delivered",
-  signature: "ed25519:test",
+};
+const event = {
+  ...unsignedEvent,
+  signature: `ed25519:${sign(null, Buffer.from(`agent-bureau/outcome-event/v1\n${canonicalizeJson(unsignedEvent)}`, "utf8"), createPrivateKey(pilot.privateKeyPem)).toString("base64url")}`,
 };
 const LINE = {
   id: 1,
@@ -147,7 +151,7 @@ const decision = (
   );
 
 // The pilot furnisher's signing key, and a reviewer's admission of the furnisher with it.
-const pilotKey = newReviewerKey().publicKey;
+const pilotKey = pilot.publicKey;
 const admit = (reviewer: Person, publicKey = pilotKey) =>
   signAdmission(
     {

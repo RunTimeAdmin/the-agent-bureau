@@ -12,6 +12,8 @@ import {
   decodeCanonicalBase64url,
   isRecord,
   parsePublicKey,
+  signedEventHash,
+  verifySignatureV1,
 } from "./outcomeProof";
 import type { LogRecord, ReviewerState, ReviewerStatus } from "./reviewLog";
 
@@ -341,32 +343,86 @@ type LineSignerSource = {
   furnisherId: string;
   dataClass: "test" | "live";
   caCreatedAt?: Date | string;
+  signedEventHash: string;
   signedEvent?: unknown;
   receipt?: unknown;
 };
 
+type Signer = { orgId: string; keyId: string; publicKey: string };
+
+// A MariaDB server older than 10.5.2 returns JSON columns as text.
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return isRecord(value) ? value : null;
+}
+
 /**
- * The organization and key a line was sealed and signed with, as CounterAudit's receipt (or the
- * proof a sealed intake kept) states them: the org_id, and the outcome claim's signer for the
- * key_id in the line's signed event. Null when they cannot be read.
+ * The organization and signer a CounterAudit receipt or proof names for a furnisher's key: its
+ * org_id, and the outcome claim's signer. Null when they cannot be read, or the signer names
+ * another furnisher or key.
  */
-export function lineSigner(line: LineSignerSource): { orgId: string; keyId: string; publicKey: string } | null {
-  const receipt = isRecord(line.receipt) ? line.receipt : null;
-  const event = isRecord(line.signedEvent) ? line.signedEvent : null;
-  const claim = receipt && isRecord(receipt.outcome_claim) ? receipt.outcome_claim : null;
+function receiptSigner(receipt: unknown, furnisherId: string, keyId: unknown): Signer | null {
+  const record = asRecord(receipt);
+  const claim = record && isRecord(record.outcome_claim) ? record.outcome_claim : null;
   const signer = claim && isRecord(claim.signer) ? claim.signer : null;
-  if (!receipt || !event || !signer) return null;
-  const keyId = event.key_id;
   if (
-    typeof receipt.org_id !== "string" ||
+    !record ||
+    !signer ||
+    typeof record.org_id !== "string" ||
     typeof keyId !== "string" ||
     typeof signer.public_key !== "string" ||
     (signer.key_id !== undefined && signer.key_id !== keyId) ||
-    (signer.furnisher_id !== undefined && signer.furnisher_id !== line.furnisherId)
+    (signer.furnisher_id !== undefined && signer.furnisher_id !== furnisherId)
   ) {
     return null;
   }
-  return { orgId: receipt.org_id, keyId, publicKey: signer.public_key };
+  return { orgId: record.org_id, keyId, publicKey: signer.public_key };
+}
+
+// Null for an event canonical JSON cannot spell, such as one nested past the stack: a stored row
+// must hold its own line, never throw out of release for every line.
+function eventHash(event: Record<string, unknown>): string | null {
+  try {
+    return signedEventHash(event);
+  } catch {
+    return null;
+  }
+}
+
+function eventVerifies(event: Record<string, unknown>, publicKey: string): boolean {
+  try {
+    return verifySignatureV1(event, publicKey);
+  } catch {
+    return false; // a public key that does not parse
+  }
+}
+
+/**
+ * The organization and key a line was sealed and signed with, as CounterAudit's receipt (or the
+ * proof a sealed intake kept) states them for the key_id in the line's signed event. Nothing the
+ * Bureau checks signs the receipt, so the event is checked against it again: the event must be
+ * the line's furnisher's, hash to the signedEventHash reviewers sign, and verify with the key the
+ * receipt names. A receipt edited to name an admitted key then admits no event that key did not
+ * sign.
+ */
+export function lineSigner(line: LineSignerSource): Signer | { problem: string } {
+  const event = asRecord(line.signedEvent);
+  const signer = event && receiptSigner(line.receipt, line.furnisherId, event.key_id);
+  if (!event || !signer) return { problem: "its receipt does not say which organization and key it came from" };
+  if (event.furnisher_id !== line.furnisherId) return { problem: "its signed event names another furnisher" };
+  if (eventHash(event) !== line.signedEventHash) {
+    return { problem: "its signed event does not hash to the signedEventHash reviewers sign" };
+  }
+  if (!eventVerifies(event, signer.publicKey)) {
+    return { problem: `its signed event does not verify with ${signer.keyId}, the key its receipt names` };
+  }
+  return signer;
 }
 
 /**
@@ -380,7 +436,41 @@ export function admissionGate(
   furnishers: Record<string, Furnisher> = FURNISHERS
 ): AdmissionGate {
   if (line.dataClass !== "live") return { admitted: true, onProbation: false, probationUntil: null };
-  const state = admissions.get(line.furnisherId);
+  return gateFor(line.furnisherId, lineSigner(line), line.caCreatedAt, admissions, furnishers);
+}
+
+/**
+ * The same gate for a live line known only from CounterAudit's proof of it, as `pnpm file verify
+ * --current` has it. The proof must have verified already: its signature is what vouches that
+ * CounterAudit checked the event's signature with that signer's key when it sealed it.
+ */
+export function proofAdmissionGate(
+  proof: Record<string, unknown>,
+  admissions: Map<string, AdmissionState>,
+  furnishers: Record<string, Furnisher> = FURNISHERS
+): AdmissionGate {
+  const claim = isRecord(proof.outcome_claim) ? proof.outcome_claim : {};
+  const signer = isRecord(claim.signer) ? claim.signer : {};
+  const furnisherId = typeof signer.furnisher_id === "string" ? signer.furnisher_id : "";
+  return gateFor(
+    furnisherId,
+    receiptSigner(proof, furnisherId, signer.key_id) ?? {
+      problem: "its proof does not say which organization and key it came from",
+    },
+    typeof proof.created_at === "string" ? proof.created_at : undefined,
+    admissions,
+    furnishers
+  );
+}
+
+function gateFor(
+  furnisherId: string,
+  signer: Signer | { problem: string },
+  caCreatedAt: Date | string | undefined,
+  admissions: Map<string, AdmissionState>,
+  furnishers: Record<string, Furnisher>
+): AdmissionGate {
+  const state = admissions.get(furnisherId);
   const admitted = state?.admitted;
   if (!admitted) {
     return {
@@ -390,15 +480,14 @@ export function admissionGate(
         : "its furnisher is not admitted by two reviewers (pnpm review admissions)",
     };
   }
-  const signer = lineSigner(line);
-  if (!signer) return { admitted: false, problem: "its receipt does not say which organization and key it came from" };
+  if ("problem" in signer) return { admitted: false, problem: signer.problem };
   if (signer.orgId !== admitted.orgId) {
     return { admitted: false, problem: `it was sealed in ${signer.orgId}, not the organization its furnisher was admitted for` };
   }
   if (!admitted.keys.some(k => k.key_id === signer.keyId && k.public_key === signer.publicKey)) {
     return { admitted: false, problem: `its key ${signer.keyId} is not one its furnisher was admitted with` };
   }
-  const listed = Object.hasOwn(furnishers, line.furnisherId) ? furnishers[line.furnisherId] : undefined;
+  const listed = Object.hasOwn(furnishers, furnisherId) ? furnishers[furnisherId] : undefined;
   if (listed) {
     const key = Object.hasOwn(listed.keys, signer.keyId) ? listed.keys[signer.keyId] : undefined;
     if (!key || key.status !== "active" || key.publicKey !== signer.publicKey) {
@@ -406,7 +495,7 @@ export function admissionGate(
     }
   }
   // A line with no sealing time is taken as sealed during probation.
-  const sealedAt = line.caCreatedAt ? new Date(line.caCreatedAt).getTime() : Number.NaN;
+  const sealedAt = caCreatedAt ? new Date(caCreatedAt).getTime() : Number.NaN;
   const onProbation = !(sealedAt >= admitted.probationUntil.getTime());
   return { admitted: true, onProbation, probationUntil: admitted.probationUntil };
 }
