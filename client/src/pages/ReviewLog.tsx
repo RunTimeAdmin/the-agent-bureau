@@ -217,7 +217,7 @@ export default function ReviewLog() {
               ],
               [
                 "Keys need reviewers",
-                "In the review organization a new key took one reviewer's signature of that exact request, and revoking it took two.",
+                "In the review organization a new key took one reviewer's signature of that exact request, and revoking it took two. Since 2 November 2026 a new key needs two reviewers' approvals too.",
               ],
             ].map(([title, text], index) => (
               <div key={title}>
@@ -253,7 +253,8 @@ export default function ReviewLog() {
           <p className="rl-intro">
             Whoever administers the review organization could otherwise issue or
             revoke its keys alone. Each change here was an approval request that
-            ran only on reviewers' signatures over that exact request.
+            ran only on reviewers' signatures over that exact request. Since 2
+            November 2026 a new key needs two reviewers' approvals too.
           </p>
           <Chain steps={keySteps} label="Two key changes and their approvals" />
         </section>
@@ -289,6 +290,10 @@ export default function ReviewLog() {
               <li>
                 Subscribers receive a verifiable, redacted release bundle for each
                 released line.
+              </li>
+              <li>
+                Counsel reviews how the Bureau keeps and uses files. Until then no
+                file with live lines is signed.
               </li>
             </ul>
             <a className="text-link" href="/bureau">
