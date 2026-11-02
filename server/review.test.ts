@@ -16,6 +16,8 @@ type Row = {
   displayState: string;
   relationType: string | null;
   relationTargetEventId: string | null;
+  signedEvent?: unknown;
+  receipt?: unknown;
 };
 type LogRow = {
   id: number;
@@ -104,6 +106,7 @@ vi.mock("./reviewLog", async importOriginal => {
 
 import { evidenceLabel, runReview, type ReviewIO } from "./review";
 import { keyApprovalVerifies, payloadDigest } from "./keyApproval";
+import { ADMISSION_SCHEMA, signAdmission, type UnsignedAdmission } from "./furnisherAdmission";
 import {
   REVIEW_SCHEMA,
   checkReviewDecision,
@@ -160,6 +163,32 @@ function row(overrides: Partial<Row> = {}): Row {
     ...overrides,
   };
 }
+
+// The organization and key a live line came from, as its receipt names them.
+const FURNISHER_ORG = "99999999-8888-4777-8666-555555555555";
+const FURNISHER_KEY = newReviewerKey().publicKey;
+const signedBy = {
+  signedEvent: { key_id: "levy-1" },
+  receipt: { org_id: FURNISHER_ORG, outcome_claim: { signer: { key_id: "levy-1", public_key: FURNISHER_KEY } } },
+};
+
+// A reviewer's admission of the lines' furnisher, for that organization and key.
+const admission = (reviewer: Person, overrides: Record<string, unknown> = {}) =>
+  signAdmission(
+    {
+      schema: ADMISSION_SCHEMA,
+      reviewer_id: `rev_${reviewer}`,
+      furnisher_id: "fur_levymerchant1",
+      decision: "admit",
+      counteraudit_org_id: FURNISHER_ORG,
+      keys: [{ key_id: "levy-1", public_key: FURNISHER_KEY }],
+      arms_length: true,
+      probation_days: 90,
+      decided_at: "2026-10-31T11:00:00.000Z",
+      ...overrides,
+    } as UnsignedAdmission,
+    people[reviewer].privateKeyPem
+  );
 
 function decision(
   reviewer: Person,
@@ -518,7 +547,7 @@ describe("pnpm review submit", () => {
     const fetch = vi.fn();
     const notRecord = fakeIO({ "d.json": '{"schema":"other"}' }, fetch);
     expect(await runReview(["submit", "d.json"], notRecord.io)).toBe(2);
-    expect(notRecord.printed()).toBe("d.json holds neither a review decision nor a reviewer-key record. Nothing sealed.");
+    expect(notRecord.printed()).toBe("d.json holds no review decision, reviewer-key record or furnisher admission. Nothing sealed.");
 
     vi.stubEnv("COUNTERAUDIT_REVIEW_INGEST_KEY", "");
     const noKey = fakeIO({ "d.json": JSON.stringify(decision("alice")) }, fetch);
@@ -539,24 +568,28 @@ describe("pnpm review submit", () => {
 
 describe("pnpm review sync", () => {
   it("reads the review log, says what each key record did, and releases lines", async () => {
-    store.rows.push(row({ dataClass: "live" }));
+    store.rows.push(row({ dataClass: "live", ...signedBy }));
     const records = [
       ...genesis(),
+      admission("alice"),
+      admission("bob"),
       decision("alice", { data_class: "live" }),
       decision("bob", { data_class: "live" }),
     ];
     const { io, printed } = fakeIO({}, counterAudit(records));
 
     expect(await runReview(["sync"], io)).toBe(0);
-    expect(store.log).toHaveLength(5);
+    expect(store.log).toHaveLength(7);
     expect(store.rows[0].displayState).toBe("released");
     expect(printed()).toBe(
       [
-        "Read 5 new packets.",
+        "Read 7 new packets.",
         "  sequence 0: rev_alice signed the genesis of rev_alice, rev_bob, rev_carol",
         "  sequence 1: rev_bob signed the genesis of rev_alice, rev_bob, rev_carol",
         "  sequence 2: genesis of rev_alice, rev_bob, rev_carol took effect, signed by all of them",
-        "Review log read to sequence 4.",
+        "  sequence 3: rev_alice voted to admit fur_levymerchant1 (1 of 2)",
+        "  sequence 4: fur_levymerchant1 admitted by rev_alice and rev_bob, on probation for 90 days",
+        "Review log read to sequence 6.",
         "Reviewers: rev_alice (Alice) active, rev_bob (Bob) active, rev_carol (Carol) active.",
         `${LINE}: unverified -> released`,
         "1 line settled, 1 changed.",
@@ -764,8 +797,14 @@ describe("pnpm review queue and settle", () => {
   });
 
   it("holds a released line once one of its approvers is suspended", async () => {
-    store.rows.push(row({ dataClass: "live" }));
-    seal(...genesis(), decision("alice", { data_class: "live" }), decision("bob", { data_class: "live" }));
+    store.rows.push(row({ dataClass: "live", ...signedBy }));
+    seal(
+      ...genesis(),
+      admission("alice"),
+      admission("carol"),
+      decision("alice", { data_class: "live" }),
+      decision("bob", { data_class: "live" })
+    );
     await runReview(["settle"], fakeIO().io);
     expect(store.rows[0].displayState).toBe("released");
 
@@ -820,5 +859,140 @@ describe("what pnpm review trusts", () => {
     expect(await runReview(["apply", "d.jsonl"], io)).toBe(2);
     expect(printed()).toContain("pnpm review apply is retired");
     expect(db.schemaReady).not.toHaveBeenCalled();
+  });
+});
+
+describe("pnpm review admit, revoke-admission and admissions", () => {
+  const admitArgs = (...extra: string[]) => [
+    "admit",
+    "--key",
+    "alice.pem",
+    "--reviewer",
+    "rev_alice",
+    "--furnisher",
+    "fur_levymerchant1",
+    ...extra,
+    "--out",
+    "a.json",
+  ];
+
+  it("signs an admission of an unlisted furnisher for the organization and key named", async () => {
+    const { io, written, printed } = fakeIO(keys());
+    const args = admitArgs("--org", FURNISHER_ORG, "--furnisher-key", `levy-1=${FURNISHER_KEY}`, "--probation-days", "120");
+    expect(await runReview(args, io)).toBe(0);
+    // Ed25519 signatures are deterministic: the same record signs the same.
+    expect(JSON.parse(written["a.json"])).toEqual(admission("alice", { probation_days: 120, decided_at: NOW.toISOString() }));
+    expect(printed()).toContain("you attest it was vetted and deals at arm's length");
+    expect(printed()).toContain("Seal it with: pnpm review submit a.json");
+    expect(db.schemaReady).not.toHaveBeenCalled();
+  });
+
+  it("takes a listed furnisher's organization and active keys from server/furnishers.ts", async () => {
+    const second = newReviewerKey().publicKey;
+    const { io, written, printed } = fakeIO(keys());
+    io.furnishers = {
+      fur_levymerchant1: {
+        counterauditOrgId: FURNISHER_ORG,
+        keys: {
+          "levy-2": { publicKey: second, status: "active" },
+          "levy-1": { publicKey: FURNISHER_KEY, status: "active" },
+          "levy-0": { publicKey: newReviewerKey().publicKey, status: "revoked" },
+        },
+      },
+    };
+    expect(await runReview(admitArgs(), io)).toBe(0);
+    expect(JSON.parse(written["a.json"]).keys).toEqual([
+      { key_id: "levy-1", public_key: FURNISHER_KEY },
+      { key_id: "levy-2", public_key: second },
+    ]);
+    expect(await runReview(admitArgs("--org", FURNISHER_ORG), io)).toBe(2);
+    expect(printed()).toContain("--org and --furnisher-key are for an unlisted furnisher");
+  });
+
+  it("signs nothing it cannot sign as asked", async () => {
+    const cases: [string[], string][] = [
+      [admitArgs(), "name the organization it seals in with --org"],
+      [admitArgs("--org", FURNISHER_ORG, "--furnisher-key", FURNISHER_KEY), "--furnisher-key <key_id>=<ed25519:...>"],
+      [admitArgs("--org", FURNISHER_ORG, "--furnisher-key", `levy-1=${FURNISHER_KEY}`, "--probation-days", "30"), "Not signed: probation_days must be a whole number from 90 to 365."],
+      [admitArgs("--org", FURNISHER_ORG, "--furnisher-key", `levy-1=${FURNISHER_KEY}`, "--probation-days", "1e2"), "--probation-days must be a whole number"],
+      [admitArgs("--org", "not-an-org", "--furnisher-key", `levy-1=${FURNISHER_KEY}`), "Not signed: counteraudit_org_id must be"],
+    ];
+    for (const [args, message] of cases) {
+      const { io, written, printed } = fakeIO(keys());
+      expect(await runReview(args, io), message).toBe(2);
+      expect(printed()).toContain(message);
+      expect(written).toEqual({});
+    }
+  });
+
+  it("signs a revocation with its reason, and only with one", async () => {
+    const { io, written, printed } = fakeIO(keys());
+    const args = ["revoke-admission", "--key", "bob.pem", "--reviewer", "rev_bob", "--furnisher", "fur_levymerchant1"];
+    expect(await runReview([...args, "--out", "r.json"], io)).toBe(2);
+    expect(await runReview([...args, "--reason", "pays its own subjects", "--out", "r.json"], io)).toBe(0);
+    expect(JSON.parse(written["r.json"])).toMatchObject({
+      schema: ADMISSION_SCHEMA,
+      reviewer_id: "rev_bob",
+      decision: "revoke",
+      reason: "pays its own subjects",
+    });
+    expect(printed()).toContain("none of its live lines is released until two reviewers admit it again");
+  });
+
+  it("seals an admission like any other review record", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ packet_id: idOf(3), sequence: 3, receipt: {} }, { status: 201 })
+    );
+    const signed = admission("alice");
+    const { io } = fakeIO({ "a.json": JSON.stringify(signed) }, fetch);
+    expect(await runReview(["submit", "a.json"], io)).toBe(0);
+    expect(JSON.parse(String(fetch.mock.calls[0][1]!.body)).raw_event).toEqual(signed);
+  });
+
+  it("lists each furnisher's admission, and shows it on each live line in the queue", async () => {
+    store.rows.push(row({ dataClass: "live", ...signedBy }));
+    seal(...genesis(), admission("alice"), admission("bob"));
+    const until = new Date(NOW.getTime() + 90 * 24 * 3_600_000).toISOString();
+    const first = fakeIO();
+    expect(await runReview(["admissions"], first.io)).toBe(0);
+    expect(first.printed()).toContain(
+      [
+        `fur_levymerchant1: admitted at sequence 4 by rev_alice and rev_bob, since ${NOW.toISOString()}; on probation until ${until}`,
+        `  organization ${FURNISHER_ORG}`,
+        `  key levy-1 ${FURNISHER_KEY}`,
+      ].join("\n")
+    );
+    expect(await runReview(["queue"], first.io)).toBe(0);
+    expect(first.printed()).toContain(
+      `  furnisher admitted, and the line was sealed during its probation (until ${until}): no approval can waive anything for it`
+    );
+
+    seal(
+      signAdmission(
+        {
+          schema: ADMISSION_SCHEMA,
+          reviewer_id: "rev_carol",
+          furnisher_id: "fur_levymerchant1",
+          decision: "revoke",
+          reason: "pays its own subjects",
+          decided_at: "2026-10-31T11:30:00.000Z",
+        },
+        people.carol.privateKeyPem
+      )
+    );
+    const after = fakeIO();
+    await runReview(["admissions"], after.io);
+    expect(after.printed()).toContain('fur_levymerchant1: revoked at sequence 5 by rev_carol: "pays its own subjects"');
+    await runReview(["queue"], after.io);
+    expect(after.printed()).toContain(
+      "  furnisher not admitted for this line: its furnisher's admission was revoked by rev_carol at sequence 5"
+    );
+  });
+
+  it("says when no furnisher is admitted", async () => {
+    seal(...genesis());
+    const { io, printed } = fakeIO();
+    expect(await runReview(["admissions"], io)).toBe(0);
+    expect(printed()).toContain("No furnisher is admitted, so no live line is released.");
   });
 });

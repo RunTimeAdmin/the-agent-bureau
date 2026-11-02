@@ -29,6 +29,17 @@ import {
   deriveDisputes,
   type Dispute,
 } from "./dispute";
+import {
+  ADMISSION_SCHEMA,
+  MAX_PROBATION_DAYS,
+  MIN_PROBATION_DAYS,
+  checkAdmissionForm,
+  signAdmission,
+  type AdmissionGate,
+  type AdmittedKey,
+  type UnsignedAdmission,
+} from "./furnisherAdmission";
+import { FURNISHERS, type Furnisher } from "./furnishers";
 import { lineStates, releaseFor, type Line } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import {
@@ -54,7 +65,7 @@ import {
   submitReviewRecord,
   type Fetch,
 } from "./reviewLogSync";
-import { loadReviewLog, reviewsFor, settle } from "./settleLines";
+import { admissionFor, loadReviewLog, reviewsFor, settle } from "./settleLines";
 import { REVIEW_DECISIONS } from "../drizzle/schema";
 
 export const USAGE = [
@@ -65,10 +76,13 @@ export const USAGE = [
   "  pnpm review key --key <private-key-file> --signer <rev_id> --add <rev_id> --name <name> --public-key <ed25519:...> [--reason <text>] --out <record-file>",
   "  pnpm review key --key <private-key-file> --signer <rev_id> --rotate <rev_id> --public-key <ed25519:...> [--reason <text>] --out <record-file>",
   "  pnpm review key --key <private-key-file> --signer <rev_id> --<suspend|reenable|remove> <rev_id> [--reason <text>] --out <record-file>",
+  `  pnpm review admit --key <private-key-file> --reviewer <rev_id> --furnisher <fur_id> [--probation-days <${MIN_PROBATION_DAYS}-${MAX_PROBATION_DAYS}>] [--org <org_id> --furnisher-key <key_id>=<ed25519:...>] --out <record-file>`,
+  "  pnpm review revoke-admission --key <private-key-file> --reviewer <rev_id> --furnisher <fur_id> --reason <text> --out <record-file>",
   "  pnpm review submit <record-file>",
   "  pnpm review approve-key --key <private-key-file> --reviewer <rev_id> --request <request.json> --out <approval-file>",
   "  pnpm review sync",
   "  pnpm review queue",
+  "  pnpm review admissions",
   "  pnpm review settle",
 ].join("\n");
 
@@ -81,6 +95,8 @@ export type ReviewIO = {
   log(line: string): void;
   now(): Date;
   fetch: Fetch;
+  // The listed furnishers; server/furnishers.ts when not given.
+  furnishers?: Record<string, Furnisher>;
 };
 
 const defaultIO: ReviewIO = {
@@ -320,6 +336,134 @@ async function keyCommand(args: string[], io: ReviewIO): Promise<number> {
   return code;
 }
 
+// The active keys server/furnishers.ts lists for a furnisher, sorted by key_id.
+function listedKeys(furnisher: Furnisher): AdmittedKey[] {
+  return Object.entries(furnisher.keys)
+    .filter(([, k]) => k.status === "active")
+    .map(([key_id, k]) => ({ key_id, public_key: k.publicKey }))
+    .sort((a, b) => (a.key_id < b.key_id ? -1 : 1));
+}
+
+// Signs an admission or revocation, checks its form and writes it for pnpm review submit.
+async function writeAdmission(
+  unsigned: UnsignedAdmission,
+  keyFile: string,
+  out: string,
+  io: ReviewIO
+): Promise<number> {
+  const key = await readPrivateKey(keyFile, io);
+  if (!key) return 2;
+  const record = signAdmission(unsigned, key.privateKeyPem);
+  const form = checkAdmissionForm(record);
+  if (!form.ok) {
+    io.log(`Not signed: ${form.reason}.`);
+    return 2;
+  }
+  return writeRecord(out, record, io);
+}
+
+async function admitCommand(args: string[], io: ReviewIO): Promise<number> {
+  const flags = readFlags(args);
+  const required = ["key", "reviewer", "furnisher", "out"];
+  const optional = ["probation-days", "org", "furnisher-key"];
+  if (
+    !flags ||
+    Object.keys(flags).some(name => !required.includes(name) && !optional.includes(name)) ||
+    required.some(name => !flags[name])
+  ) {
+    io.log(USAGE);
+    return 2;
+  }
+  const furnishers = io.furnishers ?? FURNISHERS;
+  const listed = Object.hasOwn(furnishers, flags.furnisher) ? furnishers[flags.furnisher] : undefined;
+  let orgId: string;
+  let keys: AdmittedKey[];
+  if (listed) {
+    if (flags.org !== undefined || flags["furnisher-key"] !== undefined) {
+      io.log(
+        `${flags.furnisher} is listed in server/furnishers.ts, so its organization and active keys are taken from there; --org and --furnisher-key are for an unlisted furnisher.`
+      );
+      return 2;
+    }
+    orgId = listed.counterauditOrgId;
+    keys = listedKeys(listed);
+    if (keys.length === 0) {
+      io.log(`${flags.furnisher} has no active key in server/furnishers.ts. Nothing signed.`);
+      return 2;
+    }
+  } else {
+    const named = flags["furnisher-key"] ?? "";
+    const eq = named.indexOf("=");
+    if (flags.org === undefined || eq < 1) {
+      io.log(
+        `${flags.furnisher} is not listed in server/furnishers.ts: name the organization it seals in with --org and its signing key with --furnisher-key <key_id>=<ed25519:...>.`
+      );
+      return 2;
+    }
+    orgId = flags.org;
+    keys = [{ key_id: named.slice(0, eq), public_key: named.slice(eq + 1) }];
+  }
+  const days = flags["probation-days"] ?? String(MIN_PROBATION_DAYS);
+  if (!/^[0-9]{1,3}$/.test(days)) {
+    io.log(`--probation-days must be a whole number from ${MIN_PROBATION_DAYS} to ${MAX_PROBATION_DAYS}.`);
+    return 2;
+  }
+  io.log(
+    [
+      `Admitting ${flags.furnisher}: you attest it was vetted and deals at arm's length with the subjects it reports on.`,
+      `  organization ${orgId}`,
+      ...keys.map(k => `  key ${k.key_id} ${k.public_key}`),
+      `  probation ${days} days from when the second reviewer's admission is sealed`,
+      "It is admitted once a second reviewer seals an admission naming the same organization and keys.",
+    ].join("\n")
+  );
+  return writeAdmission(
+    {
+      schema: ADMISSION_SCHEMA,
+      reviewer_id: flags.reviewer,
+      furnisher_id: flags.furnisher,
+      decision: "admit",
+      counteraudit_org_id: orgId,
+      keys,
+      arms_length: true,
+      probation_days: Number(days),
+      decided_at: io.now().toISOString(),
+    },
+    flags.key,
+    flags.out,
+    io
+  );
+}
+
+async function revokeAdmissionCommand(args: string[], io: ReviewIO): Promise<number> {
+  const flags = readFlags(args);
+  const required = ["key", "reviewer", "furnisher", "reason", "out"];
+  if (
+    !flags ||
+    Object.keys(flags).some(name => !required.includes(name)) ||
+    required.some(name => !flags[name])
+  ) {
+    io.log(USAGE);
+    return 2;
+  }
+  io.log(
+    `Revoking ${flags.furnisher}'s admission: once sealed, none of its live lines is released until two reviewers admit it again.`
+  );
+  return writeAdmission(
+    {
+      schema: ADMISSION_SCHEMA,
+      reviewer_id: flags.reviewer,
+      furnisher_id: flags.furnisher,
+      decision: "revoke",
+      reason: flags.reason,
+      decided_at: io.now().toISOString(),
+    },
+    flags.key,
+    flags.out,
+    io
+  );
+}
+
 async function submit(args: string[], io: ReviewIO): Promise<number> {
   if (args.length !== 1) {
     io.log(USAGE);
@@ -340,10 +484,12 @@ async function submit(args: string[], io: ReviewIO): Promise<number> {
   }
   if (
     !isRecord(record) ||
-    (record.schema !== REVIEW_SCHEMA && record.schema !== REVIEWER_KEY_SCHEMA)
+    (record.schema !== REVIEW_SCHEMA &&
+      record.schema !== REVIEWER_KEY_SCHEMA &&
+      record.schema !== ADMISSION_SCHEMA)
   ) {
     io.log(
-      `${args[0]} holds neither a review decision nor a reviewer-key record. Nothing sealed.`
+      `${args[0]} holds no review decision, reviewer-key record or furnisher admission. Nothing sealed.`
     );
     return 2;
   }
@@ -537,6 +683,50 @@ function describeLog(log: ReviewLog): string[] {
   ];
 }
 
+/** Whether a live line's furnisher is admitted, for the queue. */
+function describeGate(gate: AdmissionGate): string {
+  if (!gate.admitted) return `not admitted for this line: ${gate.problem}`;
+  return gate.onProbation
+    ? `admitted, and the line was sealed during its probation${gate.probationUntil ? ` (until ${gate.probationUntil.toISOString()})` : ""}: no approval can waive anything for it`
+    : "admitted, and the line was sealed after its probation";
+}
+
+/** Each furnisher's admission as the review log stands (server/furnisherAdmission.ts). */
+async function admissionsCommand(io: ReviewIO): Promise<number> {
+  if (!(await needDatabase(io))) return 2;
+  const log = await loadReviewLog();
+  for (const line of describeLog(log)) io.log(line);
+  if (log.testnet) {
+    io.log("Admissions do not count under the testnet genesis.");
+    return 0;
+  }
+  if (log.admissions.size === 0) {
+    io.log("No furnisher is admitted, so no live line is released. See pnpm review admit.");
+    return 0;
+  }
+  const now = io.now();
+  for (const [furnisherId, state] of [...log.admissions.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const admitted = state.admitted;
+    io.log(
+      admitted
+        ? `${furnisherId}: admitted at sequence ${admitted.sequence} by ${admitted.by.join(" and ")}, since ${admitted.since.toISOString()}; ${admitted.probationUntil.getTime() > now.getTime() ? "on probation until" : "probation ended"} ${admitted.probationUntil.toISOString()}`
+        : state.revoked
+          ? `${furnisherId}: revoked at sequence ${state.revoked.sequence} by ${state.revoked.by}: ${JSON.stringify(state.revoked.reason)}`
+          : `${furnisherId}: not admitted`
+    );
+    if (admitted) {
+      io.log(`  organization ${admitted.orgId}`);
+      for (const k of admitted.keys) io.log(`  key ${k.key_id} ${k.public_key}`);
+    }
+    for (const vote of state.pending) {
+      io.log(
+        `  waiting for a second reviewer: ${vote.by.join(", ")} admitted organization ${vote.orgId} with ${vote.keys.map(k => k.key_id).join(", ")}`
+      );
+    }
+  }
+  return 0;
+}
+
 export const PAYMENT_OUTCOMES = new Set(["paid", "refunded", "payment_failed"]);
 
 /**
@@ -647,6 +837,7 @@ async function queue(io: ReviewIO) {
       line.eventId
     );
     const reviews = reviewsFor(line, log);
+    const admission = admissionFor(line, log, io.furnishers);
     const checked = await checkLineDisputes(line);
     const disputes = deriveDisputes({
       line,
@@ -654,6 +845,7 @@ async function queue(io: ReviewIO) {
       relating,
       reviewsOf: l => reviewsFor(l, log),
       now,
+      admissionOf: l => admissionFor(l, log, io.furnishers),
     });
     disputeLines.push(...describeDisputes(line, disputes));
     for (const d of disputes) {
@@ -665,7 +857,8 @@ async function queue(io: ReviewIO) {
       line,
       relating,
       reviews,
-      currentDispute(disputes)?.state ?? null
+      currentDispute(disputes)?.state ?? null,
+      admission
     );
     // Removed after a lapsed subject dispute: it can never be released again.
     if (states.removed) {
@@ -676,7 +869,7 @@ async function queue(io: ReviewIO) {
       closed++;
       continue;
     }
-    const release = releaseFor(line, reviews);
+    const release = releaseFor(line, reviews, admission);
     if (release.released) released++;
     else waiting++;
     const evidence = isRecord(line.evidenceResult) ? line.evidenceResult : {};
@@ -693,6 +886,8 @@ async function queue(io: ReviewIO) {
         `${line.furnisherId}/${line.eventId}  ${line.outcome}  ${line.dataClass} data  shown ${line.displayState}`,
         `  hash ${line.signedEventHash}`,
         `  proof ${line.proofOk ? "passed" : "not passed"}; evidence ${evidenceLabel(line.outcome, line.evidenceStatus)}${reasons ? `: ${reasons}` : ""}`,
+        // Live data needs its furnisher admitted by two reviewers (pnpm review admissions).
+        ...(line.dataClass === "live" ? [`  furnisher ${describeGate(admission)}`] : []),
         // Subject control is Phase 3, so it is unproven for every line
         // (docs/independent-payer.md, layers 2 and 3).
         ...(PAYMENT_OUTCOMES.has(line.outcome)
@@ -824,6 +1019,10 @@ export async function runReview(
       return signCommand(args, io);
     case "key":
       return keyCommand(args, io);
+    case "admit":
+      return admitCommand(args, io);
+    case "revoke-admission":
+      return revokeAdmissionCommand(args, io);
     case "submit":
       return submit(args, io);
     case "approve-key":
@@ -832,6 +1031,8 @@ export async function runReview(
       return noArgs(() => sync(io));
     case "queue":
       return noArgs(() => queue(io));
+    case "admissions":
+      return noArgs(() => admissionsCommand(io));
     case "settle":
       return noArgs(() => settleAll(io));
     case "apply":

@@ -31,7 +31,7 @@ The game is fiction. No real agent, person or business appears in a case, and ga
 2. The operator runs `pnpm furnish:intake --test-data signed.jsonl`. Each event goes to the Bureau's [CounterAudit](https://counteraudit.io) organization, which checks the furnisher's registered key and seals the event in a hash chain with a public proof. The script checks that proof itself.
 3. For `paid` and `payment_failed` events the script checks the payment on Arc testnet: the charge, its amount and both parties, in a final block, against the furnisher's vetted merchant account.
 4. Each line gets a state (sealed, source signed, evidence verified, disputed, withdrawn, superseded or released) from the rules in [`docs/line-states.md`](docs/line-states.md).
-5. A line is released only after review. Reviewers sign their decisions with their own keys, and a live line needs two of them to approve ([`docs/two-person-review.md`](docs/two-person-review.md)).
+5. A line is released only after review. Reviewers sign their decisions with their own keys, and a live line needs two of them to approve and its furnisher admitted by two of them, on probation at first ([`docs/two-person-review.md`](docs/two-person-review.md)).
 6. `pnpm file assemble` puts a subject's released lines on a signed file, each pointing at its CounterAudit packet's public proof, and `pnpm file verify` checks one ([`docs/agent-file.md`](docs/agent-file.md)).
 
 ## Documents

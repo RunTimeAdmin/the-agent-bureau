@@ -11,6 +11,8 @@ import {
   setOutcomeEventDisplayState,
 } from "./db";
 import { checkLineDisputes, disputeOf } from "./dispute";
+import { admissionGate, type AdmissionGate } from "./furnisherAdmission";
+import type { Furnisher } from "./furnishers";
 import {
   displayStateFor,
   lineStates,
@@ -148,6 +150,15 @@ export function reviewsFor(line: Line, log: ReviewLog): Review[] {
     }));
 }
 
+/**
+ * Whether the line's furnisher is admitted, by two reviewers in the review log, for the
+ * organization and key the line came from, and whether it is on probation
+ * (server/furnisherAdmission.ts). Test data needs no admission.
+ */
+export function admissionFor(line: Line, log: ReviewLog, furnishers?: Record<string, Furnisher>): AdmissionGate {
+  return admissionGate(line, log.admissions, furnishers);
+}
+
 // Recomputes one line's display state from the relations acting on it, the
 // review log's decisions and the subject's dispute on it as of now, its records
 // checked again, and stores it if it changed. Returns the new state, or null if
@@ -167,10 +178,11 @@ export async function settle(
     await checkLineDisputes(line),
     relating,
     l => reviewsFor(l, reviewLog),
-    now
+    now,
+    l => admissionFor(l, reviewLog)
   );
   const state = displayStateFor(
-    lineStates(line, relating, reviews, dispute?.state ?? null)
+    lineStates(line, relating, reviews, dispute?.state ?? null, admissionFor(line, reviewLog))
   );
   if (state === line.displayState) return null;
   await setOutcomeEventDisplayState(line.id, state);

@@ -121,7 +121,7 @@ From §15 of the plan. Status as of 2026-10-29:
 Recorded with the work each one needs; the choices are not reopened without the owner.
 
 - **Reviewers.** Three independent reviewers sign the genesis the Bureau pins (`REVIEW_GENESIS`, empty until they exist). Every API-key change in the review organization takes two of the three (CounterAudit `REVIEWER_APPROVALS`).
-- **Furnishers.** Only vetted, arm's-length furnishers are admitted, under two-person review and a probation period. The listing in `server/furnishers.ts` is not enough on its own; the admission and the probation are to be built.
+- **Furnishers.** Only vetted, arm's-length furnishers are admitted, under two-person review and a probation period. Built: two reviewers admit a furnisher in the review log for its organization and keys (`agent-bureau/furnisher-admission/v1`, `pnpm review admit`), one revokes, and no live line is released without an admission. During the 90 to 365 day probation no approval can waive anything for its lines (`docs/two-person-review.md`, "Furnisher admission"). The listing in `server/furnishers.ts` lets the intake store a furnisher's lines; it does not admit it. Vetting itself stays the owner's.
 - **Live files and paid access** are held until counsel has reviewed retention and use (`LIVE_FILES_HELD`, `docs/agent-file.md`).
 - **Pricing.** Per-file pricing is a pilot hypothesis, not a set price.
 - **Event IDs** are random UUIDv4s with no identifying data, so an `event_id` kept after a line expires says nothing about the subject.
