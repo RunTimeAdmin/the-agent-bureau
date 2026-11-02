@@ -19,7 +19,7 @@ import {
   type DisputeState,
 } from "./dispute";
 import { readEventFields } from "./furnishIntake";
-import { admissionGate, type AdmissionGate } from "./furnisherAdmission";
+import { proofAdmissionGate, type AdmissionGate } from "./furnisherAdmission";
 import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
   displayStateFor,
@@ -1389,20 +1389,7 @@ function proofAdmissionProblem(
   if (!proof) {
     return "its proof did not verify, so its furnisher's admission cannot be checked";
   }
-  const claim = isRecord(proof.outcome_claim) ? proof.outcome_claim : {};
-  const signer = isRecord(claim.signer) ? claim.signer : {};
-  const gate = admissionGate(
-    {
-      furnisherId: String(signer.furnisher_id ?? ""),
-      dataClass: "live",
-      caCreatedAt:
-        typeof proof.created_at === "string" ? proof.created_at : undefined,
-      signedEvent: { key_id: signer.key_id },
-      receipt: proof,
-    },
-    log.admissions,
-    furnishers
-  );
+  const gate = proofAdmissionGate(proof, log.admissions, furnishers);
   return gate.admitted ? null : gate.problem;
 }
 

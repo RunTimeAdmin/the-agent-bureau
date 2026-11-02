@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The Bureau's lines and its copy of the review log, in memory.
@@ -107,6 +107,7 @@ vi.mock("./reviewLog", async importOriginal => {
 import { evidenceLabel, runReview, type ReviewIO } from "./review";
 import { keyApprovalVerifies, payloadDigest } from "./keyApproval";
 import { ADMISSION_SCHEMA, signAdmission, type UnsignedAdmission } from "./furnisherAdmission";
+import { canonicalizeJson, signedEventHash } from "./outcomeProof";
 import {
   REVIEW_SCHEMA,
   checkReviewDecision,
@@ -124,7 +125,22 @@ import {
 } from "./reviewLog";
 
 const NOW = new Date("2026-10-31T12:00:00.000Z");
-const HASH = "ab".repeat(32);
+// The lines' signed event, signed with the furnisher's key as the furnisher tool signs it.
+const FURNISHER_SIGNER = newReviewerKey();
+const unsignedEvent = {
+  schema_version: "1",
+  furnisher_id: "fur_levymerchant1",
+  key_id: "levy-1",
+  event_id: "levy-sub8-charge1",
+  subject_ref: { wallet: "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77" },
+  occurred_at: "2026-10-31T10:00:00.000Z",
+  outcome: "paid",
+};
+const EVENT = {
+  ...unsignedEvent,
+  signature: `ed25519:${sign(null, Buffer.from(`agent-bureau/outcome-event/v1\n${canonicalizeJson(unsignedEvent)}`, "utf8"), createPrivateKey(FURNISHER_SIGNER.privateKeyPem)).toString("base64url")}`,
+};
+const HASH = signedEventHash(EVENT);
 const EVIDENCE = { status: "verified", reasons: [] };
 const API = "https://api.counteraudit.test";
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -166,9 +182,9 @@ function row(overrides: Partial<Row> = {}): Row {
 
 // The organization and key a live line came from, as its receipt names them.
 const FURNISHER_ORG = "99999999-8888-4777-8666-555555555555";
-const FURNISHER_KEY = newReviewerKey().publicKey;
+const FURNISHER_KEY = FURNISHER_SIGNER.publicKey;
 const signedBy = {
-  signedEvent: { key_id: "levy-1" },
+  signedEvent: EVENT,
   receipt: { org_id: FURNISHER_ORG, outcome_claim: { signer: { key_id: "levy-1", public_key: FURNISHER_KEY } } },
 };
 
