@@ -49,13 +49,14 @@ const CA_CHECKOUT = process.env.COUNTERAUDIT_CHECKOUT
   : "";
 
 // Every Bureau setting the code under test reads, set here so none comes from the shell. The
-// review organization and its read key are set once CounterAudit has made them.
+// Bureau's own organization (where its evidence results are sealed), the review organization
+// and their keys are set once CounterAudit has made them.
 process.env.DATABASE_URL = `mysql://root:test@127.0.0.1:${MYSQL_PORT}/bureau`;
 process.env.COUNTERAUDIT_API_URL = CA_URL;
-// The Bureau's own organization takes no part: the line is sealed in the furnisher's.
-process.env.COUNTERAUDIT_ORG_ID = randomUUID();
 for (const name of [
+  "COUNTERAUDIT_ORG_ID",
   "COUNTERAUDIT_INGEST_KEY",
+  "COUNTERAUDIT_READ_KEY",
   "COUNTERAUDIT_REVIEW_ORG_ID",
   "COUNTERAUDIT_REVIEW_READ_KEY",
   "COUNTERAUDIT_REVIEW_INGEST_KEY",
@@ -577,6 +578,33 @@ async function main(): Promise<void> {
   );
   const honest = expiresAt.getTime() - Date.now() <= MAX_WAIT_MS;
 
+  // The Bureau's own organization: the line is sealed in the furnisher's, but each evidence
+  // result the intake stores is sealed here, and pnpm file assemble reads them back.
+  const bureauOrg = await ca("POST", "/v1/auth/signup", null, {
+    email: `e2e-bureau-${tag}@example.test`,
+  });
+  const adminB: string = bureauOrg.body?.api_key;
+  const bureauIngest = await ca("POST", "/v1/admin/keys", adminB, {
+    label: "e2e bureau ingest",
+    role: "ingest",
+    expires_in_days: 1,
+  });
+  const bureauRead = await ca("POST", "/v1/admin/keys", adminB, {
+    label: "e2e bureau read",
+    role: "read",
+    expires_in_days: 1,
+  });
+  expect(
+    bureauOrg.status === 201 &&
+      typeof bureauIngest.body?.api_key === "string" &&
+      typeof bureauRead.body?.api_key === "string",
+    "1g the Bureau's own organization, with an ingest key to seal evidence results and a read key to read them",
+    brief(bureauRead)
+  );
+  process.env.COUNTERAUDIT_ORG_ID = bureauOrg.body.org_id;
+  process.env.COUNTERAUDIT_INGEST_KEY = bureauIngest.body.api_key;
+  process.env.COUNTERAUDIT_READ_KEY = bureauRead.body.api_key;
+
   // ---- 2 ----
   heading(
     "2. The Bureau stores the line, reviewers release it, and pnpm file assemble signs a file verify accepts"
@@ -623,8 +651,9 @@ async function main(): Promise<void> {
   expect(
     intakeCode === 0 &&
       intake.has("proof verified") &&
+      intake.has("evidence sealed as packet") &&
       stored?.proofOk === true,
-    "2a pnpm furnish:intake --test-data --sealed stores the line, its proof verified",
+    "2a pnpm furnish:intake --test-data --sealed stores the line, its proof verified, and seals its evidence result in the Bureau's organization",
     `exit ${intakeCode}`
   );
   if (!stored) throw new Stop("no stored line");
@@ -808,10 +837,11 @@ async function main(): Promise<void> {
       fileLine.counteraudit.org_id === orgF &&
       fileLine.released === "two_person" &&
       fileLine.counteraudit.checkable_until === provedExpiry &&
+      fileLine.evidence_seal?.org_id === process.env.COUNTERAUDIT_ORG_ID &&
       file.disclosures.some((d: string) =>
         d.includes("counteraudit.checkable_until")
       ),
-    `2e pnpm file assemble signs a file whose line has checkable_until ${fileLine?.counteraudit?.checkable_until}, the proof's expires_at, with the disclosure for it`,
+    `2e pnpm file assemble signs a file whose line has checkable_until ${fileLine?.counteraudit?.checkable_until}, the proof's expires_at, with the disclosure for it, and names its evidence seal (packet ${fileLine?.evidence_seal?.packet_id})`,
     `exit ${assembled}, line ${JSON.stringify(fileLine?.counteraudit)}`
   );
   files.lines.length = 0;

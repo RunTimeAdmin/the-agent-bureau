@@ -51,6 +51,8 @@ import {
 } from "./reviewDecision";
 import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
 import { ADMISSION_SCHEMA, signAdmission } from "./furnisherAdmission";
+import type { EvidenceResult } from "./evidence";
+import { evidenceRecordFor, type EvidenceRecord } from "./evidenceSeal";
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
 const API = "https://api.counteraudit.test";
@@ -129,7 +131,7 @@ const genesis = () =>
   );
 const decision = (
   reviewer: Person,
-  verdict: "approve" | "reject",
+  verdict: "approve" | "approve_with_waiver" | "reject",
   decidedAt: string,
   dataClass: "test" | "live" = "test"
 ) =>
@@ -143,8 +145,12 @@ const decision = (
       data_class: dataClass,
       evidence_digest: evidenceDigest(EVIDENCE),
       decision: verdict,
-      // A rejection is counted only with a reason.
-      ...(verdict === "reject" ? { reason: "related payer" } : {}),
+      // A rejection or a waiver is counted only with a reason.
+      ...(verdict === "reject"
+        ? { reason: "related payer" }
+        : verdict === "approve_with_waiver"
+          ? { reason: "checked the delivery by hand" }
+          : {}),
       decided_at: decidedAt,
     },
     people[reviewer].privateKeyPem
@@ -168,10 +174,20 @@ const admit = (reviewer: Person, publicKey = pilotKey) =>
     people[reviewer].privateKeyPem
   );
 
-// CounterAudit's list and verify routes over a review organization holding these records.
+// The evidence result sealed for LINE in the Bureau's organization, as the intake seals it.
+const BUREAU_READ_KEY = "ca_read_bureau";
+const lineSeal = (changes: Partial<EvidenceRecord> = {}): EvidenceRecord => ({
+  ...evidenceRecordFor(LINE, EVIDENCE as EvidenceResult, new Date("2026-10-31T11:00:00.500Z")),
+  ...changes,
+});
+const sealId = (n: number) => `e0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+// CounterAudit's list and verify routes over a review organization holding these records, and,
+// for the Bureau's read key, the Bureau's organization holding LINE's packet and these evidence
+// records (by default one sealing LINE's result).
 function counterAudit(
   records: unknown[],
-  options: { skip?: number[]; swap?: Record<number, unknown> } = {}
+  options: { skip?: number[]; swap?: Record<number, unknown>; evidence?: unknown[] } = {}
 ) {
   const chain = records
     .map((record, n) => ({
@@ -184,15 +200,37 @@ function counterAudit(
       created_at: NOW.toISOString(),
     }))
     .filter(p => !(options.skip ?? []).includes(p.sequence));
-  return vi.fn(async (url: string) => {
+  const bureau = [
+    {
+      packet_id: LINE.packetId,
+      org_id: BUREAU_ORG,
+      sequence: LINE.sequence,
+      connector_id: "agent-bureau-outcome-v1",
+    },
+    ...(options.evidence ?? [lineSeal()]).map((record, n) => ({
+      packet_id: sealId(n),
+      org_id: BUREAU_ORG,
+      sequence: 100 + n,
+      connector_id: "agent-bureau-evidence-v1",
+      signed_event: record,
+      integrity: { prev_hash: hashOf(99 + n), entry_hash: hashOf(100 + n) },
+      created_at: NOW.toISOString(),
+    })),
+  ];
+  return vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url).pathname;
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const packets: { packet_id: string; connector_id: string }[] =
+      headers.authorization === `Bearer ${BUREAU_READ_KEY}` ? bureau : chain;
     if (path === "/v1/audit/packets") {
       return Response.json({
-        packets: [...chain].reverse().map(p => ({ packet_id: p.packet_id })),
+        packets: [...packets]
+          .reverse()
+          .map(p => ({ packet_id: p.packet_id, connector_id: p.connector_id, created_at: NOW.toISOString() })),
         next_cursor: null,
       });
     }
-    const packet = chain.find(p => path.endsWith(p.packet_id));
+    const packet = packets.find(p => path.endsWith(p.packet_id)) as (typeof chain)[number] | undefined;
     if (!packet) return Response.json({ error: "not_found" }, { status: 404 });
     return Response.json({
       valid: true,
@@ -342,6 +380,7 @@ beforeEach(() => {
   pin.genesis = genesisHash(TEAM);
   process.env.DATABASE_URL = "mysql://test";
   process.env.COUNTERAUDIT_ORG_ID = BUREAU_ORG;
+  process.env.COUNTERAUDIT_READ_KEY = BUREAU_READ_KEY;
   process.env.COUNTERAUDIT_REVIEW_ORG_ID = REVIEW_ORG;
   process.env.COUNTERAUDIT_REVIEW_READ_KEY = "ca_read_review";
   process.env.COUNTERAUDIT_API_URL = API;
@@ -417,6 +456,50 @@ describe("pnpm file assemble and the review log", () => {
     const file = JSON.parse(second.files["two.json"]) as SignedAgentFile;
     expect(file.furnished_outcomes).toEqual([]);
     expect(file.review_log).toMatchObject({ sequence: 5, packet_id: idOf(5) });
+  });
+
+  it("names the evidence seal on each line, and signs nothing over a stored result that is not the one sealed last", async () => {
+    const { io, files } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "one.json")).toBe(0);
+    const file = JSON.parse(files["one.json"]) as SignedAgentFile;
+    expect(file.furnished_outcomes[0].evidence_seal).toEqual({
+      org_id: BUREAU_ORG,
+      packet_id: sealId(0),
+      sequence: 100,
+      evidence_digest: evidenceDigest(EVIDENCE),
+    });
+
+    // A later check sealed another result, while the store holds the one reviewers approved; or
+    // nothing was ever sealed for the line.
+    const later = lineSeal({
+      evidence_digest: "f".repeat(64),
+      status: "needs_review",
+      needs_waiver: true,
+      checked_at: "2026-11-01T12:00:00.000Z",
+    });
+    for (const evidence of [[lineSeal(), later], []]) {
+      const run = fileIO(counterAudit(approved(), { evidence }));
+      expect(await assemble(run.io, "two.json")).toBe(1);
+      expect(run.files["two.json"]).toBeUndefined();
+      expect(run.out.join("\n")).toContain(
+        `${LINE.packetId}: its stored evidence result is not the one CounterAudit sealed last for it`
+      );
+      expect(run.out.join("\n")).toContain(
+        "Not signed: these lines do not check against their signed events or sealed evidence."
+      );
+    }
+  });
+
+  it("signs nothing when the evidence seals cannot be read, and needs the Bureau's read key", async () => {
+    const unreadable = fileIO(counterAudit(approved(), { evidence: [{ schema: "something else" }] }));
+    expect(await assemble(unreadable.io, "out.json")).toBe(1);
+    expect(unreadable.out.join("\n")).toContain(
+      `Not signed: the evidence seals could not be read: evidence packet ${sealId(0)} does not hold an evidence record`
+    );
+    delete process.env.COUNTERAUDIT_READ_KEY;
+    const keyless = fileIO(counterAudit(approved()));
+    expect(await assemble(keyless.io, "out.json")).toBe(2);
+    expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_READ_KEY");
   });
 
   it("signs nothing when the log cannot be read to its head", async () => {
@@ -517,6 +600,55 @@ describe("pnpm file verify and the review log", () => {
     );
   });
 
+  it("--current fails a line whose evidence was sealed again with another result, or that names no seal", async () => {
+    const { records, text } = await signedFile();
+    const verifyWith = async (evidence: unknown[], fileText = text) => {
+      const { io, out, files } = fileIO(counterAudit(records, { evidence }));
+      files["one.json"] = fileText;
+      return { code: await runFile(["verify", "one.json", "--current"], io), printed: out.join("\n") };
+    };
+    // Sealed again with the same result: it still stands.
+    const again = await verifyWith([lineSeal(), lineSeal({ checked_at: "2026-11-01T12:00:00.000Z" })]);
+    expect(again.code).toBe(0);
+    const changed = await verifyWith([
+      lineSeal(),
+      lineSeal({ evidence_digest: "f".repeat(64), checked_at: "2026-11-01T12:00:00.000Z" }),
+    ]);
+    expect(changed.code).toBe(1);
+    expect(changed.printed).toContain(
+      `its evidence was checked again since; the result CounterAudit sealed last for it (packet ${sealId(1)}) is not the one it was released on`
+    );
+    const gone = await verifyWith([]);
+    expect(gone.code).toBe(1);
+    expect(gone.printed).toContain("CounterAudit holds no evidence result sealed for it");
+    // A result that needs a waiver: the plain approvals do not count for it.
+    const waiver = await verifyWith([lineSeal({ needs_waiver: true })]);
+    expect(waiver.code).toBe(1);
+    expect(waiver.printed).toContain("has 0 current approval(s) and needs 1");
+    const failed = await verifyWith([lineSeal({ status: "failed" })]);
+    expect(failed.code).toBe(1);
+    expect(failed.printed).toContain("its evidence is failed, which no approval releases");
+
+    // A file assembled before evidence was sealed names no seal.
+    const { signature: _signature, ...draft } = JSON.parse(text) as SignedAgentFile;
+    const { evidence_seal: _seal, ...unsealedLine } = draft.furnished_outcomes[0];
+    const old = signFile(
+      { ...draft, furnished_outcomes: [unsealedLine] },
+      fileKey.privateKeyPem,
+      "test-file-1",
+      { "test-file-1": fileKey.publicKey }
+    );
+    const unsealed = await verifyWith([lineSeal()], JSON.stringify(old));
+    expect(unsealed.code).toBe(1);
+    expect(unsealed.printed).toContain("does not name the evidence result it was released on; assemble a new one");
+
+    // Without the Bureau's read key, its standing is not established.
+    delete process.env.COUNTERAUDIT_READ_KEY;
+    const keyless = await verifyWith([lineSeal()]);
+    expect(keyless.code).toBe(3);
+    expect(keyless.printed).toContain("needs COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY to read the evidence seals");
+  });
+
   it("--current fails a file whose line a reviewer rejected after it was assembled", async () => {
     const { records, text } = await signedFile();
     const later = [
@@ -569,8 +701,8 @@ describe("pnpm file verify and the review log", () => {
       "test-file-1",
       { "test-file-1": fileKey.publicKey }
     );
-    const verifyAgainst = async (log: unknown[]) => {
-      const { io, out, files } = fileIO(counterAudit(log));
+    const verifyAgainst = async (log: unknown[], evidence?: unknown[]) => {
+      const { io, out, files } = fileIO(counterAudit(log, { evidence }));
       files["live.json"] = JSON.stringify(liveFile);
       return { code: await runFile(["verify", "live.json", "--current"], io), printed: out.join("\n") };
     };
@@ -578,6 +710,21 @@ describe("pnpm file verify and the review log", () => {
     const standing = await verifyAgainst(records);
     expect(standing.printed).toContain("Current standing: 1 released line(s) still stand");
     expect(standing.code).toBe(0);
+
+    // Its result needs a waiver, and it was sealed during its furnisher's probation: no approval
+    // can waive anything for it, though both reviewers waived.
+    const waived = [
+      ...genesis(),
+      admit("alice"),
+      admit("bob"),
+      decision("alice", "approve_with_waiver", "2026-11-01T10:00:00.000Z", "live"),
+      decision("bob", "approve_with_waiver", "2026-11-01T10:05:00.000Z", "live"),
+    ];
+    const probation = await verifyAgainst(waived, [lineSeal({ needs_waiver: true })]);
+    expect(probation.code).toBe(1);
+    expect(probation.printed).toContain(
+      "its furnisher is on probation, when no approval can waive anything for its lines"
+    );
 
     const revoke = signAdmission(
       {

@@ -43,7 +43,8 @@ import {
   type Jwks,
 } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
-import { newReviewerKey, reviewerPublicKey } from "./reviewDecision";
+import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecision";
+import { readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
 import type { ReviewLog } from "./reviewLog";
 import { readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
@@ -140,6 +141,18 @@ export type FileLine = {
   }[];
   /** What the evidence check proved, by the M-04 names, or that reviewers waived it. */
   evidence: string;
+  /**
+   * The evidence result the line was released on, as CounterAudit sealed it last for the line in
+   * the Bureau's organization (server/evidenceSeal.ts): the packet, its place in that
+   * organization's chain, and the digest reviewers' approvals name. pnpm file verify --current
+   * checks it is still the last one. Absent on a file assembled before evidence was sealed.
+   */
+  evidence_seal?: {
+    org_id: string;
+    packet_id: string;
+    sequence: number;
+    evidence_digest: string;
+  };
   payment?: {
     subject_control: "unproven";
     payer_independence_screen: "clear" | "flagged" | "inconclusive";
@@ -369,6 +382,13 @@ export type AssembleOptions = {
    * proofOk counts.
    */
   relatingProofs?: Record<string, boolean>;
+  /**
+   * The evidence result CounterAudit sealed last for each line, by signed_event_hash
+   * (readEvidenceSeals). With this an approval counts only while the line's stored result is that
+   * one, a line its stored data would release otherwise is listed in `skipped`, and each line names
+   * its seal. Without it the stored result counts.
+   */
+  evidenceSeals?: Map<string, SealedEvidence>;
 };
 
 /** What CounterAudit says of a line's source: until when it can be checked, or why it cannot. */
@@ -387,7 +407,7 @@ export type LineSource =
 export function assembleFile(
   subjectRef: Record<string, unknown>,
   rows: StoredLine[],
-  reviewsOf: (line: Line) => Review[],
+  storedReviewsOf: (line: Line) => Review[],
   options: AssembleOptions
 ): {
   file: AgentFile;
@@ -403,6 +423,22 @@ export function assembleFile(
   );
   const skipped: string[] = [];
   const expired: string[] = [];
+  // The seal that counts for a line, when its stored result is the one CounterAudit sealed last.
+  const sealOf = (line: Line) => {
+    const seal = options.evidenceSeals && sealFor(options.evidenceSeals, line);
+    return seal && seal.record.evidence_digest === evidenceDigest(line.evidenceResult)
+      ? seal
+      : undefined;
+  };
+  // With seals, an approval counts only while the stored result is the one sealed last, so a
+  // result put back from before counts for nothing. A rejection holds the line whatever it was
+  // signed against.
+  const reviewsOf = (line: Line): Review[] => {
+    const reviews = storedReviewsOf(line);
+    return !options.evidenceSeals || sealOf(line)
+      ? reviews
+      : reviews.filter(r => r.decision === "reject");
+  };
   const lines: StoredLine[] = [];
   for (const row of rows) {
     // Erased with its source: it says nothing any more, and names no subject.
@@ -461,6 +497,17 @@ export function assembleFile(
     const relating = relatingTo(line);
     const reviews = reviewsOf(line);
     const admission = options.admissionOf?.(line);
+    // Released on what the Bureau stores, but not on the result sealed last: the store was changed,
+    // or a run did not seal what it stored, so nothing is signed until that is put right.
+    if (
+      options.evidenceSeals &&
+      !sealOf(line) &&
+      releaseFor(line, storedReviewsOf(line), admission).released
+    ) {
+      skipped.push(
+        `${line.packetId}: its stored evidence result is not the one CounterAudit sealed last for it`
+      );
+    }
     if (releaseFor(line, reviews, admission).released) {
       sourcesFor.add(line);
       for (const r of relatingRows(line).filter(r => mayAct(r, line))) {
@@ -494,6 +541,7 @@ export function assembleFile(
     const listed = Object.hasOwn(furnishers, line.furnisherId)
       ? furnishers[line.furnisherId].counterauditOrgId
       : undefined;
+    const seal = sealOf(line);
     const entry: FileLine = {
       outcome: line.outcome,
       occurred_at: iso(line.occurredAt),
@@ -521,6 +569,16 @@ export function assembleFile(
       evidence: states.evidence_verified
         ? evidenceLabel(line.outcome, "verified")
         : "waived_by_reviewers",
+      ...(seal
+        ? {
+            evidence_seal: {
+              org_id: options.bureauOrgId,
+              packet_id: seal.packetId,
+              sequence: seal.sequence,
+              evidence_digest: seal.record.evidence_digest,
+            },
+          }
+        : {}),
       ...(PAYMENT_OUTCOMES.has(line.outcome)
         ? {
             payment: {
@@ -847,6 +905,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   const missing = [
     ["DATABASE_URL", ENV.databaseUrl],
     ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
+    ["COUNTERAUDIT_READ_KEY", ENV.counterauditReadKey],
     ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],
     ["COUNTERAUDIT_REVIEW_READ_KEY", ENV.counterauditReviewReadKey],
   ].filter(([, value]) => !value);
@@ -895,6 +954,22 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   for (const row of (await listFileLines()) as StoredLine[]) {
     rows.push(await checkLineDisputes(row, io.furnishers));
   }
+  // The evidence result sealed last for each line, as CounterAudit holds them now.
+  let seals: Awaited<ReturnType<typeof readEvidenceSeals>>;
+  try {
+    seals = await readEvidenceSeals({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReadKey,
+      orgId: ENV.counterauditOrgId,
+      fetch: io.fetch,
+    });
+  } catch (error) {
+    seals = { problem: describeError(error) };
+  }
+  if ("problem" in seals) {
+    io.log(`Not signed: the evidence seals could not be read: ${printable(seals.problem)}`);
+    return 1;
+  }
   const reviewsOf = (line: Line) => reviewsFor(line, log);
   const assembleOptions: AssembleOptions = {
     now: io.now(),
@@ -904,6 +979,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     admissionOf: line => admissionFor(line, log, io.furnishers),
     standing,
     reviewLog: { orgId: ENV.counterauditReviewOrgId, position },
+    evidenceSeals: seals.seals,
   };
   const draft = assembleFile(subjectRef, rows, reviewsOf, assembleOptions);
   // Left off, a live line would make the file say less than the Bureau holds, so the file waits.
@@ -916,13 +992,13 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     );
     return 1;
   }
-  // A stored line whose signed event does not check means the store was
-  // changed or damaged; a withdrawal that stops acting that way could put a
-  // line back on a file, so nothing is signed until it is fixed.
+  // A stored line whose signed event does not check, or whose evidence result is not the one
+  // sealed last, means the store was changed or damaged; a withdrawal that stops acting that way
+  // could put a line back on a file, so nothing is signed until it is fixed.
   if (draft.skipped.length > 0) {
     for (const reason of draft.skipped) io.log(printable(reason));
     io.log(
-      "Not signed: these lines' signed events do not check. Re-run the intake for them, or find out who changed them."
+      "Not signed: these lines do not check against their signed events or sealed evidence. Re-run the intake for them, or find out who changed them."
     );
     return 1;
   }
@@ -1382,6 +1458,24 @@ async function checkCurrentReviewStatus(
   if ("problem" in now) {
     return unknown(`the review log could not be read whole: ${now.problem}`);
   }
+  // The evidence result sealed last for each line, as CounterAudit holds them now.
+  if (!ENV.counterauditOrgId || !ENV.counterauditReadKey) {
+    return unknown("needs COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY to read the evidence seals");
+  }
+  let seals: Awaited<ReturnType<typeof readEvidenceSeals>>;
+  try {
+    seals = await readEvidenceSeals({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReadKey,
+      orgId: ENV.counterauditOrgId,
+      fetch: io.fetch,
+    });
+  } catch (error) {
+    return unknown(`the evidence seals could not be read: ${describeError(error)}`);
+  }
+  if ("problem" in seals) {
+    return unknown(`the evidence seals could not be read: ${seals.problem}`);
+  }
   let failed = 0;
   const fail = (what: string) => {
     failed++;
@@ -1437,6 +1531,37 @@ async function checkCurrentReviewStatus(
       );
       continue;
     }
+    // The evidence result the line was released on must still be the one sealed last for it, and
+    // approvals count only for that result, on its terms (server/evidenceSeal.ts).
+    const sealRef: Record<string, unknown> | null = isRecord(line.evidence_seal)
+      ? line.evidence_seal
+      : null;
+    if (!sealRef) {
+      fail(
+        `line ${ca.packet_id} does not name the evidence result it was released on; assemble a new one`
+      );
+      continue;
+    }
+    if (sealRef.org_id !== ENV.counterauditOrgId) {
+      fail(
+        `line ${ca.packet_id} names evidence sealed in ${sealRef.org_id}, not the Bureau's organization`
+      );
+      continue;
+    }
+    const sealedLast = seals.seals.get(String(ca.signed_event_hash));
+    if (!sealedLast || sealedLast.record.evidence_digest !== sealRef.evidence_digest) {
+      fail(
+        sealedLast
+          ? `line ${ca.packet_id}: its evidence was checked again since; the result CounterAudit sealed last for it (packet ${sealedLast.packetId}) is not the one it was released on`
+          : `line ${ca.packet_id}: CounterAudit holds no evidence result sealed for it`
+      );
+      continue;
+    }
+    const terms = sealedLast.record;
+    if (terms.status !== "verified" && terms.status !== "needs_review") {
+      fail(`line ${ca.packet_id}: its evidence is ${terms.status}, which no approval releases`);
+      continue;
+    }
     // Each reviewer's latest decision on this exact event and data class, as releaseFor reads them.
     const latest = new Map<string, (typeof now.log.decisions)[number]>();
     for (const d of now.log.decisions) {
@@ -1460,8 +1585,10 @@ async function checkCurrentReviewStatus(
     const rejected = decisions.filter(d => d.decision.decision === "reject");
     const approvals = decisions.filter(
       d =>
-        d.decision.decision === "approve" ||
-        d.decision.decision === "approve_with_waiver"
+        (d.decision.decision === "approve" ||
+          d.decision.decision === "approve_with_waiver") &&
+        d.decision.evidence_digest === terms.evidence_digest &&
+        (!terms.needs_waiver || d.decision.decision === "approve_with_waiver")
     ).length;
     const needed = line.data_class === "test" ? 1 : 2;
     if (suspended.length > 0) {
@@ -1477,13 +1604,17 @@ async function checkCurrentReviewStatus(
         `line ${ca.packet_id} has ${approvals} current approval(s) and needs ${needed}`
       );
     } else if (line.data_class === "live") {
-      const problem = proofAdmissionProblem(
+      const gate = proofAdmission(
         now.log,
         proofs.get(String(ca.packet_id)),
         io.furnishers
       );
-      if (problem) fail(`line ${ca.packet_id}: ${problem}`);
-      else standing++;
+      if (!gate.admitted) fail(`line ${ca.packet_id}: ${gate.problem}`);
+      else if (gate.onProbation && terms.needs_waiver) {
+        fail(
+          `line ${ca.packet_id}: its furnisher is on probation, when no approval can waive anything for its lines`
+        );
+      } else standing++;
     } else {
       standing++;
     }
@@ -1496,18 +1627,21 @@ async function checkCurrentReviewStatus(
   return failed;
 }
 
-// Why a live line's furnisher is not admitted now for the organization and key CounterAudit's
-// verified proof of the line names, the same gate release applies, or null when it is.
-function proofAdmissionProblem(
+// Whether a live line's furnisher is admitted now for the organization and key CounterAudit's
+// verified proof of the line names, and whether the line was sealed during probation: the same
+// gate release applies.
+function proofAdmission(
   log: ReviewLog,
   proof: Record<string, unknown> | undefined,
   furnishers: Record<string, Furnisher>
-): string | null {
+): AdmissionGate {
   if (!proof) {
-    return "its proof did not verify, so its furnisher's admission cannot be checked";
+    return {
+      admitted: false,
+      problem: "its proof did not verify, so its furnisher's admission cannot be checked",
+    };
   }
-  const gate = proofAdmissionGate(proof, log.admissions, furnishers);
-  return gate.admitted ? null : gate.problem;
+  return proofAdmissionGate(proof, log.admissions, furnishers);
 }
 
 /**

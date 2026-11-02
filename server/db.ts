@@ -626,6 +626,23 @@ export async function listExpiryLines() {
   );
 }
 
+// Each line's evidence result as stored, for pnpm lines seal-evidence (server/evidenceBackfill.ts).
+export async function listEvidenceLines() {
+  const db = await requireDb();
+  return db
+    .select({
+      id: outcomeEvents.id,
+      furnisherId: outcomeEvents.furnisherId,
+      eventId: outcomeEvents.eventId,
+      signedEventHash: outcomeEvents.signedEventHash,
+      evidenceResult: outcomeEvents.evidenceResult,
+      evidenceCheckedAt: outcomeEvents.evidenceCheckedAt,
+      expiredAt: outcomeEvents.expiredAt,
+    })
+    .from(outcomeEvents)
+    .orderBy(asc(outcomeEvents.id));
+}
+
 // Erases what a line says once its source has expired, and marks when. Only a
 // row not erased already, so a second run changes nothing.
 export async function eraseOutcomeEventContent(
