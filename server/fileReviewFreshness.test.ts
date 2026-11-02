@@ -746,6 +746,90 @@ describe("a line and its source's retention date", () => {
     }
   });
 
+  it("lets a line disputing a file's line act on CounterAudit's proof of it, and signs nothing it cannot check", async () => {
+    // A later line of the same furnisher disputing LINE, and CounterAudit's proof of it.
+    const disputeEvent = {
+      ...unsignedEvent,
+      event_id: "event-2",
+      occurred_at: "2026-10-31T12:00:00.000Z",
+      outcome: "disputed",
+      relation: { type: "disputes", target_event_id: event.event_id },
+      signature: event.signature,
+    };
+    const DISPUTE = {
+      ...LINE,
+      id: 2,
+      eventId: disputeEvent.event_id,
+      relationType: "disputes" as const,
+      relationTargetEventId: event.event_id,
+      outcome: disputeEvent.outcome,
+      occurredAt: new Date(disputeEvent.occurred_at),
+      packetId: "29879d36-0000-4000-8000-000000000002",
+      sequence: 8,
+      entryHash: "f".repeat(64),
+      signedEventHash: signedEventHash(disputeEvent),
+      signedEvent: disputeEvent,
+    };
+    const disputeProof = (changes: Record<string, unknown> = {}) =>
+      proofFor({
+        packet_id: DISPUTE.packetId,
+        sequence: DISPUTE.sequence,
+        entry_hash: DISPUTE.entryHash,
+        outcome_claim: {
+          outcome: DISPUTE.outcome,
+          asserted_by: "signature",
+          signer: { furnisher_id: event.furnisher_id, key_id: event.key_id, public_key: "ed25519:test" },
+          signed_event_hash: DISPUTE.signedEventHash,
+        },
+        ...changes,
+      });
+    const run = async (dispute: typeof DISPUTE, answer: ProofResult | undefined) => {
+      store.lines = [LINE, dispute];
+      const env = fileIO(counterAudit(records()));
+      env.io.fetchProof = vi.fn(async (packetId: string) =>
+        packetId === LINE.packetId
+          ? { ok: true as const, proof: proofFor() }
+          : (answer ?? { ok: false as const, status: 404, message: "not_found" })
+      );
+      const code = await assemble(env.io, "out.json");
+      const file = env.files["out.json"]
+        ? (JSON.parse(env.files["out.json"]) as SignedAgentFile)
+        : null;
+      return { code, file, out: env.out.join("\n") };
+    };
+
+    // Its stored proofOk edited off: it acts, on CounterAudit's proof.
+    const edited = await run({ ...DISPUTE, proofOk: false }, { ok: true, proof: disputeProof() });
+    expect(edited.code).toBe(0);
+    expect(edited.file?.furnished_outcomes.map(l => l.display_state)).toEqual(["disputed"]);
+
+    // One CounterAudit has no proof of, or one held as passed whose proof does not check: no file.
+    const unknown = await run(DISPUTE, undefined);
+    expect(unknown.code).toBe(1);
+    expect(unknown.out).toContain(`Not signed: ${DISPUTE.packetId}: its proof could not be read: not_found`);
+    const failing = { ok: true as const, proof: disputeProof({ entry_hash: "0".repeat(64) }) };
+    const changed = await run(DISPUTE, failing);
+    expect(changed.code).toBe(1);
+    expect(changed.out).toContain(
+      `Not signed: ${DISPUTE.packetId}: the Bureau holds it as passed, but its proof does not check: entry_hash`
+    );
+
+    // A seal time that is not a time stops it, rather than throwing.
+    const undated = await run({ ...DISPUTE, caCreatedAt: new Date(Number.NaN) }, { ok: true, proof: disputeProof() });
+    expect(undated.code).toBe(1);
+    expect(undated.out).toContain(`Not signed: ${DISPUTE.packetId}: its seal time is not a time`);
+
+    // Held as not passed, with a proof that does not check, or erased: it does not act.
+    for (const answer of [
+      failing,
+      gone(tombstoneFor({ packet_id: DISPUTE.packetId, sequence: DISPUTE.sequence, entry_hash: DISPUTE.entryHash })),
+    ]) {
+      const quiet = await run({ ...DISPUTE, proofOk: false }, answer);
+      expect(quiet.code).toBe(0);
+      expect(quiet.file?.furnished_outcomes.map(l => l.display_state)).toEqual(["released"]);
+    }
+  });
+
   it("verifies a line whose source was erased since as expired, not failed", async () => {
     const signed = fileIO(counterAudit(records()));
     expect(await assemble(signed.io, "one.json")).toBe(0);

@@ -497,6 +497,24 @@ describe("releaseFor: a line backed by a charge must hold its claim", () => {
     expect(releaseFor(backed(key), [approval]).released).toBe("solo_test");
   });
 
+  it("holds a line whose stored charge it cannot read, without throwing", () => {
+    for (const changes of [
+      { tx_hash: undefined },
+      { tx_hash: 14 },
+      { tx_hash: null },
+      { chain_id: { toString: 1 } },
+      { log_index: { toString: 1 } },
+      { chain_id: "5042002" },
+    ]) {
+      const broken = { ...evidence, charge: { ...charge, ...changes } };
+      const unreadable = line({ evidenceStatus: "verified", evidenceResult: broken, evidenceKey: key });
+      expect(releaseFor(unreadable, [{ ...approval, evidenceDigest: evidenceDigest(broken) }])).toEqual({
+        released: null,
+        holdingBack: "its evidence names a charge it cannot read; run the intake again",
+      });
+    }
+  });
+
   it.each([
     ["holds no claim", null],
     ["holds a different claim", "5042002:0xabc:1"],

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { generatePrivateKey } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import {
   assembleFile,
@@ -17,6 +18,7 @@ import {
   type StoredLine,
 } from "./agentFile";
 import { BUREAU_FILE_KEYS } from "./bureauFileKeys";
+import { DISPUTE_SCHEMA, checkLineDisputes, signWithWallet, walletAddress } from "./dispute";
 import type { Furnisher } from "./furnishers";
 import type { Line, Review } from "./lineState";
 import {
@@ -404,6 +406,173 @@ describe("assembleFile", () => {
     );
     expect(file.furnished_outcomes.map(l => l.display_state)).toEqual([
       "released",
+    ]);
+  });
+
+  it("reads whether a dispute was withdrawn from its withdrawal, not the stored display state", () => {
+    const log = reviewLog();
+    const disputed = log.approve(stored());
+    // The dispute's display state edited to withdrawn, with no withdrawal behind it.
+    const dispute = stored(
+      { displayState: "withdrawn" },
+      {
+        outcome: "disputed",
+        relation: { type: "disputes", target_event_id: disputed.eventId },
+      }
+    );
+    const shown = (rows: StoredLine[]) =>
+      assembleFile({ wallet: WALLET }, rows, log.reviewsOf, OPTIONS).file.furnished_outcomes.map(
+        l => l.display_state
+      );
+    expect(shown([disputed, dispute])).toEqual(["disputed"]);
+    const withdrawal = stored(
+      {},
+      { relation: { type: "withdraws", target_event_id: dispute.eventId } }
+    );
+    expect(shown([disputed, dispute, withdrawal])).toEqual(["released"]);
+  });
+
+  it("with relatingProofs, lets a relating line act on CounterAudit's proof of it, not its stored proofOk", () => {
+    const log = reviewLog();
+    const disputed = log.approve(stored());
+    // A dispute whose stored proofOk was edited off.
+    const dispute = stored(
+      { proofOk: false },
+      {
+        outcome: "disputed",
+        relation: { type: "disputes", target_event_id: disputed.eventId },
+      }
+    );
+    const target = log.approve(stored());
+    // A withdrawal added to the store that CounterAudit never sealed.
+    const added = stored(
+      {},
+      { relation: { type: "withdraws", target_event_id: target.eventId } }
+    );
+    const assembled = (relatingProofs?: Record<string, boolean>) =>
+      assembleFile({ wallet: WALLET }, [disputed, dispute, target, added], log.reviewsOf, {
+        ...OPTIONS,
+        relatingProofs,
+      });
+    const shown = (lines: { counteraudit: { packet_id: string }; display_state: string }[]) =>
+      lines.map(l => [l.counteraudit.packet_id, l.display_state]);
+
+    const asStored = assembled();
+    expect(shown(asStored.file.furnished_outcomes)).toEqual([[disputed.packetId, "released"]]);
+    expect(shown(asStored.file.history)).toEqual([[target.packetId, "withdrawn"]]);
+    // The relating lines the released lines depend on, for readSources to check.
+    expect(asStored.relating.map(l => l.packetId).sort()).toEqual(
+      [dispute.packetId, added.packetId].sort()
+    );
+
+    const checked = assembled({ [dispute.packetId]: true, [added.packetId]: false });
+    expect(shown(checked.file.furnished_outcomes)).toEqual([
+      [target.packetId, "released"],
+      [disputed.packetId, "disputed"],
+    ]);
+    expect(checked.file.history).toEqual([]);
+    // A relating line readSources did not answer for does not act.
+    expect(shown(assembled({}).file.furnished_outcomes)).toEqual([
+      [target.packetId, "released"],
+      [disputed.packetId, "released"],
+    ]);
+  });
+
+  it("with relatingProofs, lets a dispute's withdrawal act on CounterAudit's proof, not its stored proofOk", () => {
+    const log = reviewLog();
+    const disputed = log.approve(stored());
+    const dispute = stored(
+      {},
+      {
+        outcome: "disputed",
+        relation: { type: "disputes", target_event_id: disputed.eventId },
+      }
+    );
+    // The withdrawal of that dispute, its stored proofOk edited off.
+    const withdrawal = stored(
+      { proofOk: false },
+      { relation: { type: "withdraws", target_event_id: dispute.eventId } }
+    );
+    const assembled = (relatingProofs?: Record<string, boolean>) =>
+      assembleFile({ wallet: WALLET }, [disputed, dispute, withdrawal], log.reviewsOf, {
+        ...OPTIONS,
+        relatingProofs,
+      });
+    const asStored = assembled();
+    expect(asStored.file.furnished_outcomes.map(l => l.display_state)).toEqual(["disputed"]);
+    expect(asStored.relating.map(l => l.packetId).sort()).toEqual(
+      [dispute.packetId, withdrawal.packetId].sort()
+    );
+    expect(
+      assembled({ [dispute.packetId]: true, [withdrawal.packetId]: true }).file.furnished_outcomes.map(
+        l => l.display_state
+      )
+    ).toEqual(["released"]);
+  });
+
+  it("checks a furnisher's answer to a subject dispute even when, as stored, the dispute lapsed", async () => {
+    const key = generatePrivateKey();
+    const subject = { wallet: walletAddress(key) };
+    const log = reviewLog();
+    const line = log.approve(stored({}, { subject_ref: subject }));
+    const sealedAt = new Date("2026-11-01T10:00:00.000Z");
+    const filing = await signWithWallet(
+      {
+        schema: DISPUTE_SCHEMA,
+        kind: "dispute",
+        dispute_id: "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        line: {
+          furnisher_id: line.furnisherId,
+          event_id: line.eventId,
+          signed_event_hash: line.signedEventHash,
+        },
+        subject_ref: subject,
+        signer: { type: "eip191", address: subject.wallet },
+        reason: "I never made this payment.",
+        filed_at: "2026-11-01T09:59:00.000Z",
+      },
+      key
+    );
+    const disputed = await checkLineDisputes(
+      {
+        ...line,
+        disputeRecords: [
+          {
+            id: 1,
+            disputeId: "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+            kind: "dispute",
+            record: filing,
+            packetId: "00000000-0000-4000-8000-000000000901",
+            sequence: 1,
+            sealedAt,
+            signatureOk: true,
+            subjectControlOk: true,
+          },
+        ],
+      },
+      {}
+    );
+    // The furnisher withdrew the line well before the deadline; its stored proofOk was edited off.
+    const answer = stored(
+      { proofOk: false, caCreatedAt: new Date("2026-11-05T10:00:00.000Z") },
+      { subject_ref: subject, relation: { type: "withdraws", target_event_id: line.eventId } }
+    );
+    const assembled = (relatingProofs?: Record<string, boolean>) =>
+      assembleFile(subject, [disputed, answer], log.reviewsOf, {
+        ...OPTIONS,
+        now: new Date("2026-11-20T00:00:00.000Z"),
+        relatingProofs,
+      });
+    // As stored, the answer does not act, so the dispute lapsed and the line is removed: still,
+    // readSources is asked to check the line and the answer.
+    const asStored = assembled();
+    expect([...asStored.file.furnished_outcomes, ...asStored.file.history]).toEqual([]);
+    expect(asStored.sourcesFor.map(l => l.packetId)).toEqual([line.packetId]);
+    expect(asStored.relating.map(l => l.packetId)).toEqual([answer.packetId]);
+    // Its proof checks, so the withdrawal counts and the line shows withdrawn.
+    const checked = assembled({ [answer.packetId]: true });
+    expect(checked.file.history.map(l => [l.counteraudit.packet_id, l.display_state])).toEqual([
+      [line.packetId, "withdrawn"],
     ]);
   });
 

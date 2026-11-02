@@ -334,6 +334,15 @@ describe("runIntake", () => {
     await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
     expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.flags).toEqual(["first seen"]);
 
+    // Nor one whose stored charge cannot be read: the run goes on for that line.
+    const unreadable = { ...complete, charge: { ...VERIFIED.charge, tx_hash: 7 } };
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: unreadable });
+    evidence.verifyEvidence.mockResolvedValueOnce(failedRead);
+    const updates = db.updateOutcomeEventEvidence.mock.calls.length;
+    await runIntake(["--test-data", "events.jsonl"], fakeIO().io);
+    expect(db.updateOutcomeEventEvidence.mock.calls.length).toBe(updates + 1);
+    expect(db.updateOutcomeEventEvidence.mock.calls.at(-1)![1].evidenceResult.funding_screen.read_failed).toBe(true);
+
     // A stored screen for another charge is never kept.
     const otherCharge = { ...complete, charge: { ...VERIFIED.charge, log_index: 99 } };
     db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: otherCharge });

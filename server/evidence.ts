@@ -185,6 +185,18 @@ export function chargeKey(charge: LevyCharge): string {
   return `${charge.chain_id}:${charge.tx_hash.toLowerCase()}:${charge.log_index}`;
 }
 
+/**
+ * chargeKey for a charge read back from a stored row, which can hold anything: null unless its
+ * three fields have the types intake writes, so a damaged row cannot throw.
+ */
+export function storedChargeKey(charge: Record<string, unknown>): string | null {
+  return typeof charge.chain_id === "number" &&
+    typeof charge.tx_hash === "string" &&
+    typeof charge.log_index === "number"
+    ? chargeKey(charge as unknown as LevyCharge)
+    : null;
+}
+
 const LEVY_EVENTS = parseAbi([
   "event Charged(uint256 indexed subId, uint256 amount, uint256 fee, bytes32 indexed invoiceRef, uint256 chargeCount)",
   "event ChargeFailed(uint256 indexed subId, uint64 failedAttempts)",

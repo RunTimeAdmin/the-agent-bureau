@@ -16,7 +16,7 @@ import type {
   DisputeState,
   StoredDisputeRecord,
 } from "./dispute";
-import { chargeKey, type LevyCharge } from "./evidence";
+import { storedChargeKey } from "./evidence";
 import type { AdmissionGate } from "./furnisherAdmission";
 import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
@@ -212,13 +212,18 @@ export function releaseFor(
   // which is unique, so no two released lines can rest on one charge (review
   // M-02).
   const charge = isRecord(result) ? result.charge : undefined;
-  if (
-    isRecord(charge) &&
-    line.evidenceKey !== chargeKey(charge as LevyCharge)
-  ) {
-    return hold(
-      "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it"
-    );
+  if (isRecord(charge)) {
+    // A charge not in the form intake writes holds just this line, rather than throwing out
+    // of release for every line.
+    const key = storedChargeKey(charge);
+    if (key === null) {
+      return hold("its evidence names a charge it cannot read; run the intake again");
+    }
+    if (line.evidenceKey !== key) {
+      return hold(
+        "it does not hold the claim on its charge: the furnisher's merchant account is not vetted, or another line holds it"
+      );
+    }
   }
   // Reviewers sign the evidence result's digest, so its status is the one that counts. Intake
   // writes the evidenceStatus column from the same result; a column that disagrees was changed

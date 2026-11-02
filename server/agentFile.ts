@@ -24,6 +24,8 @@ import { FURNISHERS, type Furnisher } from "./furnishers";
 import {
   displayStateFor,
   lineStates,
+  relationProblem,
+  releaseFor,
   subjectKey,
   type DisplayState,
   type Line,
@@ -360,6 +362,13 @@ export type AssembleOptions = {
    * checkable_until.
    */
   sources?: Record<string, LineSource>;
+  /**
+   * For each line relating to another (a dispute, withdrawal, replacement or correction), by
+   * packet id, whether CounterAudit's proof of it checks now (readSources). With this a relating
+   * line acts only when its proof checks, whatever its stored proofOk says. Without it the stored
+   * proofOk counts.
+   */
+  relatingProofs?: Record<string, boolean>;
 };
 
 /** What CounterAudit says of a line's source: until when it can be checked, or why it cannot. */
@@ -380,7 +389,13 @@ export function assembleFile(
   rows: StoredLine[],
   reviewsOf: (line: Line) => Review[],
   options: AssembleOptions
-): { file: AgentFile; skipped: string[]; expired: string[] } {
+): {
+  file: AgentFile;
+  skipped: string[];
+  expired: string[];
+  sourcesFor: StoredLine[];
+  relating: StoredLine[];
+} {
   const furnishers = options.furnishers ?? FURNISHERS;
   const proofBase = (options.proofBase ?? ENV.counterauditApiUrl).replace(
     /\/+$/,
@@ -397,19 +412,65 @@ export function assembleFile(
     else lines.push(line);
   }
   const key = subjectKey(subjectRef);
+  // The same furnisher's lines whose relation points at a line, matched exactly
+  // as findRelatingOutcomeLines does, from their signed events.
+  const relatingRows = (target: StoredLine) =>
+    lines.filter(
+      r =>
+        r.furnisherId === target.furnisherId &&
+        r.relationTargetEventId === target.eventId
+    );
+  // Nothing signs a relating line's proofOk or display state, so neither decides what it does
+  // on a file: with relatingProofs its proof is the one CounterAudit answers now, and a dispute
+  // counts as withdrawn only when a withdrawal among these lines acts on it.
+  const checked = (r: StoredLine): StoredLine =>
+    options.relatingProofs
+      ? {
+          ...r,
+          proofOk:
+            Object.hasOwn(options.relatingProofs, r.packetId) &&
+            options.relatingProofs[r.packetId] === true,
+        }
+      : r;
+  const relatingTo = (target: StoredLine): StoredLine[] =>
+    relatingRows(target)
+      .map(checked)
+      .map(r =>
+        r.relationType !== "disputes"
+          ? r
+          : {
+              ...r,
+              displayState: relatingRows(r).some(
+                w => w.relationType === "withdraws" && relationProblem(checked(w), r) === null
+              )
+                ? ("withdrawn" as const)
+                : ("unverified" as const),
+            }
+      );
+  // What readSources must check for this file: every line reviewers released, even one a
+  // lapsed subject dispute removes (an answer that checks can undo the lapse), and each relating
+  // line that could act on one, with the withdrawals of its disputes.
+  const sourcesFor = new Set<StoredLine>();
+  const relatingUsed = new Set<StoredLine>();
+  const mayAct = (r: StoredLine, target: StoredLine) =>
+    relationProblem({ ...r, proofOk: true }, target) === null;
   const standing: FileLine[] = [];
   const history: FileLine[] = [];
   for (const line of lines) {
     if (!line.subjectRef || subjectKey(line.subjectRef) !== key) continue;
-    // The same furnisher's lines whose relation points at this one, matched
-    // exactly as findRelatingOutcomeLines does, from their signed events.
-    const relating = lines.filter(
-      r =>
-        r.furnisherId === line.furnisherId &&
-        r.relationTargetEventId === line.eventId
-    );
+    const relating = relatingTo(line);
     const reviews = reviewsOf(line);
     const admission = options.admissionOf?.(line);
+    if (releaseFor(line, reviews, admission).released) {
+      sourcesFor.add(line);
+      for (const r of relatingRows(line).filter(r => mayAct(r, line))) {
+        relatingUsed.add(r);
+        if (r.relationType !== "disputes") continue;
+        for (const w of relatingRows(r)) {
+          if (w.relationType === "withdraws" && mayAct(w, r)) relatingUsed.add(w);
+        }
+      }
+    }
     // A lapsed subject dispute removes the line from every file, history included.
     const dispute = disputeOf(line, relating, reviewsOf, options.now, options.admissionOf);
     const states = lineStates(line, relating, reviews, dispute?.state ?? null, admission);
@@ -531,6 +592,8 @@ export function assembleFile(
     },
     skipped,
     expired,
+    sourcesFor: [...sourcesFor],
+    relating: [...relatingUsed],
   };
 }
 
@@ -865,7 +928,9 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   }
   // Each line is checkable until its source's retention date, and no longer on a file after.
   const sources = await readSources(
-    [...draft.file.furnished_outcomes, ...draft.file.history],
+    draft.sourcesFor,
+    draft.relating,
+    assembleOptions.bureauOrgId,
     io
   );
   if ("problem" in sources) {
@@ -875,6 +940,7 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   const { file, skipped, expired } = assembleFile(subjectRef, rows, reviewsOf, {
     ...assembleOptions,
     sources: sources.sources,
+    relatingProofs: sources.relatingProofs,
   });
   if (skipped.length > 0) {
     for (const reason of skipped) io.log(printable(reason));
@@ -916,77 +982,128 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   return 0;
 }
 
+/** Where CounterAudit sealed a line, and what its proof must say of it. */
+type SourceRef = {
+  packetId: string;
+  orgId: string;
+  sequence: number | null;
+  entryHash: string;
+  signedEventHash: string;
+  outcome: string;
+  sealedAt: string;
+};
+
+/**
+ * Reads one line's source from CounterAudit: its proof, checked against the line as verify checks
+ * it, and its retention date. Failed when the proof reads but does not check; a problem when it
+ * cannot be read, or when CounterAudit's record of erasing it does not check.
+ */
+async function readSource(
+  ref: SourceRef,
+  io: FileIO
+): Promise<LineSource | { failed: string } | { problem: string }> {
+  const fetched = await io.fetchProof(ref.packetId);
+  if (fetched.ok) {
+    const result = verifyLineProof({
+      proof: fetched.proof,
+      jwks: io.jwks,
+      furnishers: io.furnishers,
+      ...ref,
+    });
+    if (!result.ok) {
+      return { failed: `its proof does not check: ${failedChecks(result.checks)}` };
+    }
+    const until = fetched.proof.expires_at;
+    if (until === undefined || until === null) return { checkableUntil: null };
+    const at = typeof until === "string" ? new Date(until).getTime() : NaN;
+    if (!Number.isFinite(at)) return { problem: "its proof's expires_at is not a time" };
+    return at <= io.now().getTime()
+      ? { expired: `it reached its retention date, ${String(until)}` }
+      : { checkableUntil: String(until) };
+  }
+  if (fetched.tombstone) {
+    const result = verifyLineTombstone({
+      tombstone: fetched.tombstone,
+      jwks: io.jwks,
+      packetId: ref.packetId,
+      orgId: ref.orgId,
+      sequence: ref.sequence,
+      entryHash: ref.entryHash,
+    });
+    if (!result.ok) {
+      return {
+        problem: `CounterAudit's record of erasing it does not check: ${failedChecks(result.checks)}`,
+      };
+    }
+    return { expired: `CounterAudit erased it at ${String(fetched.tombstone.expired_at)}` };
+  }
+  return { problem: `its proof could not be read: ${fetched.message}` };
+}
+
 /**
  * Reads each line's source from CounterAudit just before a file is signed: its proof, checked
  * against the line as verify checks it, and its retention date. A line whose source is erased,
  * or past that date, comes back expired. Fails closed: a proof that cannot be read or does not
  * check stops the file, so none is signed that its own verify would fail.
+ *
+ * The lines that dispute, withdraw, replace or correct those lines are read too, since what they
+ * do shows on the file: each acts only if its proof checks now (relatingProofs). One the Bureau
+ * holds as passed whose proof does not check means the store was changed or damaged, so nothing
+ * is signed; one held as not passed, or erased, simply does not act. Each answer is kept by
+ * packet id, which is unique in outcome_events, so no two rows share one.
  */
 async function readSources(
-  lines: FileLine[],
+  lines: StoredLine[],
+  relating: StoredLine[],
+  bureauOrgId: string,
   io: FileIO
-): Promise<{ sources: Record<string, LineSource> } | { problem: string }> {
+): Promise<
+  | { sources: Record<string, LineSource>; relatingProofs: Record<string, boolean> }
+  | { problem: string }
+> {
+  // Where the intake checked a line's proof: a listed furnisher's own organization, else the
+  // Bureau's, as the file states it.
+  const read = async (line: StoredLine) => {
+    const sealedAt = new Date(line.caCreatedAt);
+    if (!Number.isFinite(sealedAt.getTime())) return { problem: "its seal time is not a time" };
+    const listed = Object.hasOwn(io.furnishers, line.furnisherId)
+      ? io.furnishers[line.furnisherId].counterauditOrgId
+      : undefined;
+    return readSource(
+      {
+        packetId: line.packetId,
+        orgId: listed ?? bureauOrgId,
+        sequence: line.sequence,
+        entryHash: line.entryHash,
+        signedEventHash: line.signedEventHash,
+        outcome: line.outcome,
+        sealedAt: sealedAt.toISOString(),
+      },
+      io
+    );
+  };
   const sources: Record<string, LineSource> = {};
   for (const line of lines) {
-    const ca = line.counteraudit;
-    const fetched = await io.fetchProof(ca.packet_id);
-    if (fetched.ok) {
-      const result = verifyLineProof({
-        proof: fetched.proof,
-        jwks: io.jwks,
-        furnishers: io.furnishers,
-        packetId: ca.packet_id,
-        orgId: ca.org_id,
-        sequence: ca.sequence,
-        entryHash: ca.entry_hash,
-        signedEventHash: ca.signed_event_hash,
-        outcome: line.outcome,
-        sealedAt: line.sealed_at,
-      });
-      if (!result.ok) {
-        return {
-          problem: `${ca.packet_id}: its proof does not check: ${failedChecks(result.checks)}`,
-        };
-      }
-      const until = fetched.proof.expires_at;
-      if (until === undefined || until === null) {
-        sources[ca.packet_id] = { checkableUntil: null };
-        continue;
-      }
-      const at = typeof until === "string" ? new Date(until).getTime() : NaN;
-      if (!Number.isFinite(at)) {
-        return {
-          problem: `${ca.packet_id}: its proof's expires_at is not a time`,
-        };
-      }
-      sources[ca.packet_id] =
-        at <= io.now().getTime()
-          ? { expired: `it reached its retention date, ${String(until)}` }
-          : { checkableUntil: String(until) };
-    } else if (fetched.tombstone) {
-      const result = verifyLineTombstone({
-        tombstone: fetched.tombstone,
-        jwks: io.jwks,
-        packetId: ca.packet_id,
-        orgId: ca.org_id,
-        sequence: ca.sequence,
-        entryHash: ca.entry_hash,
-      });
-      if (!result.ok) {
-        return {
-          problem: `${ca.packet_id}: CounterAudit's record of erasing it does not check: ${failedChecks(result.checks)}`,
-        };
-      }
-      sources[ca.packet_id] = {
-        expired: `CounterAudit erased it at ${String(fetched.tombstone.expired_at)}`,
-      };
-    } else {
-      return {
-        problem: `${ca.packet_id}: its proof could not be read: ${fetched.message}`,
-      };
-    }
+    const source = await read(line);
+    if ("problem" in source) return { problem: `${line.packetId}: ${source.problem}` };
+    if ("failed" in source) return { problem: `${line.packetId}: ${source.failed}` };
+    sources[line.packetId] = source;
   }
-  return { sources };
+  const relatingProofs: Record<string, boolean> = {};
+  for (const r of relating) {
+    if (Object.hasOwn(relatingProofs, r.packetId)) continue;
+    const source = Object.hasOwn(sources, r.packetId) ? sources[r.packetId] : await read(r);
+    if ("problem" in source) return { problem: `${r.packetId}: ${source.problem}` };
+    if ("failed" in source) {
+      if (r.proofOk) {
+        return { problem: `${r.packetId}: the Bureau holds it as passed, but ${source.failed}` };
+      }
+      relatingProofs[r.packetId] = false;
+      continue;
+    }
+    relatingProofs[r.packetId] = !("expired" in source);
+  }
+  return { sources, relatingProofs };
 }
 
 /** How long a file checked as current may have been issued before, unless --max-age-days says. */

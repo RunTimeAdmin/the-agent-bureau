@@ -26,9 +26,9 @@ import {
 } from "./db";
 import {
   chargeKey,
+  storedChargeKey,
   verifyEvidence,
   type EvidenceResult,
-  type LevyCharge,
 } from "./evidence";
 import { SCREEN, type FundingScreen } from "./fundingScreen";
 import { takesOverClaim, type Line } from "./lineState";
@@ -812,7 +812,7 @@ async function recordLine({
         !storedScreen.read_failed &&
         isRecord(storedResult?.charge) &&
         evidence.charge &&
-        chargeKey(storedResult.charge as LevyCharge) === chargeKey(evidence.charge)
+        storedChargeKey(storedResult.charge) === chargeKey(evidence.charge)
       ) {
         evidence = { ...evidence, funding_screen: storedScreen as unknown as FundingScreen };
       }
