@@ -62,7 +62,7 @@ pnpm review submit genesis-alice.json
 
 `key` prints the genesis hash. Each reviewer checks they all see the same hash, and a pull request sets `REVIEW_GENESIS` in `server/reviewLog.ts` to it. The genesis takes effect once that is deployed and all of them are sealed, in either order. A genesis that differs in any name, key or order has another hash.
 
-The CounterAudit admin also marks the organization as the review organization, with the same hash (`PUT /v1/admin/review-org` with `{"genesis_hash": "<hash>"}`). From the moment that genesis takes effect there, CounterAudit counts the reviewers from the review log by the same rules, and creating or revoking any API key in the review organization, or changing that setting, needs reviewers' signed approvals of the exact request (below): one reviewer for a new key, two different reviewers for revoking a key or changing the setting. It also refuses a retention policy or erasure there, since the review log keeps every packet. Each reviewer can check which genesis CounterAudit pins and which reviewers it counts with their own read key: `GET /v1/audit/review-org`.
+The CounterAudit admin also marks the organization as the review organization, with the same hash (`PUT /v1/admin/review-org` with `{"genesis_hash": "<hash>"}`). From the moment that genesis takes effect there, CounterAudit counts the reviewers from the review log by the same rules, and creating or revoking any API key in the review organization, or changing that setting, needs reviewers' signed approvals of the exact request (below): two different reviewers for each of them. It also refuses a retention policy or erasure there, since the review log keeps every packet. Each reviewer can check which genesis CounterAudit pins and which reviewers it counts with their own read key: `GET /v1/audit/review-org`.
 
 **Approving a key change in the review organization (a reviewer, on their own machine).** The operator makes the request in CounterAudit (`POST /v1/admin/keys`, `DELETE /v1/admin/keys/:id` or `PUT /v1/admin/review-org`), which answers 202 with an approval request, and hands the reviewer that request as `GET /v1/admin/keys/requests/:id` returns it:
 
@@ -129,7 +129,7 @@ Until reviewers decide, the appeal is open and the queue lists it.
   "schema": "agent-bureau/review-decision/v1",
   "reviewer_id": "rev_alice",
   "furnisher_id": "fur_levymerchant1",
-  "event_id": "levy-sub8-charge1",
+  "event_id": "55aa2bce-d2a4-441a-b962-4c9178ab9671",
   "signed_event_hash": "<64 hex>",
   "data_class": "test",
   "evidence_digest": "<64 hex>",
@@ -146,10 +146,10 @@ The `outcome_reviews` table (migration 0009), where `pnpm review apply` recorded
 
 ## Limits
 
-- **CounterAudit's operator.** Whoever runs CounterAudit's server and database can still change them directly. The review organization's key changes need a reviewer's signature in CounterAudit's code path and are kept on record (`ca_review_org_history`, approval requests), and reviewers can compare what CounterAudit counts with what they read themselves; neither stops someone with root on the server.
+- **CounterAudit's operator.** Whoever runs CounterAudit's server and database can still change them directly. The review organization's key changes need two reviewers' signatures in CounterAudit's code path and are kept on record (`ca_review_org_history`, approval requests), and reviewers can compare what CounterAudit counts with what they read themselves; neither stops someone with root on the server.
 - **Before the genesis takes effect** an admin issues the review organization's keys and sets its pinned genesis alone, so check `GET /v1/audit/review-org` once it does.
 - **No reviewer-side check yet.** A reviewer compares the queue with the log using their own read key through CounterAudit's API; `pnpm review` has no command for it.
-- **One run at a time.** `pnpm review sync`, `pnpm review settle` and the intake do not lock lines against each other; run them one after the other.
+- **One run at a time.** `pnpm review sync`, `pnpm review settle` and the intake do not lock lines against each other, and the server's own runs of `pnpm dispute settle` and `pnpm lines expire` (`server/schedules.ts`) take no lock either. The server runs both when it starts, then `dispute settle` every hour and `lines expire` every 24 hours, and tries a failed run again an hour later, so their times follow the server's start, not the clock. Run the manual commands one after the other, when neither scheduled run is due: `/api/jobs` gives each one's `last_run_at`.
 - **Command line only.** There is no review screen in the inbox.
 - **No passphrase on private keys.**
 - **Not yet covered:** subject matching changes (Phase 0 item 6 names them too; subject matching is Phase 3). Released lines appear on an agent's file (`docs/agent-file.md`).

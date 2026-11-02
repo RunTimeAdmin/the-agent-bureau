@@ -26,7 +26,7 @@ Set `DATABASE_URL` to your own database connection string. The server applies pe
 pnpm db:migrate
 ```
 
-On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, `plays`, and `review_log_records`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
+On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `dispute_records`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, `plays`, `review_log_records`, and `review_log_sync`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
 
 Rebuild after changing source files or the public origin:
 
@@ -64,8 +64,9 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `PUBLIC_SITE_URL` | Public origin used at build time for canonical URLs and the sitemap. Defaults to `https://theagentbureau.xyz`. |
 | `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
 | `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+| `COUNTERAUDIT_ORG_ID` | The Bureau's CounterAudit organization. The production server needs it for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. |
 
-The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`, and `pnpm review sync` reads `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` (`docs/two-person-review.md`). The website itself does not need them.
+The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`, and `pnpm review sync` reads `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` (`docs/two-person-review.md`). The production server needs `COUNTERAUDIT_ORG_ID` (and `COUNTERAUDIT_API_URL` if not the default) for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. The rest are for the operator scripts.
 
 ## Operator inbox
 
@@ -89,4 +90,4 @@ The rate limiters are in-memory and keyed by the visitor's IP. Express trusts `X
 
 ## Final checks on your own host
 
-Confirm `/api/health` returns success and `/api/ready` returns ready, artwork loads, the `inquiries` table exists, a real form submission is stored, `/inbox` rejects a wrong password and accepts the right one, and unknown paths return 404. Confirm the domain certificate and sitemap.
+Confirm `/api/health` returns success and `/api/ready` returns ready, artwork loads, the `inquiries` table exists, a real form submission is stored, `/inbox` rejects a wrong password and accepts the right one, unknown paths return 404, and `/api/jobs` returns `ok`. Confirm the domain certificate and sitemap.

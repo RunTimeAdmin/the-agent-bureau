@@ -16,7 +16,7 @@ These follow from the Phase 0 decisions (`docs/bureau-outcome-service-phase0.md`
 1. Get a signed JSONL file, one event per line, as `agent-bureau-furnish sign` writes it (outcome event v1).
 2. Make sure the signing key is registered for that `furnisher_id` and `key_id` in the Bureau's CounterAudit org. Otherwise CounterAudit refuses each event with `outcome_signer_unknown`.
 3. Set the environment (below), in the shell or in `.env`.
-4. Make sure the database has the `outcome_events` table with its evidence columns (migration 0008). The server applies migrations when it starts, or run `pnpm db:migrate`. The script checks this before it sends anything, so it cannot seal events it has nowhere to store.
+4. Make sure the database has every migration through 0015. The server applies migrations when it starts, or run `pnpm db:migrate`. The script checks this before it sends anything, so it cannot seal events it has nowhere to store.
 
 ## Environment
 
@@ -41,7 +41,7 @@ A furnisher that seals its events in its own CounterAudit organization sends pac
 
 For each line the script sends the event to `POST /v1/audit/ingest` with the `agent-bureau-outcome-v1` connector and `public_proof: true`, fetches the packet's public proof from `GET /v1/proofs/{packet_id}`, checks it, checks the event's evidence, and stores the line. It prints one line per event and a summary. Exit code 0 means every event was sealed, its proof verified and its line stored; 1 means at least one was not; 2 means the run was refused before anything was sent.
 
-Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
+Running the same file again is safe. CounterAudit answers 200 with the packet it already sealed, and the stored line keeps its times, state and data class; only its checks are refreshed. An event sealed before 2026-11-02 with an `event_id` that is not a UUIDv4 is the exception: CounterAudit now refuses it with 422 even though it sealed it before, so a re-run does not refresh its checks. A line taken with `--sealed` is not affected, since that run seals nothing. A proof check is recorded when it ran, and an evidence check when it reached a result (not `pending` or an error), so a run during an RPC outage does not overwrite an earlier result.
 
 After storing a line, the intake settles its display state and, if the line carries a `relation`, its target's: `withdraws ... applied, that line is now withdrawn`, `not applied` with the reason, or `no such line yet` when the target has not been stored. `docs/line-states.md` has the rules.
 
@@ -53,6 +53,7 @@ After storing a line, the intake settles its display state and, if the line carr
 | `already sealed (200)`                    | This exact event was sealed before; its packet comes back.                                                                                 | Yes, if not already |
 | `conflict (409 outcome_event_conflict)`   | The furnisher already used this `event_id` for a different event. A correction must be a new event whose `relation` points at the old one. | No                  |
 | `refused (422 outcome_schema_invalid)`    | Not a valid furnish v1 event.                                                                                                              | No                  |
+| `refused (422 outcome_event_id_invalid)`  | The `event_id` is not a random lowercase UUIDv4, which CounterAudit requires of every event it seals since 2026-11-02.                     | No                  |
 | `refused (422 outcome_signer_unknown)`    | The org has no active key for this `furnisher_id` and `key_id`.                                                                            | No                  |
 | `refused (422 outcome_signature_invalid)` | The signature does not verify with the registered key.                                                                                     | No                  |
 | `did not seal it`                         | Any other answer, or none (bad key, rate limit, network). Nothing is known sealed.                                                         | No                  |
@@ -81,4 +82,4 @@ The evidence is then reported as `verified`, `needs review`, `FAILED` or `not fi
 
 ## Not built yet
 
-A review screen (review runs on the command line), subject disputes, furnisher records, serving files to subscribers (`pnpm file assemble` builds them, `docs/agent-file.md`), the unsigned CSV pilot fallback, and any intake of outside data.
+A review screen (review runs on the command line), a page where subjects file disputes (`docs/disputes.md`), furnisher records, serving files to subscribers (`pnpm file assemble` builds them, `docs/agent-file.md`), the unsigned CSV pilot fallback, and any intake of outside data.
