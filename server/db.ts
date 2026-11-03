@@ -252,7 +252,12 @@ export async function consumeLoginAttempt(
     .where(and(eq(loginAttempts.key, key), lt(loginAttempts.count, max)));
   if (now - loginAttemptsPrunedAt >= 60 * 60 * 1000) {
     loginAttemptsPrunedAt = now;
-    await db.delete(loginAttempts).where(lt(loginAttempts.windowStartedAt, now - LOGIN_ATTEMPT_ROWS_KEPT_MS));
+    // The attempt is counted already; old rows left for the next hour are no reason to refuse it.
+    try {
+      await db.delete(loginAttempts).where(lt(loginAttempts.windowStartedAt, now - LOGIN_ATTEMPT_ROWS_KEPT_MS));
+    } catch (error) {
+      console.warn("[Auth] Could not drop old sign-in counts:", error instanceof Error ? error.message : error);
+    }
   }
   return result.affectedRows === 1;
 }

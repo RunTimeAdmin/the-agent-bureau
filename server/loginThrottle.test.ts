@@ -72,8 +72,11 @@ describe("operator sign-in limits, with a database", () => {
 
 describe("OPERATOR_LOGIN_ADDRESSES", () => {
   it("takes addresses and networks, and names what is neither", () => {
-    const { list, invalid } = parseAddressList(" 203.0.113.7, 2001:db8:5::/48, 10.0.0.0/33, office, 192.0.2.1/24/1,, ");
-    expect(invalid).toEqual(["10.0.0.0/33", "office", "192.0.2.1/24/1"]);
+    const { list, invalid } = parseAddressList(
+      " 203.0.113.7, 2001:db8:5::/48, 10.0.0.0/33, office, 192.0.2.1/24/1, 0.0.0.0/0, 2001::/16,, "
+    );
+    // Not an address, or a network wider than an operator holds.
+    expect(invalid).toEqual(["10.0.0.0/33", "office", "192.0.2.1/24/1", "0.0.0.0/0", "2001::/16"]);
     const from = (ip: string) => requestAddressIn(list, { ip });
     expect(from("203.0.113.7")).toBe(true);
     expect(from("203.0.113.8")).toBe(false);
@@ -83,5 +86,7 @@ describe("OPERATOR_LOGIN_ADDRESSES", () => {
     expect(from("::ffff:203.0.113.7")).toBe(true);
     expect(requestAddressIn(list, { socket: { remoteAddress: "203.0.113.7" } })).toBe(true);
     expect(requestAddressIn(list, { ip: "not-an-address" })).toBe(false);
+    // An address the limit's key skips is not the operator's either: here the key is the socket's.
+    expect(requestAddressIn(list, { ip: "203.0.113.7%x", socket: { remoteAddress: "192.0.2.50" } })).toBe(false);
   });
 });

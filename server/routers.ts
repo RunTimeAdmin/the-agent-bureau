@@ -90,9 +90,10 @@ const loginRateLimitAll = createRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: LO
  * lock the operator out with everyone else.
  */
 export async function consumeLoginRateLimit(ip: string, now = Date.now(), countAll = true): Promise<boolean> {
-  // In this process first. The database's count is never below this process's
-  // own, so a refusal here costs the database nothing, and an address over its
-  // own limit adds nothing to the count for all.
+  // In this process first, which costs the database nothing for an address over
+  // its limit and keeps that address out of the count for all. These counts can
+  // run ahead of the database's (they include attempts it went on to refuse), so
+  // they only ever refuse more than it would, never less.
   if (!loginRateLimit.consume(ip, now)) return false;
   if (countAll && !loginRateLimitAll.consume("all", now)) return false;
   // The count for all is read before an address's row is written, so a flood

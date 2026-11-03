@@ -19,9 +19,14 @@ import { ENV } from "./env";
 
 const OPERATOR_SUBJECT = "operator";
 export const MIN_OPERATOR_PASSWORD_LENGTH = 16;
+// What sign-in accepts (server/routers.ts); a longer password could never be typed in.
+export const MAX_OPERATOR_PASSWORD_LENGTH = 256;
 // zxcvbn's estimate of the guesses a password takes: 10^14 is about what 14 random printable
-// characters give, and four random words give far more. A name, a season or a year with symbols
-// on it falls well short, which a length rule and a list of words did not catch.
+// characters give. A name, a season or a year with symbols on it falls well short, which a
+// length rule and a list of words did not catch. The password is scored as typed and again in
+// lowercase with spaces, hyphens, underscores and dots taken out, and the lower score counts:
+// zxcvbn takes a word with a space either side for random characters, so four words of the
+// site's own name passed as typed. Five random words, or 20 random characters, clear both.
 export const MIN_OPERATOR_PASSWORD_GUESSES = 1e14;
 // 32 random bytes as hex, which is what the documented generator prints:
 //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -35,10 +40,17 @@ zxcvbnOptions.setOptions({
 // Words this site's own passphrase is likely to be built from, which zxcvbn then counts as known.
 const SITE_WORDS = ["bureau", "agentbureau", "theagentbureau", "counteraudit", "sigvara", "levy", "agent", "inbox", "operator", "admin"];
 
-// The estimate takes up to a tenth of a second, and every request asks whether sign-in is on.
+// Scored on the first 64 characters, which no longer password is easier to guess than: the
+// estimate grows with length, to a second or more for a long one. Every request asks whether
+// sign-in is on, so it is worked out once for each password.
+const ESTIMATED_CHARACTERS = 64;
 let estimate: { password: string; guesses: number } | null = null;
 function passwordGuesses(password: string): number {
-  if (estimate?.password !== password) estimate = { password, guesses: zxcvbn(password, SITE_WORDS).guesses };
+  if (estimate?.password !== password) {
+    const start = password.slice(0, ESTIMATED_CHARACTERS);
+    const joined = start.toLowerCase().replace(/[\s\-_.]+/g, "");
+    estimate = { password, guesses: Math.min(zxcvbn(start, SITE_WORDS).guesses, zxcvbn(joined, SITE_WORDS).guesses) };
+  }
   return estimate.guesses;
 }
 
@@ -49,10 +61,13 @@ function passwordGuesses(password: string): number {
 export function operatorPasswordProblem(password: string): string | null {
   if (password.length === 0) return "OPERATOR_PASSWORD is not set";
   if (password.length < MIN_OPERATOR_PASSWORD_LENGTH) {
-    return `OPERATOR_PASSWORD is shorter than ${MIN_OPERATOR_PASSWORD_LENGTH} characters; use four or more random words`;
+    return `OPERATOR_PASSWORD is shorter than ${MIN_OPERATOR_PASSWORD_LENGTH} characters; use five or more random words, or 20 or more random characters`;
+  }
+  if (password.length > MAX_OPERATOR_PASSWORD_LENGTH) {
+    return `OPERATOR_PASSWORD is longer than the ${MAX_OPERATOR_PASSWORD_LENGTH} characters sign-in accepts`;
   }
   if (passwordGuesses(password) < MIN_OPERATOR_PASSWORD_GUESSES) {
-    return "OPERATOR_PASSWORD is too easy to guess; use four or more random words";
+    return "OPERATOR_PASSWORD is too easy to guess; use five or more random words, or 20 or more random characters";
   }
   return null;
 }

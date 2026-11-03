@@ -69,7 +69,9 @@ function ipv6Key(address: string): string {
 }
 
 // Addresses and networks, comma-separated ("203.0.113.7, 2001:db8:5::/48").
-// Entries that are neither are left out and returned in `invalid`.
+// Entries that are neither, or a network wider than an operator holds (an IPv4
+// prefix under /16, an IPv6 one under /32), are left out and returned in `invalid`.
+const NARROWEST_PREFIX = { ipv4: 16, ipv6: 32 } as const;
 export function parseAddressList(value: string): { list: BlockList; invalid: string[] } {
   const list = new BlockList();
   const invalid: string[] = [];
@@ -78,7 +80,8 @@ export function parseAddressList(value: string): { list: BlockList; invalid: str
     const version = isIP(address);
     const maxBits = version === 6 ? 128 : 32;
     const bits = prefix === undefined ? maxBits : /^\d{1,3}$/.test(prefix) ? Number(prefix) : NaN;
-    if (!version || extra !== undefined || !(bits >= 0 && bits <= maxBits)) {
+    const widest = NARROWEST_PREFIX[version === 6 ? "ipv6" : "ipv4"];
+    if (!version || extra !== undefined || !(bits >= widest && bits <= maxBits)) {
       invalid.push(entry);
       continue;
     }
@@ -87,17 +90,19 @@ export function parseAddressList(value: string): { list: BlockList; invalid: str
   return { list, invalid };
 }
 
-// Whether the request's client address, read as getRequestIp reads it, is in
-// `list`. An IPv4 client the server sees as ::ffff:a.b.c.d matches its IPv4 entry.
+// Whether the request's client address is in `list`: the same address
+// getRequestIp keys the limit on, so an address the key skips cannot count as
+// the operator's. An IPv4 client the server sees as ::ffff:a.b.c.d matches its
+// IPv4 entry.
 export function requestAddressIn(
   list: BlockList,
   req: { ip?: string; socket?: { remoteAddress?: string } }
 ): boolean {
   for (const candidate of [req.ip, req.socket?.remoteAddress]) {
-    const value = candidate?.trim().split("%")[0];
+    const value = candidate?.trim();
     if (!value) continue;
     const version = isIP(value);
-    if (version) return list.check(value, version === 6 ? "ipv6" : "ipv4");
+    if (version) return list.check(value.split("%")[0], version === 6 ? "ipv6" : "ipv4");
   }
   return false;
 }
