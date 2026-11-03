@@ -133,7 +133,7 @@ and `--reenable rev_bob` or `--remove rev_bob` the same way; then `pnpm review s
 pnpm review head
 ```
 
-It prints CounterAudit's signed head of the review log, checked against CounterAudit's pinned export key, beside the head the Bureau has recorded and `COUNTERAUDIT_REVIEW_MIN_HEAD` if set. The signed head should be at or past the sequence on your latest receipt. It exits 1 when a head went back (`WENT BACK`, `BEHIND`), names another packet at a sequence (`DIFFERS`), or the checkpoint could not be read or does not check out, and 2 when a setting is missing or the request failed. To hold `pnpm file verify --current` to a head, set `COUNTERAUDIT_REVIEW_MIN_HEAD` to its `sequence:entryhash`.
+It prints CounterAudit's signed head of the review log, checked against CounterAudit's pinned export key, beside the head the Bureau has recorded and `COUNTERAUDIT_REVIEW_MIN_HEAD` if set. The signed head should be at or past the sequence on your latest receipt. It exits 1 when a head went back (`WENT BACK`, `BEHIND`), names another packet at a sequence (`DIFFERS`), or the checkpoint could not be read or does not check out, and 2 when a setting is missing or malformed or the request failed. Where `DATABASE_URL` is set but the database is not ready, it says `NOT CHECKED` and exits 1. To hold `pnpm file verify --current` to a head, set `COUNTERAUDIT_REVIEW_MIN_HEAD` to its `sequence:entryhash`.
 
 ## Appeals on subject disputes
 

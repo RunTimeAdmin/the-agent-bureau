@@ -785,6 +785,16 @@ describe("pnpm file verify and the review log", () => {
     expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
   });
 
+  it("--current says when no head is pinned, which an old checkpoint replayed with the log cut to it would pass", async () => {
+    const { records, text } = await signedFile();
+    const unpinned = fileIO(counterAudit(records));
+    unpinned.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], unpinned.io)).toBe(0);
+    expect(unpinned.out.join("\n")).toContain(
+      "COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so an older checkpoint replayed with the log cut to it would pass: set it from pnpm review head."
+    );
+  });
+
   it("--current exits 3 when the review log is short of a head pinned in COUNTERAUDIT_REVIEW_MIN_HEAD", async () => {
     const { records, text } = await signedFile();
     const last = records.length - 1;
@@ -792,6 +802,9 @@ describe("pnpm file verify and the review log", () => {
     const at = fileIO(counterAudit(records));
     at.files["one.json"] = text;
     expect(await runFile(["verify", "one.json", "--current"], at.io)).toBe(0);
+    expect(at.out.join("\n")).toContain(
+      `Review log held to CounterAudit's signed checkpoint at sequence ${last} (entry hash ${hashOf(last)}, issued 2026-11-03T12:00:00.000Z) and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${last}.`
+    );
 
     process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `${last + 2}:${hashOf(last + 2)}`;
     const short = fileIO(counterAudit(records));

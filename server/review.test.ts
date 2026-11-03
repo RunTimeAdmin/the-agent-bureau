@@ -690,8 +690,8 @@ describe("pnpm review sync", () => {
     expect(await runReview(["sync"], gap.io)).toBe(1);
     expect(store.sync).toMatchObject({ lastAttemptAt: later, lastSuccessAt: NOW, listedCount: 4, listedAt: later });
     expect(store.sync!.problem).toBe("the chain breaks between sequence 2 and 4; read up to 2");
-    // A read that stopped records no newer head.
-    expect(store.sync!.checkpointSequence).toBe(2);
+    // A read that stopped still records the signed head it was shown, which the next read must reach.
+    expect(store.sync!.checkpointSequence).toBe(4);
 
     // One that could not list at all keeps the last complete count.
     const down = fakeIO({}, async () => new Response(null, { status: 503 }));
@@ -762,6 +762,15 @@ describe("pnpm review head", () => {
     const malformed = fakeIO({}, counterAudit(records()));
     expect(await runReview(["head"], malformed.io)).toBe(2);
     expect(malformed.printed()).toBe('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash".');
+  });
+
+  it("does not take a database that is set but not ready for one with no head recorded", async () => {
+    vi.stubEnv("DATABASE_URL", "mysql://bureau@127.0.0.1/bureau");
+    db.schemaReady.mockResolvedValueOnce(false);
+    const down = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], down.io)).toBe(1);
+    expect(down.printed()).toContain("NOT CHECKED: DATABASE_URL is set, but the Bureau's recorded head could not be read");
+    expect(down.printed()).not.toContain("The Bureau's recorded head: none");
   });
 
   it("stops at a checkpoint that is not signed with CounterAudit's key", async () => {

@@ -24,7 +24,7 @@ import {
   type Review,
 } from "./lineState";
 import { replayReviewLog, type ReviewLog } from "./reviewLog";
-import { readReviewLog, type Fetch, type Head } from "./reviewLogSync";
+import { readReviewLog, type Checkpoint, type Fetch, type Head } from "./reviewLogSync";
 
 const MAX_RELATION_HOPS = 10;
 
@@ -73,9 +73,10 @@ export async function loadCurrentReviewLog(options: {
     known: await listReviewLogRecords(),
     minHead: await getReviewLogHead(),
   });
+  // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
+  if (read.checkpoint) await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date());
   if (read.problem) return { problem: read.problem };
   await insertReviewLogRecords(read.rows);
-  if (read.checkpoint) await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date());
   const stored = await listReviewLogRecords();
   const linked = linkedRecords(stored);
   if (linked.length !== stored.length) {
@@ -106,7 +107,7 @@ export async function readReviewLogNow(options: {
   fetch?: Fetch;
   now?: Date;
 }): Promise<
-  | { log: ReviewLog; rows: ReviewLogRecordRow[]; position: ReviewLogPosition | null }
+  | { log: ReviewLog; rows: ReviewLogRecordRow[]; position: ReviewLogPosition | null; checkpoint: Checkpoint | null }
   | { problem: string }
 > {
   const read = await readReviewLog({ ...options, known: [] });
@@ -122,6 +123,7 @@ export async function readReviewLogNow(options: {
     log: replayLinked(linked),
     rows: linked,
     position: tip ? { sequence: tip.sequence, entryHash: tip.entryHash, packetId: tip.packetId } : null,
+    checkpoint: read.checkpoint,
   };
 }
 

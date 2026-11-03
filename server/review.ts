@@ -990,7 +990,8 @@ async function sync(io: ReviewIO) {
     problem: result.problem,
     listedCount: result.listedComplete ? result.listed : null,
   });
-  if (result.checkpoint && !result.problem) await recordReviewLogCheckpoint(result.checkpoint, io.now());
+  // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
+  if (result.checkpoint) await recordReviewLogCheckpoint(result.checkpoint, io.now());
   const fresh = new Set(result.rows.map(r => r.sequence));
   const log = await loadReviewLog();
   io.log(`Read ${added} new packet${added === 1 ? "" : "s"}.`);
@@ -1054,7 +1055,13 @@ async function headCommand(io: ReviewIO): Promise<number> {
       : "CounterAudit's signed head: none yet, the review log has no numbered packet."
   );
   let failed = false;
-  const recorded = (await schemaReady().catch(() => false)) ? await getReviewLogHead() : null;
+  // A database that is set but not ready is a comparison not made, not a head not recorded yet.
+  const ready = await schemaReady().catch(() => false);
+  if (!ready && ENV.databaseUrl) {
+    io.log("NOT CHECKED: DATABASE_URL is set, but the Bureau's recorded head could not be read (the database is not ready).");
+    failed = true;
+  }
+  const recorded = ready ? await getReviewLogHead() : null;
   if (recorded) {
     io.log(`The Bureau's recorded head: sequence ${recorded.sequence}, entry hash ${recorded.entryHash}.`);
     if (!cp || cp.sequence < recorded.sequence) {
@@ -1064,7 +1071,7 @@ async function headCommand(io: ReviewIO): Promise<number> {
       io.log("DIFFERS: CounterAudit's head names another packet at the sequence the Bureau recorded.");
       failed = true;
     }
-  } else {
+  } else if (!failed) {
     io.log("The Bureau's recorded head: none (no database here, or no read has reached a checkpoint yet).");
   }
   if (pinned) {

@@ -168,6 +168,13 @@ describe("reading the review log", () => {
   });
 
   it("stores nothing when a packet is another organization's, erased or does not verify", async () => {
+    // The signed checkpoint still comes back, for the caller to record: the next read must reach it.
+    const signedTip = {
+      sequence: 2,
+      entryHash: hashOf(2),
+      packetId: idOf(2),
+      issuedAt: new Date("2026-11-03T12:00:00.000Z"),
+    };
     const foreign = packets(3);
     foreign[1].org_id = "99999999-2222-4333-8444-555555555555";
     expect(await read(fakeCounterAudit(foreign))).toEqual({
@@ -175,22 +182,29 @@ describe("reading the review log", () => {
       listed: 3,
       listedComplete: true,
       problem: `packet ${idOf(1)} belongs to another organization`,
-      checkpoint: null,
+      checkpoint: signedTip,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(1)]: 410 } }))).toEqual({
       rows: [],
       listed: 3,
       listedComplete: true,
       problem: `packet ${idOf(1)} has been erased; the review log must keep every packet`,
-      checkpoint: null,
+      checkpoint: signedTip,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(0)]: 409 } }))).toEqual({
       rows: [],
       listed: 3,
       listedComplete: true,
       problem: `CounterAudit could not verify packet ${idOf(0)} (409)`,
-      checkpoint: null,
+      checkpoint: signedTip,
     });
+    // A verify answer for another packet than the one asked for.
+    const swapped = fakeCounterAudit(packets(3));
+    const answer = swapped.getMockImplementation()!;
+    swapped.mockImplementation(async (url: string, init?: RequestInit) =>
+      new URL(url).pathname.endsWith(idOf(1)) ? answer(url.replace(idOf(1), idOf(2)), init) : answer(url, init)
+    );
+    expect((await read(swapped)).problem).toBe(`CounterAudit answered for another packet than ${idOf(1)}`);
   });
 
   it("refuses an answer too large to be the review log's", async () => {
@@ -280,6 +294,37 @@ describe("the signed head (review AB-01)", () => {
       "the head already reached names another packet at sequence 2 than the log read holds"
     );
     expect((await readWith(fakeCounterAudit(chain), reached)).problem).toBeNull();
+  });
+
+  it("refuses a log with packets when CounterAudit gives no checkpoint for it (review of AB-01)", async () => {
+    // A dishonest endpoint, or one without the route, answers "none yet" and lists a linked prefix.
+    const chain = packets(5);
+    const none = new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    const result = await read(fakeCounterAudit(chain.slice(0, 3), { checkpoint: none }));
+    expect(result.problem).toBe("CounterAudit gives no signed checkpoint for a review log it lists packets in");
+    expect(result.checkpoint).toBeNull();
+    const pinned = await readReviewLog({
+      apiUrl: API, readKey: KEY, orgId: ORG, known: [], minHead: { sequence: 1, entryHash: hashOf(1) },
+      fetch: fakeCounterAudit(chain.slice(0, 3), { checkpoint: new Response(JSON.stringify({ error: "not_found" }), { status: 404 }) }),
+      now: NOW,
+    });
+    expect(pinned.problem).toBe("CounterAudit gives no signed checkpoint for a review log it lists packets in");
+  });
+
+  it("refuses a checkpoint that names another packet at its sequence, and returns none to record", async () => {
+    const chain = packets(3);
+    const otherId = { ...tipOf(chain[2]), packetId: "aaaaaaaa-2222-4333-8444-555555555555" };
+    const result = await read(fakeCounterAudit(chain, { checkpoint: otherId }));
+    expect(result.problem).toBe("CounterAudit's signed checkpoint names another packet at sequence 2 than the log read holds");
+    expect(result.checkpoint).toBeNull();
+  });
+
+  it("returns a checkpoint whose signature block is malformed as unsigned, not as an error", async () => {
+    const chain = packets(3);
+    const signed = checkpointOf(ORG, tipOf(chain[2]));
+    const broken = { ...signed, signature: { ...signed.signature, proof: "not an object" } };
+    const result = await read(fakeCounterAudit(chain, { checkpoint: Response.json({ checkpoint: broken }) }));
+    expect(result.problem).toMatch(/^the review log's checkpoint is not signed with CounterAudit's export key/);
   });
 
   it("takes an empty log, which has no checkpoint yet, unless a head was already reached", async () => {

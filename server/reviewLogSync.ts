@@ -142,7 +142,9 @@ export type ReadResult = {
   listedComplete: boolean;
   // Why reading stopped early, or null.
   problem: string | null;
-  // CounterAudit's signed checkpoint the read reached, or null when none was read or it failed.
+  // CounterAudit's signed checkpoint for the log, when its signature checked out and the log read
+  // holds no other packet at its sequence; given with a problem too, so the caller can record it
+  // and the next read must reach it. Null when none was read, it failed, or the log contradicts it.
   checkpoint: Checkpoint | null;
 };
 
@@ -171,13 +173,21 @@ export async function readReviewLog(options: {
   // short cache of it: every packet the checkpoint covers is then listed, and one sealed between
   // the two only makes the listing longer. It is checked once the chain is (below).
   const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
+  const shown = checkpoint.ok ? checkpoint.head : null;
+  // Whether packets already read hold another packet at the checkpoint's sequence; then it is not
+  // returned to be recorded.
+  const contradicted = (held: Array<{ sequence: number; entryHash: string; packetId: string }>) =>
+    shown !== null &&
+    held.some(r => r.sequence === shown.sequence && (r.entryHash !== shown.entryHash || r.packetId !== shown.packetId));
+  const recordable = (held: Array<{ sequence: number; entryHash: string; packetId: string }>) =>
+    contradicted(held) ? null : shown;
 
   // Every packet id, newest first.
   const ids: string[] = [];
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
     if (page === MAX_PAGES) {
-      return { rows: [], listed: ids.length, listedComplete: false, problem: "the review log has more packets than one sync reads", checkpoint: null };
+      return { rows: [], listed: ids.length, listedComplete: false, problem: "the review log has more packets than one sync reads", checkpoint: recordable(options.known) };
     }
     const query = new URLSearchParams({ limit: String(PAGE), refresh: "1", ...(cursor ? { cursor } : {}) });
     const listed = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
@@ -187,7 +197,7 @@ export async function readReviewLog(options: {
         listed: ids.length,
         listedComplete: false,
         problem: `CounterAudit answered ${listed.status} when listing the review log's packets`,
-        checkpoint: null,
+        checkpoint: recordable(options.known),
       };
     }
     for (const p of listed.body.packets) {
@@ -199,9 +209,12 @@ export async function readReviewLog(options: {
   }
 
   // From here the listing is whole: every answer below carries it.
-  const done = (rows: InsertReviewLogRecord[], problem: string | null, checkpoint: Checkpoint | null = null): ReadResult =>
-    ({ rows, listed: ids.length, listedComplete: true, problem, checkpoint });
   const fresh: InsertReviewLogRecord[] = [];
+  const done = (
+    rows: InsertReviewLogRecord[],
+    problem: string | null,
+    checkpoint: Checkpoint | null = recordable([...options.known, ...fresh])
+  ): ReadResult => ({ rows, listed: ids.length, listedComplete: true, problem, checkpoint });
   for (const id of ids) {
     if (knownIds.has(id)) continue;
     const got = await call(fetchImpl, `${base}/v1/audit/verify/${id}`, options.readKey);
@@ -216,6 +229,9 @@ export async function readReviewLog(options: {
     const integrity = isRecord(packet.integrity) ? packet.integrity : {};
     if (packet.org_id !== options.orgId) {
       return done([], `packet ${id} belongs to another organization`);
+    }
+    if (packet.packet_id !== id) {
+      return done([], `CounterAudit answered for another packet than ${id}`);
     }
     const sequence = packet.sequence;
     const prevHash = integrity.prev_hash;
@@ -273,6 +289,11 @@ export async function readReviewLog(options: {
 
   if (!checkpoint.ok) return done(rows, checkpoint.problem);
   const cp = checkpoint.head;
+  // CounterAudit issues a checkpoint for any chain with a numbered packet, so "none yet" for a log
+  // that lists packets is an endpoint hiding it, or one without the route (review AB-01).
+  if (!cp && all.length > 0) {
+    return done(rows, "CounterAudit gives no signed checkpoint for a review log it lists packets in");
+  }
   const minHead = options.minHead ?? null;
   if (cp && minHead && cp.sequence < minHead.sequence) {
     return done(
@@ -281,7 +302,7 @@ export async function readReviewLog(options: {
       cp
     );
   }
-  const atSequence = new Map(all.map(r => [r.sequence, r.entryHash]));
+  const atSequence = new Map(all.map(r => [r.sequence, r]));
   const tip = all.length > 0 ? all[all.length - 1].sequence : null;
   for (const [what, head] of [
     ["CounterAudit's signed checkpoint", cp],
@@ -296,8 +317,9 @@ export async function readReviewLog(options: {
         cp
       );
     }
-    if (found !== head.entryHash) {
-      return done(rows, `${what} names another packet at sequence ${head.sequence} than the log read holds`, cp);
+    if (found.entryHash !== head.entryHash || ("packetId" in head && found.packetId !== head.packetId)) {
+      // Nothing is recorded over a contradiction: it would hide the head that shows it.
+      return done(rows, `${what} names another packet at sequence ${head.sequence} than the log read holds`, null);
     }
   }
   return done(rows, null, cp);

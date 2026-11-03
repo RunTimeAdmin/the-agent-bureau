@@ -1625,6 +1625,18 @@ async function checkCurrentReviewStatus(
       standing++;
     }
   }
+  // What the log was held to. An old checkpoint replayed with the log cut to it looks like a log
+  // nothing was sealed in since; only a head given here catches that (review AB-01).
+  const cp = now.checkpoint;
+  io.log(
+    cp
+      ? `Review log held to CounterAudit's signed checkpoint at sequence ${cp.sequence} (entry hash ${cp.entryHash}, issued ${cp.issuedAt.toISOString()})${
+          pinned
+            ? ` and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.`
+            : `. COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so an older checkpoint replayed with the log cut to it would pass: set it from pnpm review head.`
+        }`
+      : "Review log: empty, so CounterAudit has no checkpoint for it yet."
+  );
   if (failed === 0) {
     io.log(
       `Current standing: ${standing} released line(s) still stand in the review log, read whole to sequence ${now.position?.sequence ?? "none"}`

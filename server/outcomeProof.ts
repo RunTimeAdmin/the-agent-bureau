@@ -193,12 +193,18 @@ function verifyExportSignature(
  * `jwks`. For a signed record that is not a packet proof, such as a chain checkpoint
  * (server/reviewLogSync.ts).
  */
+// A signature block too malformed to check (a proof that is not an object, say) is invalid, not a
+// thrown error.
 export function verifyCounterauditSignature(
   payload: Record<string, unknown>,
   signatureBlock: unknown,
   jwks: Jwks
 ): ExportSignatureResult {
-  return verifyExportSignature(payload, signatureBlock, jwks);
+  try {
+    return verifyExportSignature(payload, signatureBlock, jwks);
+  } catch {
+    return { valid: false, reason: "malformed_signature" };
+  }
 }
 
 // ---- src/services/furnishOutcomeEvent.js ----
