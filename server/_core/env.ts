@@ -2,7 +2,9 @@
 export const ENV = {
   get databaseUrl() { return process.env.DATABASE_URL ?? ""; },
   get operatorPassword() { return process.env.OPERATOR_PASSWORD ?? ""; },
-  get sessionSecret() { return process.env.SESSION_SECRET ?? ""; },
+  // Trimmed: a hosting panel can keep a newline pasted after the value.
+  get sessionSecret() { return (process.env.SESSION_SECRET ?? "").trim(); },
+  get operatorLoginAddresses() { return process.env.OPERATOR_LOGIN_ADDRESSES ?? ""; },
   // Anything other than an explicit "development" is treated as production, so
   // an unset NODE_ENV does not quietly drop the cookie Secure flag or security
   // headers. The dev server sets NODE_ENV=development.

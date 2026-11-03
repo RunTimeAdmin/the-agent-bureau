@@ -179,6 +179,9 @@ export function erasedColumns(at: Date, reason: string) {
   return {
     subjectRef: null,
     signedEvent: null,
+    // The status goes with the result it summed up: kept, it would read as a check someone
+    // could still repeat, on evidence that is gone.
+    evidenceStatus: null,
     evidenceResult: null,
     evidenceKey: null,
     receipt: null,

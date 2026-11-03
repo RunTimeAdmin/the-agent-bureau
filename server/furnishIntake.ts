@@ -105,6 +105,56 @@ export type EventFields = {
 // Reads the fields the Bureau stores. CounterAudit runs the full furnish v1
 // schema and refuses anything else with 422; this only keeps an event the
 // Bureau could not store from being sent at all.
+//
+// It accepts any string as an id, because events sealed before ids had to be
+// random keep theirs and must still verify. A new line from an event sealed
+// since RANDOM_EVENT_IDS_FROM is held to isRandomEventId where it is stored.
+export const RANDOM_EVENT_IDS_FROM = new Date("2026-11-02T00:00:00Z");
+const RANDOM_EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** A random lowercase UUIDv4, the only event_id a new line may have. */
+export function isRandomEventId(id: string): boolean {
+  return RANDOM_EVENT_ID.test(id);
+}
+
+/**
+ * Why a new line cannot be stored with the ids its event carries, or null. An
+ * event id stays after its line expires, so it must say nothing about the
+ * subject (docs/bureau-spec.md). CounterAudit refuses any other since
+ * 2026-11-02, and this holds the Bureau to the same rule instead of trusting
+ * that it did. A relation may still name a line stored before then, by the id
+ * it has.
+ */
+export async function newLineIdProblem(
+  fields: Pick<EventFields, "eventId" | "relationTargetEventId">,
+  sealedAt: Date,
+  isStored: (eventId: string) => Promise<boolean>
+): Promise<string | null> {
+  // Written so that a seal time that is not a date counts as new, and is held to the rule.
+  if (sealedAt.getTime() < RANDOM_EVENT_IDS_FROM.getTime()) return null;
+  if (!isRandomEventId(fields.eventId)) {
+    return "event_id is not a random lowercase UUIDv4, which every event sealed since 2026-11-02 needs";
+  }
+  return relationTargetProblem(fields.relationTargetEventId, isStored);
+}
+
+/** Why a new line's relation cannot name `target`, or null: it must be a random id or a line held. */
+export async function relationTargetProblem(
+  target: string | null,
+  isStored: (eventId: string) => Promise<boolean>
+): Promise<string | null> {
+  if (target !== null && !isRandomEventId(target) && !(await isStored(target))) {
+    return "relation.target_event_id is neither a random lowercase UUIDv4 nor a line the Bureau already holds";
+  }
+  return null;
+}
+
+// Whether the Bureau holds a line with exactly this event id. The column compares without case, and
+// CounterAudit's event ids do not.
+async function holdsLine(furnisherId: string, eventId: string): Promise<boolean> {
+  return (await findOutcomeEvent(furnisherId, eventId))?.eventId === eventId;
+}
+
 export function readEventFields(event: Record<string, unknown>): EventFields | string {
   const { furnisher_id, event_id, key_id, outcome, subject_ref, relation } =
     event;
@@ -589,6 +639,28 @@ async function intakeLine(
   }
   const ref = `${fields.furnisherId}/${fields.eventId}`;
 
+  // A new line's relation target is checked before CounterAudit seals the event in the Bureau's
+  // organization. CounterAudit refuses an event_id that is not random itself, before it seals
+  // anything, but takes any target, and a line refused after sealing would leave its packet,
+  // subject_ref and all, where no line leads pnpm lines expire to it (review AB-03). A line held
+  // already is found as recordLine finds it, so this never refuses what recordLine would update.
+  const target = fields.relationTargetEventId;
+  if (target !== null && !isRandomEventId(target) && receivedAt.getTime() >= RANDOM_EVENT_IDS_FROM.getTime()) {
+    let targetProblem: string | null;
+    try {
+      targetProblem = (await findOutcomeEvent(fields.furnisherId, fields.eventId))
+        ? null
+        : await relationTargetProblem(target, id => holdsLine(fields.furnisherId, id));
+    } catch (error) {
+      tally.notSent++;
+      return { report: `${ref}: not sent: the Bureau's lines could not be read (${describeError(error)})`, clean: false };
+    }
+    if (targetProblem) {
+      tally.notSent++;
+      return { report: `${ref}: not sent: ${targetProblem}`, clean: false };
+    }
+  }
+
   const ingest = await ingestSignedEvent(event);
   switch (ingest.kind) {
     case "conflict":
@@ -736,6 +808,13 @@ async function recordLine({
   let sealedAs: string | null = null;
   try {
     const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
+    // Sealed before the cutoff only by a proof that verified; otherwise by when the Bureau got it,
+    // not by the date in an unsigned ingest response.
+    const idProblem = existing
+      ? null
+      : await newLineIdProblem(fields, proofOk ? sealedFields.caCreatedAt : receivedAt, id =>
+          holdsLine(fields.furnisherId, id)
+        );
     const holder = claim
       ? await findOtherOutcomeEventWithEvidence(
           claim,
@@ -797,6 +876,9 @@ async function recordLine({
       parts.push(
         "not stored: a packet sealed outside the Bureau's organization is stored only once its proof verifies"
       );
+    } else if (idProblem) {
+      tally.notStored++;
+      parts.push(`not stored: ${idProblem}`);
     } else if (!existing) {
       await writeEvidence(columns => insertOutcomeEvent({
         furnisherId: fields.furnisherId,

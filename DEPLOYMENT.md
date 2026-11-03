@@ -62,8 +62,9 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `DATABASE_URL` | Your MySQL database URL. Required for the game, inquiries, and outcome lines. On hosts where MySQL runs on the same server, connect to `127.0.0.1:3306`. |
 | `ANTHROPIC_API_KEY` | Anthropic API key for the game, where Claude plays the suspects. Without it every question fails with a server error and is not counted. |
 | `PUBLIC_SITE_URL` | Public origin used at build time for canonical URLs and the sitemap. Defaults to `https://theagentbureau.xyz`. |
-| `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
-| `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+| `OPERATOR_PASSWORD` | Password for the private `/inbox`: 16 to 256 characters that zxcvbn estimates at 10^14 guesses or more, both as typed and with case, spaces, hyphens, underscores and dots taken out. Five or more random words, or 20 or more random characters from a password manager, pass; a name, a season, a year or the site's own name with symbols or spaces between does not. A weaker one keeps the inbox locked. |
+| `SESSION_SECRET` | The hex of at least 32 random bytes, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Spaces or a newline around it are ignored; anything else keeps the inbox locked. |
+| `OPERATOR_LOGIN_ADDRESSES` | Optional. The operator's own addresses or networks, comma-separated (`203.0.113.7, 2001:db8:5::/48`). Sign-in from them keeps its per-address limit but is left out of the limit for all addresses, so a flood of guesses from elsewhere cannot lock the operator out. |
 | `COUNTERAUDIT_ORG_ID` | The Bureau's CounterAudit organization. The production server needs it for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. |
 
 `pnpm file assemble` and `pnpm file verify --current`, run by the operator, also read `COUNTERAUDIT_READ_KEY`, a read-role key of the Bureau's organization, for the evidence seals (`docs/agent-file.md`). The production server does not need it.
@@ -72,11 +73,12 @@ The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_
 
 ## Operator inbox
 
-`/inbox` is protected by a single operator password. Sign-in sets a signed, `HttpOnly`, `SameSite=Strict` session cookie that lasts seven days. If either `OPERATOR_PASSWORD` or `SESSION_SECRET` is missing (or the secret is shorter than 32 characters), the inbox stays locked and shows a "not set up" message. There is no default password.
+`/inbox` is protected by a single operator password. Sign-in sets a signed, `HttpOnly`, `SameSite=Strict` session cookie that lasts seven days. If `OPERATOR_PASSWORD` or `SESSION_SECRET` is missing or too weak (see the table above), the inbox stays locked and shows a "not set up" message, and the server logs why at start. There is no default password.
 
-- To sign everyone out, change `SESSION_SECRET` and restart.
-- Changing `OPERATOR_PASSWORD` alone does not end existing sessions.
-- Sign-in attempts are limited to 10 per 15 minutes per client address.
+- Sessions are signed with a key derived from both values, so changing either one and restarting signs everyone out.
+- Sign-in attempts are limited to 10 per 15 minutes per client address (an IPv6 client by its /64 network) and 50 per 15 minutes from all addresses together. They are counted in the database (`login_attempts`), so the limits hold across restarts and across instances. With no `DATABASE_URL` the server counts in memory only; if the database is configured but cannot be reached, sign-in fails rather than going uncounted.
+- Anyone can use up the 50 for all addresses, and while they do the operator is refused too. Set `OPERATOR_LOGIN_ADDRESSES` to the operator's own addresses to keep them out of that limit.
+- There is no second factor yet. Before live operations, put the inbox behind a stronger identity provider or add one.
 
 ## Files and artwork
 
@@ -88,8 +90,8 @@ The build emits real HTML for `/`, `/bureau`, `/review-log`, `/agents`, each cas
 
 A successful contact submission means an inquiry was stored, not that an email was sent, an agent was booked, or payment was taken. No email delivery provider is configured. The example file and network graphic on `/bureau` are illustrative. No token, wallet checkout, or Solana escrow is live.
 
-The rate limiters are in-memory and keyed by the visitor's IP. Express trusts `X-Forwarded-For` only when the request arrives from a loopback or private-network address, which covers a reverse proxy on the same server or internal network (as on Hostinger). If your proxy connects from a public address, every visitor will share one limit; adjust `trust proxy` in `server/_core/index.ts` for that host.
+The inquiry and game rate limiters are in-memory and keyed by the visitor's address (an IPv6 visitor by its /64 network); operator sign-in is counted in the database as well (see Operator inbox). Express trusts `X-Forwarded-For` only when the request arrives from a loopback or private-network address, which covers a reverse proxy on the same server or internal network (as on Hostinger). If your proxy connects from a public address, every visitor will share one limit; adjust `trust proxy` in `server/_core/index.ts` for that host.
 
 ## Final checks on your own host
 
-Confirm `/api/health` returns success and `/api/ready` returns ready, artwork loads, the `inquiries` table exists, a real form submission is stored, `/inbox` rejects a wrong password and accepts the right one, unknown paths return 404, and `/api/jobs` returns `ok`. Confirm the domain certificate and sitemap.
+Confirm `/api/health` returns success and `/api/ready` returns ready, artwork loads, the `inquiries` table exists, a real form submission is stored, `/api/trpc/auth.me` reports `loginConfigured: true`, `/inbox` rejects a wrong password and accepts the right one, unknown paths return 404, and `/api/jobs` returns `ok`. Confirm the domain certificate and sitemap.

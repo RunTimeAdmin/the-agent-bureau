@@ -9,6 +9,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,
@@ -28,6 +29,7 @@ import {
   dailyUsage,
   disputeRecords,
   inquiries,
+  loginAttempts,
   outcomeEvents,
   playQuestions,
   plays,
@@ -210,6 +212,73 @@ export async function reserveDaily(
   return result.affectedRows === 1;
 }
 
+// Rows for addresses that stopped trying are dropped once they are a day old,
+// at most once an hour from each process.
+const LOGIN_ATTEMPT_ROWS_KEPT_MS = 24 * 60 * 60 * 1000;
+let loginAttemptsPrunedAt = 0;
+
+// Counts one operator sign-in attempt against `key` (a client address, or all of
+// them together) in a fixed window, in the database, so the limit holds across
+// restarts and across every instance of the server. Like reserveDaily, the
+// increment is one conditional update, so parallel attempts cannot pass the
+// limit together. Returns false when the window is full, and null when no
+// database is configured, where the caller counts in its own process only. A
+// database that is configured but cannot be reached throws: sign-in fails
+// rather than going uncounted.
+export async function consumeLoginAttempt(
+  key: string,
+  windowMs: number,
+  max: number,
+  now = Date.now()
+): Promise<boolean | null> {
+  if (!process.env.DATABASE_URL) return null;
+  const db = await requireDb();
+  // Make sure the row exists without disturbing it.
+  await db
+    .insert(loginAttempts)
+    .values({ key, windowStartedAt: now, count: 0 })
+    .onDuplicateKeyUpdate({ set: { key: sql`${loginAttempts.key}` } });
+  // Start a new window when the last one has ended. A statement of its own: an upsert that set both
+  // columns would depend on the order MySQL assigns them in, and Drizzle orders them by column, so
+  // the count was compared with a window already moved and never reset. Once one attempt has reset
+  // the row, a parallel one finds the window current and leaves it.
+  await db
+    .update(loginAttempts)
+    .set({ count: 0, windowStartedAt: now })
+    .where(and(eq(loginAttempts.key, key), lte(loginAttempts.windowStartedAt, now - windowMs)));
+  const [result] = await db
+    .update(loginAttempts)
+    .set({ count: sql`${loginAttempts.count} + 1` })
+    .where(and(eq(loginAttempts.key, key), lt(loginAttempts.count, max)));
+  if (now - loginAttemptsPrunedAt >= 60 * 60 * 1000) {
+    loginAttemptsPrunedAt = now;
+    // The attempt is counted already; old rows left for the next hour are no reason to refuse it.
+    try {
+      await db.delete(loginAttempts).where(lt(loginAttempts.windowStartedAt, now - LOGIN_ATTEMPT_ROWS_KEPT_MS));
+    } catch (error) {
+      console.warn("[Auth] Could not drop old sign-in counts:", error instanceof Error ? error.message : error);
+    }
+  }
+  return result.affectedRows === 1;
+}
+
+// Whether `key`'s current window is already full, read without writing a row.
+// Null when no database is configured, as consumeLoginAttempt.
+export async function isLoginWindowFull(
+  key: string,
+  windowMs: number,
+  max: number,
+  now = Date.now()
+): Promise<boolean | null> {
+  if (!process.env.DATABASE_URL) return null;
+  const db = await requireDb();
+  const [row] = await db
+    .select({ windowStartedAt: loginAttempts.windowStartedAt, count: loginAttempts.count })
+    .from(loginAttempts)
+    .where(eq(loginAttempts.key, key));
+  return Boolean(row && row.windowStartedAt > now - windowMs && row.count >= max);
+}
+
 // Hands a reserved unit back, used only when no model call was made (the game
 // was already out of questions). A declined or failed call keeps its unit.
 export async function releaseDaily(day: string, scope: string): Promise<void> {
@@ -250,13 +319,14 @@ export async function pingDb(): Promise<boolean> {
 
 // The Bureau tables the app needs to serve games, inquiries and the inbox, and
 // to hold furnished outcome events, the review log and subject disputes.
-// dispute_records is from the most recent migration, so its presence doubles as
+// login_attempts is from the most recent migration, so its presence doubles as
 // a check that migrations ran to the current version.
 const REQUIRED_TABLES = [
   "agents",
   "daily_usage",
   "dispute_records",
   "inquiries",
+  "login_attempts",
   "outcome_events",
   "outcome_reviews",
   "play_questions",
@@ -276,7 +346,7 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
+            and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'login_attempts', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
     );
     const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       present?: number | string;
@@ -384,6 +454,7 @@ export async function findOutcomeEvent(furnisherId: string, eventId: string) {
   const [row] = await db
     .select({
       id: outcomeEvents.id,
+      eventId: outcomeEvents.eventId,
       packetId: outcomeEvents.packetId,
       signedEventHash: outcomeEvents.signedEventHash,
       evidenceResult: outcomeEvents.evidenceResult,

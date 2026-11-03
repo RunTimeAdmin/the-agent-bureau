@@ -1,10 +1,24 @@
 name: Test
 
 # Typecheck and tests, including the shared outcome event vectors, on pull
-# requests that change code. To keep Actions minutes low it runs only for code
+# requests that change code and on the merge into master, so the commit that
+# ships has a run of its own. To keep Actions minutes low it runs only for code
 # paths, cancels a superseded run, and stops at 10 minutes (a run takes about a
 # minute). It uses no secrets, so pull requests from forks run it safely.
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - 'shared/**'
+      - 'drizzle/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/test.yml'
   pull_request:
     paths:
       - 'client/**'
@@ -19,7 +33,7 @@ on:
       - '.github/workflows/test.yml'
 
 concurrency:
-  group: test-${{ github.event.pull_request.number }}
+  group: test-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 permissions:
