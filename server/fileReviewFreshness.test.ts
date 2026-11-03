@@ -63,7 +63,7 @@ vi.mock("./counterauditKeys", async importOriginal => {
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { checkpointResponse } from "./testCheckpoint";
+import { chainOf, checkpointResponse } from "./testCheckpoint";
 
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
@@ -212,7 +212,8 @@ function counterAudit(
       created_at: NOW.toISOString(),
     }))
     .filter(p => !(options.skip ?? []).includes(p.sequence));
-  const bureau = [
+  // A whole chain (chainOf), so the evidence seals can be read to the Bureau's signed head.
+  const { packets: bureau, tip: bureauTip } = chainOf(BUREAU_ORG, [
     {
       packet_id: LINE.packetId,
       org_id: BUREAU_ORG,
@@ -228,7 +229,7 @@ function counterAudit(
       integrity: { prev_hash: hashOf(99 + n), entry_hash: hashOf(100 + n) },
       created_at: NOW.toISOString(),
     })),
-  ];
+  ]);
   return vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url).pathname;
     const headers = (init?.headers ?? {}) as Record<string, string>;
@@ -239,15 +240,20 @@ function counterAudit(
       const tip = packets.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
       return checkpointResponse(
         checkpointPath[1],
-        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null,
+        packets === bureau
+          ? bureauTip
+          : tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null,
         new URL(url).searchParams.get("nonce")
       );
     }
     if (path === "/v1/audit/packets") {
       return Response.json({
-        packets: [...packets]
-          .reverse()
-          .map(p => ({ packet_id: p.packet_id, connector_id: p.connector_id, created_at: NOW.toISOString() })),
+        packets: [...packets].reverse().map(p => ({
+          packet_id: p.packet_id,
+          connector_id: p.connector_id,
+          created_at: NOW.toISOString(),
+          ...("entry_hash" in p ? { prev_hash: p.prev_hash, entry_hash: p.entry_hash } : {}),
+        })),
         next_cursor: null,
       });
     }
