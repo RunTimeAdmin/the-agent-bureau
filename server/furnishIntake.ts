@@ -142,6 +142,12 @@ export async function newLineIdProblem(
   return null;
 }
 
+// Whether the Bureau holds a line with exactly this event id. The column compares without case, and
+// CounterAudit's event ids do not.
+async function holdsLine(furnisherId: string, eventId: string): Promise<boolean> {
+  return (await findOutcomeEvent(furnisherId, eventId))?.eventId === eventId;
+}
+
 export function readEventFields(event: Record<string, unknown>): EventFields | string {
   const { furnisher_id, event_id, key_id, outcome, subject_ref, relation } =
     event;
@@ -626,6 +632,23 @@ async function intakeLine(
   }
   const ref = `${fields.furnisherId}/${fields.eventId}`;
 
+  // A new line's ids are checked before CounterAudit seals the event in the Bureau's organization.
+  // CounterAudit takes any relation target, and a line refused after sealing would leave its
+  // packet, subject_ref and all, where no line leads pnpm lines expire to it (review AB-03).
+  let idProblem: string | null;
+  try {
+    idProblem = (await holdsLine(fields.furnisherId, fields.eventId))
+      ? null
+      : await newLineIdProblem(fields, receivedAt, id => holdsLine(fields.furnisherId, id));
+  } catch (error) {
+    tally.notSent++;
+    return { report: `${ref}: not sent: the Bureau's lines could not be read (${describeError(error)})`, clean: false };
+  }
+  if (idProblem) {
+    tally.notSent++;
+    return { report: `${ref}: not sent: ${idProblem}`, clean: false };
+  }
+
   const ingest = await ingestSignedEvent(event);
   switch (ingest.kind) {
     case "conflict":
@@ -773,10 +796,12 @@ async function recordLine({
   let sealedAs: string | null = null;
   try {
     const existing = await findOutcomeEvent(fields.furnisherId, fields.eventId);
+    // Sealed before the cutoff only by a proof that verified; otherwise by when the Bureau got it,
+    // not by the date in an unsigned ingest response.
     const idProblem = existing
       ? null
-      : await newLineIdProblem(fields, sealedFields.caCreatedAt, async id =>
-          Boolean(await findOutcomeEvent(fields.furnisherId, id))
+      : await newLineIdProblem(fields, proofOk ? sealedFields.caCreatedAt : receivedAt, id =>
+          holdsLine(fields.furnisherId, id)
         );
     const holder = claim
       ? await findOtherOutcomeEventWithEvidence(

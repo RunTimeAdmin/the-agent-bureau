@@ -24,8 +24,9 @@ function SignIn() {
         <LockKeyhole />
         <h2>Operator sign-in is not set up.</h2>
         <p>
-          Set OPERATOR_PASSWORD and SESSION_SECRET on the server, then restart
-          it. See DEPLOYMENT.md.
+          Set OPERATOR_PASSWORD and SESSION_SECRET on the server, or make them
+          stronger (the server log says why), then restart it. See
+          DEPLOYMENT.md.
         </p>
       </div>
     );

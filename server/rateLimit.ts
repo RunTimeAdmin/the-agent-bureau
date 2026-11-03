@@ -1,4 +1,4 @@
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 
 type RateLimitEntry = { windowStartedAt: number; count: number };
 
@@ -66,6 +66,40 @@ function ipv6Key(address: string): string {
     .map(part => parseInt(part || "0", 16).toString(16))
     .join(":");
   return `v6:${prefix}::/64`;
+}
+
+// Addresses and networks, comma-separated ("203.0.113.7, 2001:db8:5::/48").
+// Entries that are neither are left out and returned in `invalid`.
+export function parseAddressList(value: string): { list: BlockList; invalid: string[] } {
+  const list = new BlockList();
+  const invalid: string[] = [];
+  for (const entry of value.split(",").map(part => part.trim()).filter(Boolean)) {
+    const [address, prefix, extra] = entry.split("/");
+    const version = isIP(address);
+    const maxBits = version === 6 ? 128 : 32;
+    const bits = prefix === undefined ? maxBits : /^\d{1,3}$/.test(prefix) ? Number(prefix) : NaN;
+    if (!version || extra !== undefined || !(bits >= 0 && bits <= maxBits)) {
+      invalid.push(entry);
+      continue;
+    }
+    list.addSubnet(address, bits, version === 6 ? "ipv6" : "ipv4");
+  }
+  return { list, invalid };
+}
+
+// Whether the request's client address, read as getRequestIp reads it, is in
+// `list`. An IPv4 client the server sees as ::ffff:a.b.c.d matches its IPv4 entry.
+export function requestAddressIn(
+  list: BlockList,
+  req: { ip?: string; socket?: { remoteAddress?: string } }
+): boolean {
+  for (const candidate of [req.ip, req.socket?.remoteAddress]) {
+    const value = candidate?.trim().split("%")[0];
+    if (!value) continue;
+    const version = isIP(value);
+    if (version) return list.check(value, version === 6 ? "ipv6" : "ipv4");
+  }
+  return false;
 }
 
 // Derives the limiter key from a validated client address. Express req.ip

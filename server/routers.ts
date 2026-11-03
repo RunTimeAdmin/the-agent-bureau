@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { BlockList } from "node:net";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { LATEST_CASE } from "@shared/cases";
@@ -7,6 +8,7 @@ import {
   consumeLoginAttempt,
   createInquiry,
   deleteInquiry,
+  isLoginWindowFull,
   listAgents,
   listFinishedPlays,
   listInquiries,
@@ -25,7 +27,8 @@ import {
   type Player,
 } from "./game";
 import { buildScoreboard } from "./scoreboard";
-import { createRateLimiter, getRequestIp } from "./rateLimit";
+import { createRateLimiter, getRequestIp, parseAddressList, requestAddressIn } from "./rateLimit";
+import { ENV } from "./_core/env";
 import {
   checkOperatorPassword,
   createOperatorSession,
@@ -73,20 +76,41 @@ const inquiryRateLimit = createRateLimiter({
 // Operator sign-in: 10 attempts per 15 minutes from one address, and 50 from
 // all addresses together, so spreading guesses over many addresses buys little.
 // Counted in the database (consumeLoginAttempt), which holds across restarts
-// and instances; the in-process limiters are only for a server with no database.
+// and instances, after a first count in this process.
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_PER_ADDRESS = 10;
 const LOGIN_MAX_ALL = 50;
 const loginRateLimit = createRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: LOGIN_MAX_PER_ADDRESS });
 const loginRateLimitAll = createRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: LOGIN_MAX_ALL });
 
-export async function consumeLoginRateLimit(ip: string, now = Date.now()): Promise<boolean> {
+/**
+ * Counts one sign-in attempt from `ip`. `countAll` false is for the operator's
+ * own addresses (OPERATOR_LOGIN_ADDRESSES), which keep their own limit but are
+ * left out of the one for all addresses: anyone can fill that one, and it would
+ * lock the operator out with everyone else.
+ */
+export async function consumeLoginRateLimit(ip: string, now = Date.now(), countAll = true): Promise<boolean> {
+  // In this process first. The database's count is never below this process's
+  // own, so a refusal here costs the database nothing, and an address over its
+  // own limit adds nothing to the count for all.
+  if (!loginRateLimit.consume(ip, now)) return false;
+  if (countAll && !loginRateLimitAll.consume("all", now)) return false;
+  // The count for all is read before an address's row is written, so a flood
+  // while it is full adds no rows.
+  if (countAll && (await isLoginWindowFull("login:all", LOGIN_WINDOW_MS, LOGIN_MAX_ALL, now))) return false;
   const perAddress = await consumeLoginAttempt(`login:${ip}`, LOGIN_WINDOW_MS, LOGIN_MAX_PER_ADDRESS, now);
-  if (perAddress === null) {
-    return loginRateLimit.consume(ip, now) && loginRateLimitAll.consume("all", now);
-  }
+  // No database: the counts in this process are the limit.
+  if (perAddress === null) return true;
   if (!perAddress) return false;
-  return (await consumeLoginAttempt("login:all", LOGIN_WINDOW_MS, LOGIN_MAX_ALL, now)) !== false;
+  return !countAll || (await consumeLoginAttempt("login:all", LOGIN_WINDOW_MS, LOGIN_MAX_ALL, now)) === true;
+}
+
+let operatorAddresses: { value: string; list: BlockList } | null = null;
+function isOperatorAddress(req: Parameters<typeof requestAddressIn>[1]): boolean {
+  const value = ENV.operatorLoginAddresses;
+  if (!value) return false;
+  if (operatorAddresses?.value !== value) operatorAddresses = { value, list: parseAddressList(value).list };
+  return requestAddressIn(operatorAddresses.list, req);
 }
 // Every question is a paid model call. Per-address limits stop one visitor
 // from draining the day; server/game.ts caps the daily total.
@@ -129,7 +153,7 @@ export const appRouter = router({
             message: "Operator sign-in is not configured on this server.",
           });
         }
-        if (!(await consumeLoginRateLimit(getRequestIp(ctx.req)))) {
+        if (!(await consumeLoginRateLimit(getRequestIp(ctx.req), Date.now(), !isOperatorAddress(ctx.req)))) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
             message: "Too many sign-in attempts. Please try again later.",

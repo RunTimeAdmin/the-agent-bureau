@@ -9,6 +9,7 @@ import { BUREAU_FILE_KEYS } from "../bureauFileKeys";
 import { pingDb, runMigrations, schemaReady } from "../db";
 import { jobStatus, startSchedules } from "../schedules";
 import { parsePublicKey } from "../outcomeProof";
+import { parseAddressList } from "../rateLimit";
 import { appRouter } from "../routers";
 import { operatorLoginProblems } from "./auth";
 import { createContext } from "./context";
@@ -147,6 +148,9 @@ async function startServer() {
   // Set but too weak is a mistake to say out loud; neither set is the inbox left locked on purpose.
   if (ENV.operatorPassword || ENV.sessionSecret) {
     for (const problem of operatorLoginProblems()) console.warn(`[Auth] Operator sign-in is off: ${problem}`);
+  }
+  for (const entry of parseAddressList(ENV.operatorLoginAddresses).invalid) {
+    console.warn(`[Auth] OPERATOR_LOGIN_ADDRESSES: "${entry}" is not an address or network, and is left out`);
   }
 
   const port = Number(process.env.PORT || "3000");

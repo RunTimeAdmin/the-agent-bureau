@@ -61,6 +61,8 @@ const TEST_ORG = "71689063-29f4-4d83-89a7-1d8f7fbaaf87";
 const INGEST_KEY = "ca_live_should_never_be_printed";
 const DB_PASSWORD = "db-password-should-never-be-printed";
 const NOW = new Date("2026-10-30T19:00:00.000Z");
+// After 2026-11-02, from when a new line needs a random event_id.
+const SINCE_RANDOM_IDS = new Date("2026-11-03T00:00:00.000Z");
 
 const packet = {
   packet_id: proof.packet_id,
@@ -95,6 +97,7 @@ const VERIFIED = {
 // The line the Bureau already holds for the fixture event.
 const stored = {
   id: 7,
+  eventId: event.event_id as string,
   packetId: packet.packet_id,
   signedEventHash: proof.outcome_claim.signed_event_hash,
 };
@@ -655,25 +658,65 @@ describe("runIntake", () => {
     expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
   });
 
-  it("does not store a new line sealed since 2026-11-02 whose event_id is not a random UUIDv4", async () => {
-    // The fixture event's id is from before ids had to be random. Sealed on 3 November it is refused,
-    // and nothing is written or sealed for it. (A proof for another org fails, so the seal time is the
-    // ingest response's, which is what this sets.)
-    vi.stubEnv("COUNTERAUDIT_ORG_ID", "00000000-0000-4000-8000-000000000000");
-    ca.ingestSignedEvent.mockResolvedValue({
-      kind: "sealed",
-      status: 201,
-      packet: { ...packet, created_at: "2026-11-03T00:00:00.000Z" },
-    });
+  it("does not send a new line received since 2026-11-02 whose event_id is not a random UUIDv4", async () => {
+    // The fixture event's id is from before ids had to be random. Received on 3 November it is
+    // refused before CounterAudit seals it, and nothing is written or sealed for it.
     db.findOutcomeEvent.mockResolvedValue(undefined);
     const { io, printed } = fakeIO();
+    io.now = () => SINCE_RANDOM_IDS;
 
-    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+    expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
     expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
     expect(ca.ingestEvidenceRecord).not.toHaveBeenCalled();
     expect(printed()).toContain(
-      "not stored: event_id is not a random lowercase UUIDv4, which every event sealed since 2026-11-02 needs"
+      `${event.furnisher_id}/${event.event_id}: not sent: event_id is not a random lowercase UUIDv4, which every event sealed since 2026-11-02 needs`
     );
+
+    // A line the Bureau already holds is sent again as before, whatever its id.
+    vi.clearAllMocks();
+    ca.ingestSignedEvent.mockResolvedValue({ kind: "already_sealed", status: 200, packet });
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, evidenceResult: VERIFIED });
+    const again = fakeIO();
+    again.io.now = () => SINCE_RANDOM_IDS;
+    await runIntake(["--test-data", "events.jsonl"], again.io);
+    expect(ca.ingestSignedEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a line whose event_id differs only in case as another line", async () => {
+    // The column compares without case; CounterAudit's event ids do not.
+    db.findOutcomeEvent.mockResolvedValue({ ...stored, eventId: String(event.event_id).toUpperCase() });
+    const { io, printed } = fakeIO();
+    io.now = () => SINCE_RANDOM_IDS;
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
+    expect(printed()).toContain("not sent: event_id is not a random lowercase UUIDv4");
+  });
+
+  it("does not send a new line whose relation names something other than a line", async () => {
+    // CounterAudit takes any target. Refused after sealing, the packet would stay in the Bureau's
+    // organization with no line for pnpm lines expire to reach.
+    const id = "3f2b8c1e-9a4d-4e7b-8c2f-1d6a5e9b0c47";
+    const related = { ...event, event_id: id, relation: { type: "withdraws", target_event_id: "INV-2026-17" } };
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    const { io, printed } = fakeIO(`${JSON.stringify(related)}\n`);
+    io.now = () => SINCE_RANDOM_IDS;
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+    expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
+    expect(printed()).toContain(
+      `${event.furnisher_id}/${id}: not sent: relation.target_event_id is neither a random lowercase UUIDv4 nor a line the Bureau already holds`
+    );
+  });
+
+  it("sends nothing when the Bureau's lines cannot be read to check a new line's ids", async () => {
+    db.findOutcomeEvent.mockRejectedValue(new Error("connection lost"));
+    const { io, printed } = fakeIO();
+
+    expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
+    expect(ca.ingestSignedEvent).not.toHaveBeenCalled();
+    expect(printed()).toContain("not sent: the Bureau's lines could not be read (connection lost)");
   });
 
   it("holds new lines to random ids from 2026-11-02, and lets a relation name a line stored before", async () => {
@@ -740,7 +783,8 @@ describe("runIntake", () => {
     expect(printed()).toContain(`${result.status} ${result.error}`);
     expect(printed()).toContain("Not stored.");
     expect(ca.fetchProof).not.toHaveBeenCalled();
-    expect(db.findOutcomeEvent).not.toHaveBeenCalled();
+    // Only the id check before sending; nothing is looked up to store.
+    expect(db.findOutcomeEvent).toHaveBeenCalledTimes(1);
     expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
     expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
   });
