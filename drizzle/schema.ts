@@ -91,12 +91,17 @@ export const dailyUsage = mysqlTable(
 
 // Operator sign-in attempts, counted in the database so the limit holds across
 // restarts and across every instance of the server (review AB-03). One row per
-// client address and one for all addresses together; windowStartedAt is in ms.
-export const loginAttempts = mysqlTable("login_attempts", {
-  key: varchar("key", { length: 64 }).primaryKey(),
-  windowStartedAt: bigint("windowStartedAt", { mode: "number" }).notNull(),
-  count: int("count").notNull(),
-});
+// client address and one for all addresses together; windowStartedAt is in ms,
+// and indexed for dropping the rows of addresses that stopped trying.
+export const loginAttempts = mysqlTable(
+  "login_attempts",
+  {
+    key: varchar("key", { length: 64 }).primaryKey(),
+    windowStartedAt: bigint("windowStartedAt", { mode: "number" }).notNull(),
+    count: int("count").notNull(),
+  },
+  table => [index("login_attempts_window_idx").on(table.windowStartedAt)]
+);
 
 export const playQuestions = mysqlTable(
   "play_questions",

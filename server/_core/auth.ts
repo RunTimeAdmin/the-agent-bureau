@@ -1,5 +1,8 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
+import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
+import * as zxcvbnCommon from "@zxcvbn-ts/language-common";
+import * as zxcvbnEn from "@zxcvbn-ts/language-en";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
@@ -16,26 +19,41 @@ import { ENV } from "./env";
 
 const OPERATOR_SUBJECT = "operator";
 export const MIN_OPERATOR_PASSWORD_LENGTH = 16;
+// zxcvbn's estimate of the guesses a password takes: 10^14 is about what 14 random printable
+// characters give, and four random words give far more. A name, a season or a year with symbols
+// on it falls well short, which a length rule and a list of words did not catch.
+export const MIN_OPERATOR_PASSWORD_GUESSES = 1e14;
 // 32 random bytes as hex, which is what the documented generator prints:
 //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 export const MIN_SESSION_SECRET_HEX = 64;
 
-// Words a passphrase is often built from by someone filling in a form. A
-// password that contains one is refused whatever else it holds.
-const WEAK_PASSWORD_PARTS = ["password", "changeme", "operator", "bureau", "letmein", "qwerty", "123456", "admin"];
+zxcvbnOptions.setOptions({
+  translations: zxcvbnEn.translations,
+  graphs: zxcvbnCommon.adjacencyGraphs,
+  dictionary: { ...zxcvbnCommon.dictionary, ...zxcvbnEn.dictionary },
+});
+// Words this site's own passphrase is likely to be built from, which zxcvbn then counts as known.
+const SITE_WORDS = ["bureau", "agentbureau", "theagentbureau", "counteraudit", "sigvara", "levy", "agent", "inbox", "operator", "admin"];
 
-/** Why OPERATOR_PASSWORD cannot be used for sign-in, or null when it can. */
+// The estimate takes up to a tenth of a second, and every request asks whether sign-in is on.
+let estimate: { password: string; guesses: number } | null = null;
+function passwordGuesses(password: string): number {
+  if (estimate?.password !== password) estimate = { password, guesses: zxcvbn(password, SITE_WORDS).guesses };
+  return estimate.guesses;
+}
+
+/**
+ * Why OPERATOR_PASSWORD cannot be used for sign-in, or null when it can. The reasons go to the
+ * host's log, so they say nothing of the password's length or what it holds.
+ */
 export function operatorPasswordProblem(password: string): string | null {
   if (password.length === 0) return "OPERATOR_PASSWORD is not set";
   if (password.length < MIN_OPERATOR_PASSWORD_LENGTH) {
-    return `OPERATOR_PASSWORD has ${password.length} characters; use a passphrase of at least ${MIN_OPERATOR_PASSWORD_LENGTH}`;
+    return `OPERATOR_PASSWORD is shorter than ${MIN_OPERATOR_PASSWORD_LENGTH} characters; use four or more random words`;
   }
-  if (new Set(password).size < 8) {
-    return "OPERATOR_PASSWORD repeats too few characters to be a passphrase";
+  if (passwordGuesses(password) < MIN_OPERATOR_PASSWORD_GUESSES) {
+    return "OPERATOR_PASSWORD is too easy to guess; use four or more random words";
   }
-  const lower = password.toLowerCase();
-  const weak = WEAK_PASSWORD_PARTS.find(part => lower.includes(part));
-  if (weak) return `OPERATOR_PASSWORD contains "${weak}"`;
   return null;
 }
 
@@ -51,7 +69,7 @@ export function sessionSecretProblem(secret: string): string | null {
     return "SESSION_SECRET must be hex: generate it with crypto.randomBytes(32).toString('hex')";
   }
   if (secret.length < MIN_SESSION_SECRET_HEX) {
-    return `SESSION_SECRET has ${secret.length / 2} bytes; it needs at least ${MIN_SESSION_SECRET_HEX / 2}`;
+    return `SESSION_SECRET is shorter than ${MIN_SESSION_SECRET_HEX / 2} bytes`;
   }
   const lower = secret.toLowerCase();
   if (new Set(lower).size < 12) return "SESSION_SECRET uses too few different hex digits to be random";
@@ -73,18 +91,21 @@ export function isOperatorLoginConfigured(): boolean {
   return operatorLoginProblems().length === 0;
 }
 
-// HMAC-SHA256 under the secret over a hash of the password: a new password or a
-// new secret is a new key, and every session signed with the old one fails.
+// scrypt of the password, salted with the secret: a new password or a new secret
+// is a new key, and every session signed with the old one fails. scrypt and not
+// a plain hash, so that someone holding the secret and one session token cannot
+// try passwords against it at hash speed. Worked out once for each pair.
+let derived: { secret: string; password: string; key: Uint8Array } | null = null;
 function sessionKey(): Uint8Array {
   const problems = operatorLoginProblems();
   if (problems.length > 0) throw new Error(problems.join("; "));
-  const passwordDigest = createHash("sha256").update(ENV.operatorPassword).digest();
-  return new Uint8Array(
-    createHmac("sha256", Buffer.from(ENV.sessionSecret, "hex"))
-      .update("bureau-operator-session-v1\0")
-      .update(passwordDigest)
-      .digest()
-  );
+  const { sessionSecret: secret, operatorPassword: password } = ENV;
+  if (derived?.secret !== secret || derived.password !== password) {
+    const salt = Buffer.concat([Buffer.from("bureau-operator-session-v2\0"), Buffer.from(secret, "hex")]);
+    const key = scryptSync(password, salt, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+    derived = { secret, password, key: new Uint8Array(key) };
+  }
+  return derived.key;
 }
 
 // Compare fixed-length digests so timing does not depend on where inputs differ.
