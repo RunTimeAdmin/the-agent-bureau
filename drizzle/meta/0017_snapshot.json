@@ -355,7 +355,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "login_attempts_window_idx": {
+          "name": "login_attempts_window_idx",
+          "columns": [
+            "windowStartedAt"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "login_attempts_key": {

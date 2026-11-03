@@ -314,8 +314,8 @@ export async function pingDb(): Promise<boolean> {
 
 // The Bureau tables the app needs to serve games, inquiries and the inbox, and
 // to hold furnished outcome events, the review log and subject disputes.
-// login_attempts is from the most recent migration, so its presence doubles as
-// a check that migrations ran to the current version.
+// The most recent migration adds review_log_sync.checkpointSequence, so that
+// column's presence doubles as a check that migrations ran to the current version.
 const REQUIRED_TABLES = [
   "agents",
   "daily_usage",
@@ -343,10 +343,14 @@ export async function schemaReady(): Promise<boolean> {
           where table_schema = database()
             and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'login_attempts', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
     );
-    const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
-      present?: number | string;
-    }>;
-    return Number(rows?.[0]?.present ?? 0) === REQUIRED_TABLES.length;
+    const columns = await db.execute(
+      sql`select count(*) as present from information_schema.columns
+          where table_schema = database()
+            and table_name = 'review_log_sync' and column_name = 'checkpointSequence'`
+    );
+    const present = (r: unknown) =>
+      Number(((Array.isArray(r) ? r[0] : r) as unknown as Array<{ present?: number | string }>)?.[0]?.present ?? 0);
+    return present(result) === REQUIRED_TABLES.length && present(columns) === 1;
   } catch {
     return false;
   }

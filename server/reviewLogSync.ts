@@ -167,6 +167,11 @@ export async function readReviewLog(options: {
   const now = options.now ?? new Date();
   const knownIds = new Set(options.known.map(r => r.packetId));
 
+  // CounterAudit's signed checkpoint, read before the listing, which is read past CounterAudit's
+  // short cache of it: every packet the checkpoint covers is then listed, and one sealed between
+  // the two only makes the listing longer. It is checked once the chain is (below).
+  const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
+
   // Every packet id, newest first.
   const ids: string[] = [];
   let cursor: string | null = null;
@@ -174,7 +179,7 @@ export async function readReviewLog(options: {
     if (page === MAX_PAGES) {
       return { rows: [], listed: ids.length, listedComplete: false, problem: "the review log has more packets than one sync reads", checkpoint: null };
     }
-    const query = new URLSearchParams({ limit: String(PAGE), ...(cursor ? { cursor } : {}) });
+    const query = new URLSearchParams({ limit: String(PAGE), refresh: "1", ...(cursor ? { cursor } : {}) });
     const listed = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
     if (listed.status !== 200 || !isRecord(listed.body) || !Array.isArray(listed.body.packets)) {
       return {
@@ -266,9 +271,6 @@ export async function readReviewLog(options: {
     }
   }
 
-  // Read after the listing, so the checkpoint covers at least the tip the listing reached: the
-  // endpoint signs one for the current tip whenever it has moved.
-  const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
   if (!checkpoint.ok) return done(rows, checkpoint.problem);
   const cp = checkpoint.head;
   const minHead = options.minHead ?? null;

@@ -69,7 +69,7 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 
 `pnpm file assemble` and `pnpm file verify --current`, run by the operator, also read `COUNTERAUDIT_READ_KEY`, a read-role key of the Bureau's organization, for the evidence seals (`docs/agent-file.md`). The production server does not need it.
 
-The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`, and `pnpm review sync` reads `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` (`docs/two-person-review.md`). The production server needs `COUNTERAUDIT_ORG_ID` (and `COUNTERAUDIT_API_URL` if not the default) for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. The rest are for the operator scripts.
+The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `ARC_TESTNET_RPC_URL` and `ARC_TESTNET_EXPLORER_URL`, described in `docs/counteraudit-intake.md`, and `pnpm review sync` reads `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` (`docs/two-person-review.md`), with `COUNTERAUDIT_REVIEW_MIN_HEAD` also read by `pnpm file verify --current` and `pnpm review head` when set. The production server needs `COUNTERAUDIT_ORG_ID` (and `COUNTERAUDIT_API_URL` if not the default) for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. The rest are for the operator scripts.
 
 ## Operator inbox
 

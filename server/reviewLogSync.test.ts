@@ -125,8 +125,9 @@ describe("reading the review log", () => {
     // Another connector's packet keeps its place in the chain but holds no record.
     expect(rows[3]).toMatchObject({ connectorId: "other-connector", record: null });
 
-    const [url, init] = fetch.mock.calls[0];
-    expect(url).toBe(`${API}/v1/audit/packets?limit=100`);
+    // The first call reads the signed checkpoint (below); the second lists.
+    const [url, init] = fetch.mock.calls[1];
+    expect(url).toBe(`${API}/v1/audit/packets?limit=100&refresh=1`);
     expect(init).toMatchObject({
       headers: { authorization: `Bearer ${KEY}` },
       redirect: "error",
@@ -220,6 +221,18 @@ describe("the signed head (review AB-01)", () => {
       "CounterAudit's signed checkpoint is at sequence 4, but the log read ends at sequence 2: it is not the whole log"
     );
     expect(result.listedComplete).toBe(true);
+  });
+
+  it("reads the checkpoint before the listing, and the listing past CounterAudit's cache", async () => {
+    // A packet sealed between the two only makes the listing longer than the checkpoint.
+    const chain = packets(5);
+    const fetch = fakeCounterAudit(chain, { checkpoint: tipOf(chain[2]) });
+    expect((await read(fetch)).problem).toBeNull();
+    const urls = fetch.mock.calls.map(([url]) => new URL(url));
+    expect(urls[0].pathname).toBe(`/v1/audit/chain/${ORG}/checkpoint`);
+    const lists = urls.filter(u => u.pathname === "/v1/audit/packets");
+    expect(lists.length).toBeGreaterThan(0);
+    for (const u of lists) expect(u.searchParams.get("refresh")).toBe("1");
   });
 
   it("takes a log that reaches its signed checkpoint, and returns the checkpoint", async () => {
