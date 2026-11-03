@@ -2,8 +2,14 @@
 // packet of the review organization with the Bureau's own read key, in sequence order, checking
 // each links to the one before, so a gap is reported rather than read past. submit: a reviewer
 // seals one record with their own ingest key, and keeps the receipt.
+//
+// Links show a packet missing from the middle, not from the end: a listing that stops early, from
+// a stale or dishonest endpoint, still links. So every read also takes CounterAudit's signed chain
+// checkpoint, the tip sequence and entry hash signed with its export key, and the log read must
+// reach it (review AB-01, docs/review-log-design.md "The signed head").
 import type { InsertReviewLogRecord, ReviewLogRecordRow } from "../drizzle/schema";
-import { isRecord } from "./outcomeProof";
+import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
+import { isRecord, verifyCounterauditSignature } from "./outcomeProof";
 import { REVIEW_CONNECTOR_ID } from "./reviewLog";
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -63,6 +69,69 @@ export async function call(
   return { status: res.status, body };
 }
 
+/** A point in the review log: a sequence and the entry hash of the packet there. */
+export type Head = { sequence: number; entryHash: string };
+
+/** CounterAudit's signed chain checkpoint for the review organization. */
+export type Checkpoint = Head & { packetId: string; issuedAt: Date };
+
+const CHECKPOINT_TYPE = "counteraudit.chain_checkpoint";
+
+/**
+ * The review organization's newest chain checkpoint. CounterAudit issues one for the current tip
+ * when it has moved, then returns the newest, signed with its export key; the key is the one
+ * pinned in server/counterauditKeys.ts, not one the same server hands out. `head` is null only for
+ * a log with no numbered packet yet.
+ */
+export async function readCheckpoint(options: {
+  apiUrl: string;
+  readKey: string;
+  orgId: string;
+  fetch?: Fetch;
+}): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string }> {
+  const got = await call(
+    options.fetch ?? fetch,
+    `${counterauditBase(options.apiUrl)}/v1/audit/chain/${options.orgId}/checkpoint`,
+    options.readKey
+  );
+  if (got.status === 404 && isRecord(got.body) && got.body.error === "not_found") return { ok: true, head: null };
+  const cp = isRecord(got.body) && isRecord(got.body.checkpoint) ? got.body.checkpoint : null;
+  if (got.status !== 200 || !cp) {
+    return { ok: false, problem: `CounterAudit answered ${got.status} for the review log's signed checkpoint` };
+  }
+  const { signature, ...payload } = cp;
+  const signed = verifyCounterauditSignature(payload, signature, COUNTERAUDIT_EXPORT_KEYS);
+  if (!signed.valid) {
+    return { ok: false, problem: `the review log's checkpoint is not signed with CounterAudit's export key (${signed.reason})` };
+  }
+  const issuedAt = typeof payload.issued_at === "string" ? new Date(payload.issued_at) : new Date(NaN);
+  if (
+    payload.checkpoint_type !== CHECKPOINT_TYPE ||
+    payload.checkpoint_version !== 1 ||
+    typeof payload.sequence !== "number" || !Number.isSafeInteger(payload.sequence) || payload.sequence < 0 ||
+    typeof payload.entry_hash !== "string" || !HASH.test(payload.entry_hash) ||
+    typeof payload.packet_id !== "string" || !UUID.test(payload.packet_id) ||
+    Number.isNaN(issuedAt.getTime())
+  ) {
+    return { ok: false, problem: "the review log's checkpoint is not a version 1 chain checkpoint" };
+  }
+  if (payload.org_id !== options.orgId) {
+    return { ok: false, problem: "the review log's checkpoint is for another organization" };
+  }
+  return {
+    ok: true,
+    head: { sequence: payload.sequence, entryHash: payload.entry_hash, packetId: payload.packet_id, issuedAt },
+  };
+}
+
+/** "sequence:entryhash", as COUNTERAUDIT_REVIEW_MIN_HEAD gives a head someone already holds. */
+export function parseHead(text: string): Head | null {
+  const match = /^(\d+):([0-9a-f]{64})$/.exec(text.trim());
+  if (!match) return null;
+  const sequence = Number(match[1]);
+  return Number.isSafeInteger(sequence) ? { sequence, entryHash: match[2] } : null;
+}
+
 export type ReadResult = {
   // Packets to store, in sequence order, each linked to the one before.
   rows: InsertReviewLogRecord[];
@@ -73,18 +142,23 @@ export type ReadResult = {
   listedComplete: boolean;
   // Why reading stopped early, or null.
   problem: string | null;
+  // CounterAudit's signed checkpoint the read reached, or null when none was read or it failed.
+  checkpoint: Checkpoint | null;
 };
 
 /**
  * Reads the review organization's packets that `known` does not hold yet. Every packet's body
  * comes from CounterAudit's verify route, which checks the packet's seal and hashes; this checks
  * the organization, and that each packet's sequence and previous hash follow the one before it.
+ * The log read must then reach CounterAudit's signed checkpoint, and `minHead`, a head the caller
+ * already holds, when it gives one: a log that ends short of either is a problem, not a shorter log.
  */
 export async function readReviewLog(options: {
   apiUrl: string;
   readKey: string;
   orgId: string;
   known: ReviewLogRecordRow[];
+  minHead?: Head | null;
   fetch?: Fetch;
   now?: Date;
 }): Promise<ReadResult> {
@@ -98,7 +172,7 @@ export async function readReviewLog(options: {
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
     if (page === MAX_PAGES) {
-      return { rows: [], listed: ids.length, listedComplete: false, problem: "the review log has more packets than one sync reads" };
+      return { rows: [], listed: ids.length, listedComplete: false, problem: "the review log has more packets than one sync reads", checkpoint: null };
     }
     const query = new URLSearchParams({ limit: String(PAGE), ...(cursor ? { cursor } : {}) });
     const listed = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
@@ -108,6 +182,7 @@ export async function readReviewLog(options: {
         listed: ids.length,
         listedComplete: false,
         problem: `CounterAudit answered ${listed.status} when listing the review log's packets`,
+        checkpoint: null,
       };
     }
     for (const p of listed.body.packets) {
@@ -119,8 +194,8 @@ export async function readReviewLog(options: {
   }
 
   // From here the listing is whole: every answer below carries it.
-  const done = (rows: InsertReviewLogRecord[], problem: string | null): ReadResult =>
-    ({ rows, listed: ids.length, listedComplete: true, problem });
+  const done = (rows: InsertReviewLogRecord[], problem: string | null, checkpoint: Checkpoint | null = null): ReadResult =>
+    ({ rows, listed: ids.length, listedComplete: true, problem, checkpoint });
   const fresh: InsertReviewLogRecord[] = [];
   for (const id of ids) {
     if (knownIds.has(id)) continue;
@@ -190,7 +265,40 @@ export async function readReviewLog(options: {
       rows.push(stored);
     }
   }
-  return done(rows, null);
+
+  // Read after the listing, so the checkpoint covers at least the tip the listing reached: the
+  // endpoint signs one for the current tip whenever it has moved.
+  const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
+  if (!checkpoint.ok) return done(rows, checkpoint.problem);
+  const cp = checkpoint.head;
+  const minHead = options.minHead ?? null;
+  if (cp && minHead && cp.sequence < minHead.sequence) {
+    return done(
+      rows,
+      `CounterAudit's signed checkpoint is at sequence ${cp.sequence}, below sequence ${minHead.sequence}, which the review log has already reached: its head went back`,
+      cp
+    );
+  }
+  const atSequence = new Map(all.map(r => [r.sequence, r.entryHash]));
+  const tip = all.length > 0 ? all[all.length - 1].sequence : null;
+  for (const [what, head] of [
+    ["CounterAudit's signed checkpoint", cp],
+    ["the head already reached", minHead],
+  ] as const) {
+    if (!head) continue;
+    const found = atSequence.get(head.sequence);
+    if (found === undefined) {
+      return done(
+        rows,
+        `${what} is at sequence ${head.sequence}, but the log read ends ${tip === null ? "before sequence 0" : `at sequence ${tip}`}: it is not the whole log`,
+        cp
+      );
+    }
+    if (found !== head.entryHash) {
+      return done(rows, `${what} names another packet at sequence ${head.sequence} than the log read holds`, cp);
+    }
+  }
+  return done(rows, null, cp);
 }
 
 /**

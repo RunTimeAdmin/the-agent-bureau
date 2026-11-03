@@ -1,11 +1,21 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { ReviewLogRecordRow } from "../drizzle/schema";
+
+// The checkpoints below are signed with a key made for this run; the pinned keys gain it here only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+
 import {
   counterauditBase,
+  parseHead,
   readReviewLog,
   submitReviewRecord,
 } from "./reviewLogSync";
+import { checkpointOf, checkpointResponse } from "./testCheckpoint";
 
 const API = "https://api.counteraudit.test";
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -43,13 +53,22 @@ function packets(count: number): Packet[] {
   }));
 }
 
-// CounterAudit's list (newest first, `page` at a time) and verify routes.
+type Tip = { sequence: number; entryHash: string; packetId: string };
+const tipOf = (p: Packet): Tip => ({ sequence: p.sequence, entryHash: p.integrity.entry_hash, packetId: p.packet_id });
+
+// CounterAudit's list (newest first, `page` at a time), verify and checkpoint routes. The
+// checkpoint is signed for the chain's tip unless `checkpoint` names another, or is a Response.
 function fakeCounterAudit(
   chain: Packet[],
-  options: { page?: number; status?: Record<string, number> } = {}
+  options: { page?: number; status?: Record<string, number>; checkpoint?: Tip | null | Response } = {}
 ) {
   return vi.fn(async (url: string, _init?: RequestInit) => {
     const u = new URL(url);
+    if (u.pathname === `/v1/audit/chain/${ORG}/checkpoint`) {
+      if (options.checkpoint instanceof Response) return options.checkpoint;
+      const tip = options.checkpoint !== undefined ? options.checkpoint : chain.length ? tipOf(chain[chain.length - 1]) : null;
+      return checkpointResponse(ORG, tip);
+    }
     if (u.pathname === "/v1/audit/packets") {
       const newestFirst = [...chain].reverse();
       const start = Number(u.searchParams.get("cursor") ?? 0);
@@ -155,18 +174,21 @@ describe("reading the review log", () => {
       listed: 3,
       listedComplete: true,
       problem: `packet ${idOf(1)} belongs to another organization`,
+      checkpoint: null,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(1)]: 410 } }))).toEqual({
       rows: [],
       listed: 3,
       listedComplete: true,
       problem: `packet ${idOf(1)} has been erased; the review log must keep every packet`,
+      checkpoint: null,
     });
     expect(await read(fakeCounterAudit(packets(3), { status: { [idOf(0)]: 409 } }))).toEqual({
       rows: [],
       listed: 3,
       listedComplete: true,
       problem: `CounterAudit could not verify packet ${idOf(0)} (409)`,
+      checkpoint: null,
     });
   });
 
@@ -185,6 +207,81 @@ describe("reading the review log", () => {
     ]) {
       expect(() => counterauditBase(bad)).toThrow("COUNTERAUDIT_API_URL");
     }
+  });
+});
+
+describe("the signed head (review AB-01)", () => {
+  it("refuses a valid prefix that says it is the whole log when the signed checkpoint is later", async () => {
+    // A stale or dishonest endpoint lists sequences 0 to 2, linked and with no next page. Its own
+    // signed checkpoint is at sequence 4, so the listing is short of it.
+    const chain = packets(5);
+    const result = await read(fakeCounterAudit(chain.slice(0, 3), { checkpoint: tipOf(chain[4]) }));
+    expect(result.problem).toBe(
+      "CounterAudit's signed checkpoint is at sequence 4, but the log read ends at sequence 2: it is not the whole log"
+    );
+    expect(result.listedComplete).toBe(true);
+  });
+
+  it("takes a log that reaches its signed checkpoint, and returns the checkpoint", async () => {
+    const chain = packets(3);
+    const result = await read(fakeCounterAudit(chain));
+    expect(result.problem).toBeNull();
+    expect(result.checkpoint).toEqual({
+      sequence: 2,
+      entryHash: hashOf(2),
+      packetId: idOf(2),
+      issuedAt: new Date("2026-11-03T12:00:00.000Z"),
+    });
+  });
+
+  it("refuses a checkpoint whose signature does not verify, or that is for another organization", async () => {
+    const chain = packets(3);
+    const edited = { ...checkpointOf(ORG, tipOf(chain[2])), sequence: 9 };
+    expect((await read(fakeCounterAudit(chain, { checkpoint: Response.json({ checkpoint: edited }) }))).problem).toBe(
+      "the review log's checkpoint is not signed with CounterAudit's export key (digest_mismatch)"
+    );
+    const other = checkpointOf("99999999-2222-4333-8444-555555555555", tipOf(chain[2]));
+    expect((await read(fakeCounterAudit(chain, { checkpoint: Response.json({ checkpoint: other }) }))).problem).toBe(
+      "the review log's checkpoint is for another organization"
+    );
+    expect((await read(fakeCounterAudit(chain, { checkpoint: new Response(null, { status: 503 }) }))).problem).toBe(
+      "CounterAudit answered 503 for the review log's signed checkpoint"
+    );
+  });
+
+  it("refuses a log, or a checkpoint, short of a head already reached", async () => {
+    const chain = packets(5);
+    const reached = { sequence: 4, entryHash: hashOf(4) };
+    const readWith = (fetch: ReturnType<typeof fakeCounterAudit>, minHead: { sequence: number; entryHash: string }) =>
+      readReviewLog({ apiUrl: API, readKey: KEY, orgId: ORG, known: [], minHead, fetch, now: NOW });
+    // A restored or stale log whose checkpoint went back with it.
+    expect((await readWith(fakeCounterAudit(chain.slice(0, 3)), reached)).problem).toBe(
+      "CounterAudit's signed checkpoint is at sequence 2, below sequence 4, which the review log has already reached: its head went back"
+    );
+    // A pinned head past what is listed, with a checkpoint that does not go back far enough to show it.
+    expect((await readWith(fakeCounterAudit(chain, { checkpoint: tipOf(chain[4]) }), { sequence: 6, entryHash: hashOf(6) })).problem).toBe(
+      "CounterAudit's signed checkpoint is at sequence 4, below sequence 6, which the review log has already reached: its head went back"
+    );
+    // A pinned head that names another packet than the one at its sequence.
+    expect((await readWith(fakeCounterAudit(chain), { sequence: 2, entryHash: hashOf(99) })).problem).toBe(
+      "the head already reached names another packet at sequence 2 than the log read holds"
+    );
+    expect((await readWith(fakeCounterAudit(chain), reached)).problem).toBeNull();
+  });
+
+  it("takes an empty log, which has no checkpoint yet, unless a head was already reached", async () => {
+    expect(await read(fakeCounterAudit([]))).toEqual({ rows: [], listed: 0, listedComplete: true, problem: null, checkpoint: null });
+    const reached = await readReviewLog({
+      apiUrl: API, readKey: KEY, orgId: ORG, known: [], minHead: { sequence: 0, entryHash: hashOf(0) },
+      fetch: fakeCounterAudit([]), now: NOW,
+    });
+    expect(reached.problem).toBe("the head already reached is at sequence 0, but the log read ends before sequence 0: it is not the whole log");
+  });
+
+  it("reads a pinned head as sequence:entryhash", () => {
+    expect(parseHead(`4:${hashOf(4)}`)).toEqual({ sequence: 4, entryHash: hashOf(4) });
+    expect(parseHead(`4:${hashOf(4).toUpperCase()}`)).toBeNull();
+    expect(parseHead("4")).toBeNull();
   });
 });
 

@@ -120,6 +120,13 @@
       "when": 1793737030985,
       "tag": "0016_login_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1793738602809,
+      "tag": "0017_review_log_checkpoint",
+      "breakpoints": true
     }
   ]
 }

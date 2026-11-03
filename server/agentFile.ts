@@ -46,7 +46,7 @@ import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecision";
 import { readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
 import type { ReviewLog } from "./reviewLog";
-import { readReviewPacket, type Fetch } from "./reviewLogSync";
+import { parseHead, readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
 import {
   admissionFor,
@@ -1443,12 +1443,18 @@ async function checkCurrentReviewStatus(
       "needs COUNTERAUDIT_REVIEW_ORG_ID and COUNTERAUDIT_REVIEW_READ_KEY to read the review log"
     );
   }
+  // A head someone already holds, so a log that stops short of it is not taken for the whole.
+  const pinned = ENV.counterauditReviewMinHead ? parseHead(ENV.counterauditReviewMinHead) : null;
+  if (ENV.counterauditReviewMinHead && !pinned) {
+    return unknown('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash"');
+  }
   let now: Awaited<ReturnType<typeof readReviewLogNow>>;
   try {
     now = await readReviewLogNow({
       apiUrl: ENV.counterauditApiUrl,
       readKey: ENV.counterauditReviewReadKey,
       orgId: ENV.counterauditReviewOrgId,
+      minHead: pinned,
       fetch: io.fetch,
       now: io.now(),
     });

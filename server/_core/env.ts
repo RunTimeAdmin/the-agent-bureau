@@ -27,4 +27,8 @@ export const ENV = {
   get counterauditReviewOrgId() { return process.env.COUNTERAUDIT_REVIEW_ORG_ID ?? ""; },
   get counterauditReviewReadKey() { return process.env.COUNTERAUDIT_REVIEW_READ_KEY ?? ""; },
   get counterauditReviewIngestKey() { return process.env.COUNTERAUDIT_REVIEW_INGEST_KEY ?? ""; },
+  // A head of the review log someone already holds, as "sequence:entryhash": from a reviewer's own
+  // receipt or an earlier pnpm review head. pnpm file verify --current, which reads without the
+  // Bureau's database, refuses a log that does not reach it (review AB-01).
+  get counterauditReviewMinHead() { return process.env.COUNTERAUDIT_REVIEW_MIN_HEAD ?? ""; },
 };

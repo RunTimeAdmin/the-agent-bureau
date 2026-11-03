@@ -25,6 +25,8 @@ vi.mock("./db", () => ({
     }
     return added;
   }),
+  getReviewLogHead: vi.fn(async () => null),
+  recordReviewLogCheckpoint: vi.fn(async () => {}),
 }));
 
 const pin = vi.hoisted(() => ({ genesis: null as string | null }));
@@ -53,6 +55,16 @@ import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
 import { ADMISSION_SCHEMA, signAdmission } from "./furnisherAdmission";
 import type { EvidenceResult } from "./evidence";
 import { evidenceRecordFor, type EvidenceRecord } from "./evidenceSeal";
+
+// The review log's checkpoints in these fakes are signed with a key made for the test run
+// (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+import { checkpointResponse } from "./testCheckpoint";
+
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
 const API = "https://api.counteraudit.test";
@@ -222,6 +234,14 @@ function counterAudit(
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const packets: { packet_id: string; connector_id: string }[] =
       headers.authorization === `Bearer ${BUREAU_READ_KEY}` ? bureau : chain;
+    const checkpointPath = /^\/v1\/audit\/chain\/([^/]+)\/checkpoint$/.exec(path);
+    if (checkpointPath) {
+      const tip = packets.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
+      return checkpointResponse(
+        checkpointPath[1],
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+      );
+    }
     if (path === "/v1/audit/packets") {
       return Response.json({
         packets: [...packets]
@@ -384,6 +404,7 @@ beforeEach(() => {
   process.env.COUNTERAUDIT_REVIEW_ORG_ID = REVIEW_ORG;
   process.env.COUNTERAUDIT_REVIEW_READ_KEY = "ca_read_review";
   process.env.COUNTERAUDIT_API_URL = API;
+  delete process.env.COUNTERAUDIT_REVIEW_MIN_HEAD;
 });
 
 describe("pnpm file assemble and the review log", () => {
@@ -762,6 +783,27 @@ describe("pnpm file verify and the review log", () => {
       3
     );
     expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
+  });
+
+  it("--current exits 3 when the review log is short of a head pinned in COUNTERAUDIT_REVIEW_MIN_HEAD", async () => {
+    const { records, text } = await signedFile();
+    const last = records.length - 1;
+    process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `${last}:${hashOf(last)}`;
+    const at = fileIO(counterAudit(records));
+    at.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], at.io)).toBe(0);
+
+    process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `${last + 2}:${hashOf(last + 2)}`;
+    const short = fileIO(counterAudit(records));
+    short.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], short.io)).toBe(3);
+    expect(short.out.join("\n")).toContain(`below sequence ${last + 2}, which the review log has already reached: its head went back`);
+
+    process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = "latest";
+    const malformed = fileIO(counterAudit(records));
+    malformed.files["one.json"] = text;
+    expect(await runFile(["verify", "one.json", "--current"], malformed.io)).toBe(3);
+    expect(malformed.out.join("\n")).toContain('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash"');
   });
 
   it("says the references were not checked without the read key, and states them offline", async () => {

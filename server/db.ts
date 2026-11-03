@@ -825,6 +825,40 @@ export async function recordReviewLogSync(sync: {
   await db.insert(reviewLogSync).values({ id: 1, ...set }).onDuplicateKeyUpdate({ set });
 }
 
+// The newest signed checkpoint a read of the review log has reached, or null before the first.
+export async function getReviewLogHead(): Promise<{ sequence: number; entryHash: string } | null> {
+  const row = await getReviewLogSync();
+  if (!row || row.checkpointSequence === null || row.checkpointEntryHash === null) return null;
+  return { sequence: row.checkpointSequence, entryHash: row.checkpointEntryHash };
+}
+
+// Records a signed checkpoint a read reached, if it is newer than the one recorded. Never moves the
+// recorded one back: the read that reached it has already checked it is not below it.
+export async function recordReviewLogCheckpoint(checkpoint: {
+  sequence: number;
+  entryHash: string;
+  issuedAt: Date;
+}, at: Date): Promise<void> {
+  const db = await requireDb();
+  await db
+    .insert(reviewLogSync)
+    .values({ id: 1, lastAttemptAt: at })
+    .onDuplicateKeyUpdate({ set: { id: sql`${reviewLogSync.id}` } });
+  await db
+    .update(reviewLogSync)
+    .set({
+      checkpointSequence: checkpoint.sequence,
+      checkpointEntryHash: checkpoint.entryHash,
+      checkpointIssuedAt: checkpoint.issuedAt,
+    })
+    .where(
+      and(
+        eq(reviewLogSync.id, 1),
+        or(isNull(reviewLogSync.checkpointSequence), lt(reviewLogSync.checkpointSequence, checkpoint.sequence))
+      )
+    );
+}
+
 // The review log's packets, in sequence order (server/reviewLog.ts).
 export async function listReviewLogRecords(): Promise<ReviewLogRecordRow[]> {
   const db = await requireDb();

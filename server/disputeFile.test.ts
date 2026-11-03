@@ -24,6 +24,8 @@ vi.mock("./db", () => ({
     }
     return added;
   }),
+  getReviewLogHead: vi.fn(async () => null),
+  recordReviewLogCheckpoint: vi.fn(async () => {}),
 }));
 
 const pin = vi.hoisted(() => ({ genesis: null as string | null }));
@@ -63,6 +65,16 @@ import {
   signReviewDecision,
 } from "./reviewDecision";
 import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
+
+// The review log's checkpoints in these fakes are signed with a key made for the test run
+// (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+import { checkpointResponse } from "./testCheckpoint";
+
 
 const T0 = new Date("2026-11-01T10:00:00.000Z");
 const DAY = 86_400_000;
@@ -413,6 +425,14 @@ function counterAudit(records: unknown[]) {
   }));
   return vi.fn(async (url: string) => {
     const path = new URL(url).pathname;
+    const checkpointPath = /^\/v1\/audit\/chain\/([^/]+)\/checkpoint$/.exec(path);
+    if (checkpointPath) {
+      const tip = chain.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
+      return checkpointResponse(
+        checkpointPath[1],
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+      );
+    }
     if (path === "/v1/audit/packets") {
       return Response.json({
         packets: [...chain].reverse().map(p => ({ packet_id: p.packet_id })),
