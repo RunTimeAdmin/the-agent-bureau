@@ -225,6 +225,7 @@ describe("pnpm lines expire", () => {
     for (const name of [
       "subjectRef",
       "signedEvent",
+      "evidenceStatus",
       "evidenceResult",
       "evidenceKey",
       "receipt",

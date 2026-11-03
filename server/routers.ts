@@ -4,6 +4,7 @@ import { z } from "zod";
 import { LATEST_CASE } from "@shared/cases";
 import { COOKIE_NAME, SESSION_TTL_MS } from "@shared/const";
 import {
+  consumeLoginAttempt,
   createInquiry,
   deleteInquiry,
   listAgents,
@@ -69,10 +70,24 @@ const inquiryRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
 });
-const loginRateLimit = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-});
+// Operator sign-in: 10 attempts per 15 minutes from one address, and 50 from
+// all addresses together, so spreading guesses over many addresses buys little.
+// Counted in the database (consumeLoginAttempt), which holds across restarts
+// and instances; the in-process limiters are only for a server with no database.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_PER_ADDRESS = 10;
+const LOGIN_MAX_ALL = 50;
+const loginRateLimit = createRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: LOGIN_MAX_PER_ADDRESS });
+const loginRateLimitAll = createRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: LOGIN_MAX_ALL });
+
+export async function consumeLoginRateLimit(ip: string, now = Date.now()): Promise<boolean> {
+  const perAddress = await consumeLoginAttempt(`login:${ip}`, LOGIN_WINDOW_MS, LOGIN_MAX_PER_ADDRESS, now);
+  if (perAddress === null) {
+    return loginRateLimit.consume(ip, now) && loginRateLimitAll.consume("all", now);
+  }
+  if (!perAddress) return false;
+  return (await consumeLoginAttempt("login:all", LOGIN_WINDOW_MS, LOGIN_MAX_ALL, now)) !== false;
+}
 // Every question is a paid model call. Per-address limits stop one visitor
 // from draining the day; server/game.ts caps the daily total.
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -88,6 +103,7 @@ export function consumeInquiryRateLimit(ip: string, now = Date.now()): boolean {
 export function resetInquiryRateLimiter(): void {
   inquiryRateLimit.reset();
   loginRateLimit.reset();
+  loginRateLimitAll.reset();
   playStartRateLimit.reset();
   playAskRateLimit.reset();
 }
@@ -113,7 +129,7 @@ export const appRouter = router({
             message: "Operator sign-in is not configured on this server.",
           });
         }
-        if (!loginRateLimit.consume(getRequestIp(ctx.req))) {
+        if (!(await consumeLoginRateLimit(getRequestIp(ctx.req)))) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
             message: "Too many sign-in attempts. Please try again later.",

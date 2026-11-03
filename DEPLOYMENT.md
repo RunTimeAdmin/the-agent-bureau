@@ -62,8 +62,8 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `DATABASE_URL` | Your MySQL database URL. Required for the game, inquiries, and outcome lines. On hosts where MySQL runs on the same server, connect to `127.0.0.1:3306`. |
 | `ANTHROPIC_API_KEY` | Anthropic API key for the game, where Claude plays the suspects. Without it every question fails with a server error and is not counted. |
 | `PUBLIC_SITE_URL` | Public origin used at build time for canonical URLs and the sitemap. Defaults to `https://theagentbureau.xyz`. |
-| `OPERATOR_PASSWORD` | Password for the private `/inbox`. Use a long, unique passphrase. |
-| `SESSION_SECRET` | At least 32 random characters, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+| `OPERATOR_PASSWORD` | Password for the private `/inbox`: a passphrase of 16 or more characters, at least 8 of them different, with no common word such as "password" or "bureau". A weaker one keeps the inbox locked. |
+| `SESSION_SECRET` | The hex of at least 32 random bytes, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Anything else keeps the inbox locked. |
 | `COUNTERAUDIT_ORG_ID` | The Bureau's CounterAudit organization. The production server needs it for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. |
 
 `pnpm file assemble` and `pnpm file verify --current`, run by the operator, also read `COUNTERAUDIT_READ_KEY`, a read-role key of the Bureau's organization, for the evidence seals (`docs/agent-file.md`). The production server does not need it.
@@ -72,11 +72,11 @@ The operator intake script also reads `COUNTERAUDIT_API_URL`, `COUNTERAUDIT_ORG_
 
 ## Operator inbox
 
-`/inbox` is protected by a single operator password. Sign-in sets a signed, `HttpOnly`, `SameSite=Strict` session cookie that lasts seven days. If either `OPERATOR_PASSWORD` or `SESSION_SECRET` is missing (or the secret is shorter than 32 characters), the inbox stays locked and shows a "not set up" message. There is no default password.
+`/inbox` is protected by a single operator password. Sign-in sets a signed, `HttpOnly`, `SameSite=Strict` session cookie that lasts seven days. If `OPERATOR_PASSWORD` or `SESSION_SECRET` is missing or too weak (see the table above), the inbox stays locked and shows a "not set up" message, and the server logs why at start. There is no default password.
 
-- To sign everyone out, change `SESSION_SECRET` and restart.
-- Changing `OPERATOR_PASSWORD` alone does not end existing sessions.
-- Sign-in attempts are limited to 10 per 15 minutes per client address.
+- Sessions are signed with a key derived from both values, so changing either one and restarting signs everyone out.
+- Sign-in attempts are limited to 10 per 15 minutes per client address and 50 per 15 minutes from all addresses together. They are counted in the database (`login_attempts`), so the limits hold across restarts and across instances. With no database the server falls back to counting in memory; if the database cannot be reached, sign-in fails rather than going uncounted.
+- There is no second factor yet. Before live operations, put the inbox behind a stronger identity provider or add one.
 
 ## Files and artwork
 

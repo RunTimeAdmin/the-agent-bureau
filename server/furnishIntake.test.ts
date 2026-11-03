@@ -43,7 +43,7 @@ vi.mock("./evidenceSeal", async importOriginal => {
 });
 
 import bs58 from "bs58";
-import { runIntake, type IntakeIO } from "./furnishIntake";
+import { newLineIdProblem, runIntake, type IntakeIO } from "./furnishIntake";
 import { EVIDENCE_SCHEMA } from "./evidenceSeal";
 import { canonicalizeJson } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
@@ -653,6 +653,52 @@ describe("runIntake", () => {
     expect(await runIntake(["--test-data", "events.jsonl"], io)).toBe(1);
     expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
     expect(db.updateOutcomeEventProof).not.toHaveBeenCalled();
+  });
+
+  it("does not store a new line sealed since 2026-11-02 whose event_id is not a random UUIDv4", async () => {
+    // The fixture event's id is from before ids had to be random. Sealed on 3 November it is refused,
+    // and nothing is written or sealed for it. (A proof for another org fails, so the seal time is the
+    // ingest response's, which is what this sets.)
+    vi.stubEnv("COUNTERAUDIT_ORG_ID", "00000000-0000-4000-8000-000000000000");
+    ca.ingestSignedEvent.mockResolvedValue({
+      kind: "sealed",
+      status: 201,
+      packet: { ...packet, created_at: "2026-11-03T00:00:00.000Z" },
+    });
+    db.findOutcomeEvent.mockResolvedValue(undefined);
+    const { io, printed } = fakeIO();
+
+    await runIntake(["--test-data", "events.jsonl"], io);
+    expect(db.insertOutcomeEvent).not.toHaveBeenCalled();
+    expect(ca.ingestEvidenceRecord).not.toHaveBeenCalled();
+    expect(printed()).toContain(
+      "not stored: event_id is not a random lowercase UUIDv4, which every event sealed since 2026-11-02 needs"
+    );
+  });
+
+  it("holds new lines to random ids from 2026-11-02, and lets a relation name a line stored before", async () => {
+    const UUID = "3f2b8c1e-9a4d-4e7b-8c2f-1d6a5e9b0c47";
+    const OTHER = "a9c1e3f5-7b2d-4c6e-9f81-3a5b7c9d1e2f";
+    const before = new Date("2026-11-01T23:59:59.999Z");
+    const after = new Date("2026-11-02T00:00:00.000Z");
+    const none = async () => false;
+    const held = async (id: string) => id === "e2e-original";
+    const fields = (eventId: string, target: string | null = null) => ({ eventId, relationTargetEventId: target });
+
+    expect(await newLineIdProblem(fields("e2e-20261030185449"), before, none)).toBeNull();
+    expect(await newLineIdProblem(fields(UUID), after, none)).toBeNull();
+    expect(await newLineIdProblem(fields("e2e-20261030185449"), after, none)).toMatch(/not a random lowercase UUIDv4/);
+    expect(await newLineIdProblem(fields(UUID.toUpperCase()), after, none)).toMatch(/not a random lowercase UUIDv4/);
+    // A version 1 UUID has a time and a node in it.
+    expect(await newLineIdProblem(fields("3f2b8c1e-9a4d-1e7b-8c2f-1d6a5e9b0c47"), after, none)).toMatch(/UUIDv4/);
+    // A seal time that is not a date is held to the rule, not let through.
+    expect(await newLineIdProblem(fields("e2e-20261030185449"), new Date("not a date"), none)).toMatch(/UUIDv4/);
+
+    expect(await newLineIdProblem(fields(UUID, OTHER), after, none)).toBeNull();
+    expect(await newLineIdProblem(fields(UUID, "e2e-original"), after, held)).toBeNull();
+    expect(await newLineIdProblem(fields(UUID, "e2e-original"), after, none)).toMatch(
+      /neither a random lowercase UUIDv4 nor a line the Bureau already holds/
+    );
   });
 
   it("stores a sealed line whose proof fails, with the failed checks, and exits 1", async () => {

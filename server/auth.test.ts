@@ -5,6 +5,8 @@ import type { TrpcContext } from "./_core/context";
 import {
   createOperatorSession,
   isOperatorRequest,
+  operatorPasswordProblem,
+  sessionSecretProblem,
   verifyOperatorSession,
 } from "./_core/auth";
 
@@ -14,7 +16,9 @@ type CookieCall = {
   options: Record<string, unknown>;
 };
 
-const TEST_SECRET = "unit-test-signing-key-never-deployed-0123456789";
+// 32 bytes of hex, made for this test file and never deployed.
+const TEST_SECRET = "4f1c9a7e2b6d03c58e9f71a2d4b60c3e57a9f2183c6e0d4b9a1f7e25c08d36b1";
+const OTHER_SECRET = "9b3e0f6a1c7d25e84f0a6b9c3d1e72f5a8c40b6e1d9f37a2c5e08b4d6f1a39c7";
 const TEST_PASSWORD = "correct horse battery staple";
 
 function createContext(isOperator = false, ip = "198.51.100.20") {
@@ -88,6 +92,36 @@ describe("auth.login", () => {
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
+  it("stays off with a weak password or secret, even when that is the password given", async () => {
+    const { ctx } = createContext();
+    vi.stubEnv("OPERATOR_PASSWORD", "hunter2");
+    await expect(
+      appRouter.createCaller(ctx).auth.login({ password: "hunter2" })
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+    vi.stubEnv("OPERATOR_PASSWORD", TEST_PASSWORD);
+    // Long enough, but a phrase and not the hex of random bytes.
+    vi.stubEnv("SESSION_SECRET", "unit-test-signing-key-never-deployed-0123456789");
+    await expect(
+      appRouter.createCaller(ctx).auth.login({ password: TEST_PASSWORD })
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(await appRouter.createCaller(ctx).auth.me()).toMatchObject({ loginConfigured: false });
+  });
+
+  it("limits attempts spread over many addresses too", async () => {
+    // 50 attempts from 50 addresses, each under its own limit of 10, fill the window for all of them.
+    for (let n = 0; n < 50; n += 1) {
+      const caller = appRouter.createCaller(createContext(false, `203.0.113.${n + 1}`).ctx);
+      await expect(caller.auth.login({ password: "guess" })).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+    }
+    const fresh = appRouter.createCaller(createContext(false, "198.51.100.99").ctx);
+    await expect(fresh.auth.login({ password: TEST_PASSWORD })).rejects.toMatchObject({
+      code: "TOO_MANY_REQUESTS",
+    });
+  });
+
   it("limits repeated attempts from one address", async () => {
     const { ctx } = createContext();
     const caller = appRouter.createCaller(ctx);
@@ -106,7 +140,14 @@ describe("operator sessions", () => {
   it("reject tokens signed with a different secret", async () => {
     const token = await createOperatorSession();
     expect(await verifyOperatorSession(token)).toBe(true);
-    vi.stubEnv("SESSION_SECRET", "a-different-secret-that-is-long-enough-000");
+    vi.stubEnv("SESSION_SECRET", OTHER_SECRET);
+    expect(await verifyOperatorSession(token)).toBe(false);
+  });
+
+  it("reject tokens signed before the password changed", async () => {
+    const token = await createOperatorSession();
+    expect(await verifyOperatorSession(token)).toBe(true);
+    vi.stubEnv("OPERATOR_PASSWORD", "a new passphrase for the inbox, rotated");
     expect(await verifyOperatorSession(token)).toBe(false);
   });
 
@@ -143,5 +184,24 @@ describe("auth.logout", () => {
       httpOnly: true,
       path: "/",
     });
+  });
+});
+
+describe("operator credentials", () => {
+  it("take a long passphrase and refuse short, repetitive or common ones", () => {
+    expect(operatorPasswordProblem(TEST_PASSWORD)).toBeNull();
+    expect(operatorPasswordProblem("")).toMatch(/not set/);
+    expect(operatorPasswordProblem("short one")).toMatch(/at least 16/);
+    expect(operatorPasswordProblem("aaaabbbbaaaabbbbaaaa")).toMatch(/too few characters/);
+    expect(operatorPasswordProblem("MyBureauPassword2026!")).toMatch(/contains/);
+  });
+
+  it("take the hex of 32 random bytes and refuse a phrase, a short one or a pattern", () => {
+    expect(sessionSecretProblem(TEST_SECRET)).toBeNull();
+    expect(sessionSecretProblem("")).toMatch(/not set/);
+    expect(sessionSecretProblem("unit-test-signing-key-never-deployed-0123456789")).toMatch(/must be hex/);
+    expect(sessionSecretProblem(TEST_SECRET.slice(0, 62))).toMatch(/needs at least 32/);
+    expect(sessionSecretProblem("0".repeat(64))).toMatch(/too few different/);
+    expect(sessionSecretProblem("0123456789abcdef".repeat(4))).toMatch(/repeated/);
   });
 });
