@@ -7,10 +7,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
 import {
   findRelatingOutcomeLines,
+  getReviewLogHead,
   getReviewLogSync,
   insertReviewLogRecords,
   listOutcomeLines,
   listReviewLogRecords,
+  recordReviewLogCheckpoint,
   recordReviewLogSync,
   schemaReady,
 } from "./db";
@@ -61,6 +63,8 @@ import {
   type ReviewLog,
 } from "./reviewLog";
 import {
+  parseHead,
+  readCheckpoint,
   readReviewLog,
   submitReviewRecord,
   type Fetch,
@@ -81,6 +85,7 @@ export const USAGE = [
   "  pnpm review submit <record-file>",
   "  pnpm review approve-key --key <private-key-file> --reviewer <rev_id> --request <request.json> --out <approval-file>",
   "  pnpm review sync",
+  "  pnpm review head",
   "  pnpm review queue",
   "  pnpm review admissions",
   "  pnpm review settle",
@@ -969,6 +974,8 @@ async function sync(io: ReviewIO) {
       readKey: ENV.counterauditReviewReadKey,
       orgId: ENV.counterauditReviewOrgId,
       known: await listReviewLogRecords(),
+      // Not below the newest signed checkpoint any read has reached (review AB-01).
+      minHead: await getReviewLogHead(),
       fetch: io.fetch,
       now: io.now(),
     });
@@ -983,6 +990,8 @@ async function sync(io: ReviewIO) {
     problem: result.problem,
     listedCount: result.listedComplete ? result.listed : null,
   });
+  // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
+  if (result.checkpoint) await recordReviewLogCheckpoint(result.checkpoint, io.now());
   const fresh = new Set(result.rows.map(r => r.sequence));
   const log = await loadReviewLog();
   io.log(`Read ${added} new packet${added === 1 ? "" : "s"}.`);
@@ -999,6 +1008,84 @@ async function sync(io: ReviewIO) {
   }
   await settleEvery(io, log);
   return result.problem ? 1 : 0;
+}
+
+/**
+ * pnpm review head: CounterAudit's signed checkpoint for the review log, checked against its pinned
+ * export key, beside the newest the Bureau has recorded and a head given in
+ * COUNTERAUDIT_REVIEW_MIN_HEAD. A reviewer runs it with their own read key and compares it with the
+ * sequence in their latest receipt: CounterAudit's head at or past it, and the Bureau's recorded one
+ * not behind, is the review log as the reviewer knows it. Exits 1 when a head went back or a check
+ * failed.
+ */
+async function headCommand(io: ReviewIO): Promise<number> {
+  const missing = [
+    ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],
+    ["COUNTERAUDIT_REVIEW_READ_KEY", ENV.counterauditReviewReadKey],
+  ].filter(([, value]) => !value);
+  if (missing.length) {
+    io.log(`Not set: ${missing.map(([name]) => name).join(", ")}. See docs/two-person-review.md.`);
+    return 2;
+  }
+  const pinned = ENV.counterauditReviewMinHead ? parseHead(ENV.counterauditReviewMinHead) : null;
+  if (ENV.counterauditReviewMinHead && !pinned) {
+    io.log('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash".');
+    return 2;
+  }
+  let read: Awaited<ReturnType<typeof readCheckpoint>>;
+  try {
+    read = await readCheckpoint({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReviewReadKey,
+      orgId: ENV.counterauditReviewOrgId,
+      fetch: io.fetch,
+    });
+  } catch (error) {
+    io.log(`Could not read the checkpoint: ${describeError(error)}.`);
+    return 2;
+  }
+  if (!read.ok) {
+    io.log(`Stopped: ${read.problem}.`);
+    return 1;
+  }
+  const cp = read.head;
+  io.log(
+    cp
+      ? `CounterAudit's signed head: sequence ${cp.sequence}, entry hash ${cp.entryHash}, packet ${cp.packetId}, issued ${cp.issuedAt.toISOString()}. Signature checked against the pinned export key.`
+      : "CounterAudit's signed head: none yet, the review log has no numbered packet."
+  );
+  let failed = false;
+  // A database that is set but not ready is a comparison not made, not a head not recorded yet.
+  const ready = await schemaReady().catch(() => false);
+  if (!ready && ENV.databaseUrl) {
+    io.log("NOT CHECKED: DATABASE_URL is set, but the Bureau's recorded head could not be read (the database is not ready).");
+    failed = true;
+  }
+  const recorded = ready ? await getReviewLogHead() : null;
+  if (recorded) {
+    io.log(`The Bureau's recorded head: sequence ${recorded.sequence}, entry hash ${recorded.entryHash}.`);
+    if (!cp || cp.sequence < recorded.sequence) {
+      io.log("WENT BACK: CounterAudit's head is below the one the Bureau has already reached.");
+      failed = true;
+    } else if (cp.sequence === recorded.sequence && cp.entryHash !== recorded.entryHash) {
+      io.log("DIFFERS: CounterAudit's head names another packet at the sequence the Bureau recorded.");
+      failed = true;
+    }
+  } else if (!failed) {
+    io.log("The Bureau's recorded head: none (no database here, or no read has reached a checkpoint yet).");
+  }
+  if (pinned) {
+    if (!cp || cp.sequence < pinned.sequence) {
+      io.log(`BEHIND: CounterAudit's head is below COUNTERAUDIT_REVIEW_MIN_HEAD (sequence ${pinned.sequence}).`);
+      failed = true;
+    } else if (cp.sequence === pinned.sequence && cp.entryHash !== pinned.entryHash) {
+      io.log(`DIFFERS: CounterAudit's head names another packet at sequence ${pinned.sequence} than COUNTERAUDIT_REVIEW_MIN_HEAD.`);
+      failed = true;
+    } else {
+      io.log(`At or past COUNTERAUDIT_REVIEW_MIN_HEAD (sequence ${pinned.sequence}). pnpm file verify --current checks the packet there too.`);
+    }
+  }
+  return failed ? 1 : 0;
 }
 
 /**
@@ -1029,6 +1116,8 @@ export async function runReview(
       return approveKeyCommand(args, io);
     case "sync":
       return noArgs(() => sync(io));
+    case "head":
+      return noArgs(() => headCommand(io));
     case "queue":
       return noArgs(() => queue(io));
     case "admissions":

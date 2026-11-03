@@ -188,6 +188,25 @@ function verifyExportSignature(
     : { valid: false, reason: "signature_invalid", key_id: kid };
 }
 
+/**
+ * Whether `signatureBlock` is CounterAudit's export-key signature over `payload`, by a key in
+ * `jwks`. For a signed record that is not a packet proof, such as a chain checkpoint
+ * (server/reviewLogSync.ts).
+ */
+// A signature block too malformed to check (a proof that is not an object, say) is invalid, not a
+// thrown error.
+export function verifyCounterauditSignature(
+  payload: Record<string, unknown>,
+  signatureBlock: unknown,
+  jwks: Jwks
+): ExportSignatureResult {
+  try {
+    return verifyExportSignature(payload, signatureBlock, jwks);
+  } catch {
+    return { valid: false, reason: "malformed_signature" };
+  }
+}
+
 // ---- src/services/furnishOutcomeEvent.js ----
 
 // Domain separation, as in the furnisher tool: a v0 signature, or anything

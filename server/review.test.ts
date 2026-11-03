@@ -1,6 +1,15 @@
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The review log's checkpoints in these fakes are signed with a key made for the test run
+// (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+import { checkpointResponse } from "./testCheckpoint";
+
 // The Bureau's lines and its copy of the review log, in memory.
 type Row = {
   id: number;
@@ -36,6 +45,9 @@ type SyncRow = {
   listedCount: number | null;
   listedAt: Date | null;
   problem: string | null;
+  checkpointSequence?: number | null;
+  checkpointEntryHash?: string | null;
+  checkpointIssuedAt?: Date | null;
 };
 const store = vi.hoisted(() => ({
   rows: [] as Row[],
@@ -84,6 +96,23 @@ const db = vi.hoisted(() => ({
         ...(s.problem ? {} : { lastSuccessAt: s.at }),
         ...(s.listedCount === null ? {} : { listedCount: s.listedCount, listedAt: s.at }),
       };
+    }
+  ),
+  // As server/db.ts keeps the head: never moved back.
+  getReviewLogHead: vi.fn(async () =>
+    store.sync?.checkpointSequence != null && store.sync.checkpointEntryHash
+      ? { sequence: store.sync.checkpointSequence, entryHash: store.sync.checkpointEntryHash }
+      : null
+  ),
+  recordReviewLogCheckpoint: vi.fn(
+    async (c: { sequence: number; entryHash: string; issuedAt: Date }, at: Date) => {
+      store.sync ??= { lastAttemptAt: at, lastSuccessAt: null, listedCount: null, listedAt: null, problem: null };
+      if (store.sync.checkpointSequence != null && store.sync.checkpointSequence >= c.sequence) return;
+      Object.assign(store.sync, {
+        checkpointSequence: c.sequence,
+        checkpointEntryHash: c.entryHash,
+        checkpointIssuedAt: c.issuedAt,
+      });
     }
   ),
 }));
@@ -275,6 +304,14 @@ function counterAudit(records: unknown[], skip: number[] = []) {
     .filter(p => !skip.includes(p.sequence));
   return vi.fn(async (url: string) => {
     const path = new URL(url).pathname;
+    const checkpointPath = /^\/v1\/audit\/chain\/([^/]+)\/checkpoint$/.exec(path);
+    if (checkpointPath) {
+      const tip = chain.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
+      return checkpointResponse(
+        checkpointPath[1],
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+      );
+    }
     if (path === "/v1/audit/packets") {
       return Response.json({
         packets: [...chain].reverse().map(p => ({ packet_id: p.packet_id })),
@@ -635,7 +672,16 @@ describe("pnpm review sync", () => {
   it("records each run for the queue: the head CounterAudit listed, the last success and why it stopped", async () => {
     const records = [...genesis(), decision("bob", { decision: "reject", reason: "related payer" }), decision("alice")];
     expect(await runReview(["sync"], fakeIO({}, counterAudit(records.slice(0, 3))).io)).toBe(0);
-    expect(store.sync).toEqual({ lastAttemptAt: NOW, lastSuccessAt: NOW, listedCount: 3, listedAt: NOW, problem: null });
+    expect(store.sync).toEqual({
+      lastAttemptAt: NOW,
+      lastSuccessAt: NOW,
+      listedCount: 3,
+      listedAt: NOW,
+      problem: null,
+      checkpointSequence: 2,
+      checkpointEntryHash: hashOf(2),
+      checkpointIssuedAt: new Date("2026-11-03T12:00:00.000Z"),
+    });
 
     // A later run stopped at a gap keeps the last success and records the new head.
     const later = new Date(NOW.getTime() + 3_600_000);
@@ -644,6 +690,8 @@ describe("pnpm review sync", () => {
     expect(await runReview(["sync"], gap.io)).toBe(1);
     expect(store.sync).toMatchObject({ lastAttemptAt: later, lastSuccessAt: NOW, listedCount: 4, listedAt: later });
     expect(store.sync!.problem).toBe("the chain breaks between sequence 2 and 4; read up to 2");
+    // A read that stopped still records the signed head it was shown, which the next read must reach.
+    expect(store.sync!.checkpointSequence).toBe(4);
 
     // One that could not list at all keeps the last complete count.
     const down = fakeIO({}, async () => new Response(null, { status: 503 }));
@@ -652,12 +700,83 @@ describe("pnpm review sync", () => {
     expect(store.sync!.problem).toBe("CounterAudit answered 503 when listing the review log's packets");
   });
 
+  it("refuses a log whose signed head went back below the one already reached, and keeps that head", async () => {
+    const records = [...genesis(), decision("bob", { decision: "reject", reason: "related payer" }), decision("alice")];
+    expect(await runReview(["sync"], fakeIO({}, counterAudit(records)).io)).toBe(0);
+    expect(store.sync!.checkpointSequence).toBe(4);
+
+    const restored = fakeIO({}, counterAudit(records.slice(0, 3)));
+    expect(await runReview(["sync"], restored.io)).toBe(1);
+    expect(restored.printed()).toContain(
+      "Stopped: CounterAudit's signed checkpoint is at sequence 2, below sequence 4, which the review log has already reached: its head went back."
+    );
+    expect(store.sync).toMatchObject({ checkpointSequence: 4, checkpointEntryHash: hashOf(4) });
+  });
+
   it("needs the review organization and the Bureau's read key", async () => {
     vi.stubEnv("COUNTERAUDIT_REVIEW_READ_KEY", "");
     const { io, printed } = fakeIO();
     expect(await runReview(["sync"], io)).toBe(2);
     expect(printed()).toBe("Not set: COUNTERAUDIT_REVIEW_READ_KEY. See docs/two-person-review.md.");
     expect(db.schemaReady).not.toHaveBeenCalled();
+  });
+});
+
+describe("pnpm review head", () => {
+  const records = () => [...genesis(), decision("bob", { decision: "reject", reason: "related payer" }), decision("alice")];
+
+  it("states CounterAudit's signed head beside the Bureau's recorded one", async () => {
+    const first = fakeIO({}, counterAudit(records().slice(0, 3)));
+    expect(await runReview(["head"], first.io)).toBe(0);
+    expect(first.printed()).toBe(
+      [
+        `CounterAudit's signed head: sequence 2, entry hash ${hashOf(2)}, packet ${idOf(2)}, issued 2026-11-03T12:00:00.000Z. Signature checked against the pinned export key.`,
+        "The Bureau's recorded head: none (no database here, or no read has reached a checkpoint yet).",
+      ].join("\n")
+    );
+
+    expect(await runReview(["sync"], fakeIO({}, counterAudit(records())).io)).toBe(0);
+    const behind = fakeIO({}, counterAudit(records().slice(0, 3)));
+    expect(await runReview(["head"], behind.io)).toBe(1);
+    expect(behind.printed()).toContain(`The Bureau's recorded head: sequence 4, entry hash ${hashOf(4)}.`);
+    expect(behind.printed()).toContain("WENT BACK: CounterAudit's head is below the one the Bureau has already reached.");
+  });
+
+  it("checks a head pinned in COUNTERAUDIT_REVIEW_MIN_HEAD", async () => {
+    vi.stubEnv("COUNTERAUDIT_REVIEW_MIN_HEAD", `2:${hashOf(2)}`);
+    const at = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], at.io)).toBe(0);
+    expect(at.printed()).toContain("At or past COUNTERAUDIT_REVIEW_MIN_HEAD (sequence 2).");
+
+    vi.stubEnv("COUNTERAUDIT_REVIEW_MIN_HEAD", `6:${hashOf(6)}`);
+    const behind = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], behind.io)).toBe(1);
+    expect(behind.printed()).toContain("BEHIND: CounterAudit's head is below COUNTERAUDIT_REVIEW_MIN_HEAD (sequence 6).");
+
+    vi.stubEnv("COUNTERAUDIT_REVIEW_MIN_HEAD", `4:${hashOf(99)}`);
+    const other = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], other.io)).toBe(1);
+    expect(other.printed()).toContain("DIFFERS: CounterAudit's head names another packet at sequence 4 than COUNTERAUDIT_REVIEW_MIN_HEAD.");
+
+    vi.stubEnv("COUNTERAUDIT_REVIEW_MIN_HEAD", "4");
+    const malformed = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], malformed.io)).toBe(2);
+    expect(malformed.printed()).toBe('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash".');
+  });
+
+  it("does not take a database that is set but not ready for one with no head recorded", async () => {
+    vi.stubEnv("DATABASE_URL", "mysql://bureau@127.0.0.1/bureau");
+    db.schemaReady.mockResolvedValueOnce(false);
+    const down = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], down.io)).toBe(1);
+    expect(down.printed()).toContain("NOT CHECKED: DATABASE_URL is set, but the Bureau's recorded head could not be read");
+    expect(down.printed()).not.toContain("The Bureau's recorded head: none");
+  });
+
+  it("stops at a checkpoint that is not signed with CounterAudit's key", async () => {
+    const forged = fakeIO({}, async () => Response.json({ checkpoint: { checkpoint_type: "counteraudit.chain_checkpoint" } }));
+    expect(await runReview(["head"], forged.io)).toBe(1);
+    expect(forged.printed()).toMatch(/^Stopped: the review log's checkpoint is not signed with CounterAudit's export key/);
   });
 });
 

@@ -28,7 +28,7 @@ A dispute, withdrawal or replacement (`docs/line-states.md`) outranks a release:
 
 Only records sealed in the review log count. `pnpm review sync` stores each packet it reads in `review_log_records` (migration 0011), and every settle replays the stored log by its rules, checking each record's signature against the reviewer set the log itself establishes. So an edited or forged row does not count, a removed reviewer's decisions stop counting, and so does every decision signed with a key since rotated. Only the run of packets linked from sequence 0 is read: a packet deleted from the stored copy stops the count there, and the next sync reads it again. A `displayState` written straight into the database is put back on the next settle.
 
-The stored copy is still the operator's. They can stop syncing, drop the newest packets, or blank a stored record, which keeps the chain linked. So each reviewer keeps the receipt of every record they seal, and checks that `pnpm review queue` lists it at that sequence. The queue prints the sequence the Bureau has read to, and each decision it counts on a line with its packet, for comparing with what the reviewer sees with their own read key. It also prints where that copy stands against CounterAudit as of the last `pnpm review sync`, which records each run (`review_log_sync`, migration 0014): when it last ran, the last run that read the whole log, how many packets CounterAudit listed (its head) and how many are held here, and why the last run stopped. It flags `STOPPED` (a gap or another problem; nothing past it counts), `BEHIND` (CounterAudit listed packets not read here) and `STALE` (no run read the whole log in 24 hours). File assembly reads the log to its head itself, so these describe the operator's view, not what a file is signed against.
+The stored copy is still the operator's. They can stop syncing, drop the newest packets, or blank a stored record, which keeps the chain linked. So each reviewer keeps the receipt of every record they seal, and checks that `pnpm review queue` lists it at that sequence. The queue prints the sequence the Bureau has read to, and each decision it counts on a line with its packet, for comparing with what the reviewer sees with their own read key. It also prints where that copy stands against CounterAudit as of the last `pnpm review sync`, which records each run (`review_log_sync`, migration 0014): when it last ran, the last run that read the whole log, how many packets CounterAudit listed (its head) and how many are held here, and why the last run stopped. It flags `STOPPED` (a gap or another problem; nothing past it counts), `BEHIND` (CounterAudit listed packets not read here) and `STALE` (no run read the whole log in 24 hours). File assembly reads the log to its head itself, so these describe the operator's view, not what a file is signed against. Every read is also held to CounterAudit's signed checkpoint, and to the newest one a read has reached here, so a log cut short at its end or put back stops it (`docs/review-log-design.md`, "The signed head").
 
 ## Reviewers
 
@@ -127,6 +127,14 @@ pnpm review key --key ~/bureau-review.pem --signer rev_alice --add rev_dave --na
 
 and `--reenable rev_bob` or `--remove rev_bob` the same way; then `pnpm review submit` the file. A suspension takes effect at once. The others take effect when a second reviewer seals the same change (the same id, name and key; the reason may differ). Any change taking effect clears the votes still pending, so vote again for a change that was pending then.
 
+**Check the head (each reviewer, with their own read key):**
+
+```sh
+pnpm review head
+```
+
+It prints CounterAudit's signed head of the review log, checked against CounterAudit's pinned export key, beside the head the Bureau has recorded and `COUNTERAUDIT_REVIEW_MIN_HEAD` if set. The signed head should be at or past the sequence on your latest receipt. It exits 1 when a head went back (`WENT BACK`, `BEHIND`), names another packet at a sequence (`DIFFERS`), or the checkpoint could not be read or does not check out, and 2 when a setting is missing or malformed or the request failed. Where `DATABASE_URL` is set but the database is not ready, it says `NOT CHECKED` and exits 1. To hold `pnpm file verify --current` to a head, set `COUNTERAUDIT_REVIEW_MIN_HEAD` to its `sequence:entryhash`.
+
 ## Appeals on subject disputes
 
 `pnpm review queue` lists the subject disputes (`docs/disputes.md`) that wait on someone: each open dispute with the furnisher's deadline, each lapsed one, whose line is removed, and each open appeal with what decides it. A line removed after a lapse is not listed for review: it can never be released again.
@@ -164,7 +172,7 @@ The `outcome_reviews` table (migration 0009), where `pnpm review apply` recorded
 
 - **CounterAudit's operator.** Whoever runs CounterAudit's server and database can still change them directly. The review organization's key changes need two reviewers' signatures in CounterAudit's code path and are kept on record (`ca_review_org_history`, approval requests), and reviewers can compare what CounterAudit counts with what they read themselves; neither stops someone with root on the server.
 - **Before the genesis takes effect** an admin issues the review organization's keys and sets its pinned genesis alone, so check `GET /v1/audit/review-org` once it does.
-- **No reviewer-side check yet.** A reviewer compares the queue with the log using their own read key through CounterAudit's API; `pnpm review` has no command for it.
+- **No reviewer-side replay yet.** `pnpm review head` gives a reviewer CounterAudit's signed head with their own read key, but comparing the queue's decisions with the log is still done through CounterAudit's API; `pnpm review` has no command that replays it.
 - **One run at a time.** `pnpm review sync`, `pnpm review settle` and the intake do not lock lines against each other, and the server's own runs of `pnpm dispute settle` and `pnpm lines expire` (`server/schedules.ts`) take no lock either. The server runs both when it starts, then `dispute settle` every hour and `lines expire` every 24 hours, and tries a failed run again an hour later, so their times follow the server's start, not the clock. Run the manual commands one after the other, when neither scheduled run is due: `/api/jobs` gives each one's `last_run_at`.
 - **Command line only.** There is no review screen in the inbox.
 - **No passphrase on private keys.**

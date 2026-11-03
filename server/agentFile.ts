@@ -46,7 +46,7 @@ import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecision";
 import { readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
 import type { ReviewLog } from "./reviewLog";
-import { readReviewPacket, type Fetch } from "./reviewLogSync";
+import { parseHead, readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
 import {
   admissionFor,
@@ -1443,12 +1443,18 @@ async function checkCurrentReviewStatus(
       "needs COUNTERAUDIT_REVIEW_ORG_ID and COUNTERAUDIT_REVIEW_READ_KEY to read the review log"
     );
   }
+  // A head someone already holds, so a log that stops short of it is not taken for the whole.
+  const pinned = ENV.counterauditReviewMinHead ? parseHead(ENV.counterauditReviewMinHead) : null;
+  if (ENV.counterauditReviewMinHead && !pinned) {
+    return unknown('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash"');
+  }
   let now: Awaited<ReturnType<typeof readReviewLogNow>>;
   try {
     now = await readReviewLogNow({
       apiUrl: ENV.counterauditApiUrl,
       readKey: ENV.counterauditReviewReadKey,
       orgId: ENV.counterauditReviewOrgId,
+      minHead: pinned,
       fetch: io.fetch,
       now: io.now(),
     });
@@ -1619,6 +1625,18 @@ async function checkCurrentReviewStatus(
       standing++;
     }
   }
+  // What the log was held to. An old checkpoint replayed with the log cut to it looks like a log
+  // nothing was sealed in since; only a head given here catches that (review AB-01).
+  const cp = now.checkpoint;
+  io.log(
+    cp
+      ? `Review log held to CounterAudit's signed checkpoint at sequence ${cp.sequence} (entry hash ${cp.entryHash}, issued ${cp.issuedAt.toISOString()})${
+          pinned
+            ? ` and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.`
+            : `. COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so an older checkpoint replayed with the log cut to it would pass: set it from pnpm review head.`
+        }`
+      : "Review log: empty, so CounterAudit has no checkpoint for it yet."
+  );
   if (failed === 0) {
     io.log(
       `Current standing: ${standing} released line(s) still stand in the review log, read whole to sequence ${now.position?.sequence ?? "none"}`

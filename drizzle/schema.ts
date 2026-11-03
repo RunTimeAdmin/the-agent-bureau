@@ -301,6 +301,12 @@ export const reviewLogSync = mysqlTable("review_log_sync", {
   listedCount: int("listedCount"),
   listedAt: datetime("listedAt", { fsp: 3 }),
   problem: varchar("problem", { length: 500 }),
+  // The newest signed chain checkpoint any read of the log has reached (review AB-01). It only
+  // moves forward: a later read whose checkpoint is below it, or names another packet at its
+  // sequence, is stopped.
+  checkpointSequence: int("checkpointSequence"),
+  checkpointEntryHash: varchar("checkpointEntryHash", { length: 64 }),
+  checkpointIssuedAt: datetime("checkpointIssuedAt", { fsp: 3 }),
 });
 
 export type ReviewLogSyncRow = typeof reviewLogSync.$inferSelect;
