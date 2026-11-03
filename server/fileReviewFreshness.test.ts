@@ -239,7 +239,8 @@ function counterAudit(
       const tip = packets.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
       return checkpointResponse(
         checkpointPath[1],
-        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null,
+        new URL(url).searchParams.get("nonce")
       );
     }
     if (path === "/v1/audit/packets") {
@@ -785,13 +786,13 @@ describe("pnpm file verify and the review log", () => {
     expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
   });
 
-  it("--current says when no head is pinned, which an old checkpoint replayed with the log cut to it would pass", async () => {
+  it("--current says when no head is pinned, which a CounterAudit restored behind a head would pass", async () => {
     const { records, text } = await signedFile();
     const unpinned = fileIO(counterAudit(records));
     unpinned.files["one.json"] = text;
     expect(await runFile(["verify", "one.json", "--current"], unpinned.io)).toBe(0);
     expect(unpinned.out.join("\n")).toContain(
-      "COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so an older checkpoint replayed with the log cut to it would pass: set it from pnpm review head."
+      "COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so a CounterAudit restored behind a head you hold would pass: set it from pnpm review head."
     );
   });
 
@@ -803,7 +804,7 @@ describe("pnpm file verify and the review log", () => {
     at.files["one.json"] = text;
     expect(await runFile(["verify", "one.json", "--current"], at.io)).toBe(0);
     expect(at.out.join("\n")).toContain(
-      `Review log held to CounterAudit's signed checkpoint at sequence ${last} (entry hash ${hashOf(last)}, issued 2026-11-03T12:00:00.000Z) and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${last}.`
+      `Review log held to CounterAudit's signed checkpoint at sequence ${last} (entry hash ${hashOf(last)}, issued 2026-11-03T12:00:00.000Z), attested as the head over this read's own nonce, and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${last}.`
     );
 
     process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `${last + 2}:${hashOf(last + 2)}`;

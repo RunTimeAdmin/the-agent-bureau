@@ -309,7 +309,8 @@ function counterAudit(records: unknown[], skip: number[] = []) {
       const tip = chain.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
       return checkpointResponse(
         checkpointPath[1],
-        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null,
+        new URL(url).searchParams.get("nonce")
       );
     }
     if (path === "/v1/audit/packets") {
@@ -730,7 +731,7 @@ describe("pnpm review head", () => {
     expect(await runReview(["head"], first.io)).toBe(0);
     expect(first.printed()).toBe(
       [
-        `CounterAudit's signed head: sequence 2, entry hash ${hashOf(2)}, packet ${idOf(2)}, issued 2026-11-03T12:00:00.000Z. Signature checked against the pinned export key.`,
+        `CounterAudit's signed head: sequence 2, entry hash ${hashOf(2)}, packet ${idOf(2)}, issued 2026-11-03T12:00:00.000Z. Signature checked against the pinned export key, and attested as the head now over this read's own nonce.`,
         "The Bureau's recorded head: none (no database here, or no read has reached a checkpoint yet).",
       ].join("\n")
     );

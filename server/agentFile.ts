@@ -1625,17 +1625,18 @@ async function checkCurrentReviewStatus(
       standing++;
     }
   }
-  // What the log was held to. An old checkpoint replayed with the log cut to it looks like a log
-  // nothing was sealed in since; only a head given here catches that (review AB-01).
+  // What the log was held to: CounterAudit's head, attested over this read's own nonce, so an old
+  // answer cannot stand in for it (review AB-01). A CounterAudit that holds its export key and
+  // serves a database restored behind a head is caught only by a head given here.
   const cp = now.checkpoint;
   io.log(
     cp
-      ? `Review log held to CounterAudit's signed checkpoint at sequence ${cp.sequence} (entry hash ${cp.entryHash}, issued ${cp.issuedAt.toISOString()})${
+      ? `Review log held to CounterAudit's signed checkpoint at sequence ${cp.sequence} (entry hash ${cp.entryHash}, issued ${cp.issuedAt.toISOString()}), attested as the head over this read's own nonce${
           pinned
-            ? ` and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.`
-            : `. COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so an older checkpoint replayed with the log cut to it would pass: set it from pnpm review head.`
+            ? `, and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.`
+            : `. COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so a CounterAudit restored behind a head you hold would pass: set it from pnpm review head.`
         }`
-      : "Review log: empty, so CounterAudit has no checkpoint for it yet."
+      : "Review log: empty, as CounterAudit attests over this read's own nonce."
   );
   if (failed === 0) {
     io.log(

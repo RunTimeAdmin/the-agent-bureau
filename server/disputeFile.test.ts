@@ -430,7 +430,8 @@ function counterAudit(records: unknown[]) {
       const tip = chain.at(-1) as { sequence: number; packet_id: string; integrity: { entry_hash: string } } | undefined;
       return checkpointResponse(
         checkpointPath[1],
-        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null
+        tip ? { sequence: tip.sequence, entryHash: tip.integrity.entry_hash, packetId: tip.packet_id } : null,
+        new URL(url).searchParams.get("nonce")
       );
     }
     if (path === "/v1/audit/packets") {
