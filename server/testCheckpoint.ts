@@ -56,6 +56,42 @@ export function checkpointOf(orgId: string, tip: { sequence: number; entryHash: 
   });
 }
 
+type Listed = { packet_id: string; sequence?: unknown };
+
+/**
+ * A whole chain for a test organization: these packets at their sequences, an ordinary packet at
+ * each sequence between, and every one linked to the one before by entry hash, as CounterAudit
+ * lists them. A packet with no sequence it can be placed at is kept after the chain, unlinked.
+ */
+export function chainOf<T extends Listed>(orgId: string, packets: T[]) {
+  const hashAt = (sequence: number) => createHash("sha256").update(`${orgId}:${sequence}`).digest("hex");
+  const placed = new Map<number, T>();
+  for (const p of packets) {
+    const sequence = Number(p.sequence);
+    if (p.sequence !== undefined && Number.isSafeInteger(sequence) && sequence >= 0) placed.set(sequence, p);
+  }
+  const top = Math.max(-1, ...placed.keys());
+  const chain: Array<(T | { packet_id: string; connector_id: string; sequence: number; created_at: string }) & {
+    prev_hash: string;
+    entry_hash: string;
+  }> = [];
+  for (let sequence = 0; sequence <= top; sequence++) {
+    const filler = createHash("sha256").update(`filler:${orgId}:${sequence}`).digest("hex");
+    const packet = placed.get(sequence) ?? {
+      packet_id: `${filler.slice(0, 8)}-${filler.slice(8, 12)}-4${filler.slice(13, 16)}-8${filler.slice(17, 20)}-${filler.slice(20, 32)}`,
+      connector_id: "agent-bureau-outcome-v1",
+      sequence,
+      created_at: "2026-11-02T00:00:00.000Z",
+    };
+    chain.push({ ...packet, prev_hash: sequence === 0 ? "0".repeat(64) : hashAt(sequence - 1), entry_hash: hashAt(sequence) });
+  }
+  const unplaced = packets.filter(p => !Object.values(Object.fromEntries(placed)).includes(p));
+  return {
+    packets: [...chain, ...unplaced],
+    tip: top < 0 ? null : { sequence: top, entryHash: hashAt(top), packetId: chain[top].packet_id },
+  };
+}
+
 /**
  * A signed head attestation over a reader's nonce, as CounterAudit gives one with
  * GET /v1/audit/chain/:org_id/checkpoint?nonce=, naming the checkpoint for this tip (or an empty

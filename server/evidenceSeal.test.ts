@@ -16,6 +16,15 @@ import {
 } from "./evidenceSeal";
 import { evidenceDigest } from "./reviewDecision";
 
+// CounterAudit's checkpoints and head attestations in these fakes are signed with a key made for the
+// test run (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+import { attestationOf, chainOf, checkpointOf, checkpointResponse } from "./testCheckpoint";
+
 // The evidence records' shared vectors, which CounterAudit's agent-bureau-evidence-v1 connector
 // runs against its own form check. Line endings normalized, so a checkout that writes CRLF still
 // matches.
@@ -96,26 +105,39 @@ describe("readEvidenceSeals", () => {
     created_at?: string;
     expired_at?: string;
   };
-  // CounterAudit's list and verify routes over these packets, two to a page.
-  function counterAudit(packets: Packet[], answers: Record<string, Response> = {}) {
+  // CounterAudit's checkpoint, list and verify routes over these packets, placed in a whole chain
+  // with ordinary packets between (chainOf), two to a page. `hide` leaves packets out of the
+  // listing; `checkpoint` answers the checkpoint route in place of a signed, current head.
+  function counterAudit(
+    packets: Packet[],
+    answers: Record<string, Response> = {},
+    options: { hide?: string[]; checkpoint?: (nonce: string | null) => Response } = {}
+  ) {
+    const { packets: chain, tip } = chainOf(ORG, packets);
+    const listed = chain.filter(p => !(options.hide ?? []).includes(p.packet_id));
     return vi.fn(async (url: string) => {
       const u = new URL(url);
+      if (u.pathname === `/v1/audit/chain/${ORG}/checkpoint`) {
+        const nonce = u.searchParams.get("nonce");
+        return options.checkpoint ? options.checkpoint(nonce) : checkpointResponse(ORG, tip, nonce);
+      }
       if (u.pathname === "/v1/audit/packets") {
         const from = Number(u.searchParams.get("cursor") ?? 0);
-        const page = packets.slice(from, from + 2);
+        const page = listed.slice(from, from + 2);
         return Response.json({
           packets: page.map(p => ({
             packet_id: p.packet_id,
             connector_id: p.connector_id,
             created_at: p.created_at,
-            expired_at: p.expired_at ?? null,
+            expired_at: (p as Packet).expired_at ?? null,
+            ...("entry_hash" in p ? { prev_hash: p.prev_hash, entry_hash: p.entry_hash } : {}),
           })),
-          next_cursor: from + 2 < packets.length ? String(from + 2) : null,
+          next_cursor: from + 2 < listed.length ? String(from + 2) : null,
         });
       }
       const packetId = u.pathname.split("/").at(-1)!;
       if (answers[packetId]) return answers[packetId];
-      const packet = packets.find(p => p.packet_id === packetId);
+      const packet = chain.find(p => p.packet_id === packetId);
       return packet
         ? Response.json({ valid: true, packet: { org_id: ORG, ...packet } })
         : Response.json({ error: "not_found" }, { status: 404 });
@@ -184,7 +206,58 @@ describe("readEvidenceSeals", () => {
     }
     const unlisted = await read(vi.fn(async () => Response.json({ error: "forbidden" }, { status: 403 })));
     expect("problem" in unlisted && unlisted.problem).toBe(
-      "CounterAudit answered 403 when listing the organization's packets"
+      "CounterAudit answered 403 for the Bureau organization's signed checkpoint"
     );
+  });
+
+  describe("held to CounterAudit's signed head (review AB-01, for seals)", () => {
+    const problem = async (fetch: ReturnType<typeof counterAudit>) => {
+      const got = await read(fetch);
+      return "problem" in got ? got.problem : null;
+    };
+
+    it("refuses a listing that leaves out a newer seal, which would pass an older one off as the last", async () => {
+      const packets = [sealed(1, 5, { evidence_digest: "11".repeat(32) }), sealed(2, 9, { evidence_digest: "22".repeat(32) })];
+      expect(await problem(counterAudit(packets))).toBeNull();
+      expect(await problem(counterAudit(packets, {}, { hide: [id(2)] }))).toBe(
+        "CounterAudit's listing of the Bureau organization's packets leaves out sequence 9, at or below its signed head at sequence 9"
+      );
+      // An ordinary packet in the middle left out breaks the walk the same way.
+      const { packets: chain } = chainOf(ORG, packets);
+      expect(await problem(counterAudit(packets, {}, { hide: [chain[7].packet_id] }))).toBe(
+        "CounterAudit's listing of the Bureau organization's packets leaves out sequence 7, at or below its signed head at sequence 9"
+      );
+    });
+
+    it("refuses a seal that says it sits somewhere else than its place in the chain", async () => {
+      const moved = Response.json({ valid: true, packet: { org_id: ORG, ...sealed(1, 4) } });
+      expect(await problem(counterAudit([sealed(1, 5), sealed(2, 9)], { [id(1)]: moved }))).toBe(
+        `evidence packet ${id(1)} says it is at sequence 4, which is not its place in the chain to CounterAudit's signed head`
+      );
+    });
+
+    it("takes a seal made after the head was read, past it", async () => {
+      // The head is read before the listing: a seal made in between is listed after it.
+      const head = chainOf(ORG, [sealed(1, 5)]).tip!;
+      const later = (nonce: string | null) => Response.json({ checkpoint: checkpointOf(ORG, head), attestation: attestationOf(ORG, head, nonce) });
+      const got = await read(counterAudit([sealed(1, 5, { evidence_digest: "11".repeat(32) }), sealed(2, 6, { evidence_digest: "22".repeat(32) })], {}, { checkpoint: later }));
+      if ("problem" in got) throw new Error(got.problem);
+      expect(sealFor(got.seals, LINE)?.packetId).toBe(id(2));
+    });
+
+    it("needs the head attested over this read's nonce, and an organization that lists packets to have one", async () => {
+      const head = chainOf(ORG, [sealed(1, 5)]).tip!;
+      const replayed = () => Response.json({ checkpoint: checkpointOf(ORG, head), attestation: attestationOf(ORG, head, "ab".repeat(16)) });
+      expect(await problem(counterAudit([sealed(1, 5)], {}, { checkpoint: replayed }))).toBe(
+        "the Bureau organization's head attestation answers another read's nonce: an old answer, replayed"
+      );
+      const empty = (nonce: string | null) => checkpointResponse(ORG, null, nonce);
+      expect(await problem(counterAudit([sealed(1, 5)], {}, { checkpoint: empty }))).toBe(
+        "CounterAudit gives no signed checkpoint for a Bureau organization it lists packets in"
+      );
+      // An organization with no packets yet has no seals, and that is no problem.
+      const none = await read(counterAudit([]));
+      expect("seals" in none && none.seals.size).toBe(0);
+    });
   });
 });

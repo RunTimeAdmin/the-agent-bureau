@@ -102,6 +102,8 @@ export async function readCheckpoint(options: {
   readKey: string;
   orgId: string;
   fetch?: Fetch;
+  /** What the organization's chain is, for the problems: "the review log" unless given. */
+  of?: string;
 }): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string; checkpoint: Checkpoint | null }> {
   // Once more when packets kept arriving while CounterAudit answered.
   const first = await readAttestedCheckpoint(options);
@@ -114,7 +116,9 @@ async function readAttestedCheckpoint(options: {
   readKey: string;
   orgId: string;
   fetch?: Fetch;
+  of?: string;
 }): Promise<CheckpointRead> {
+  const of = options.of ?? "the review log";
   const nonce = randomBytes(16).toString("hex");
   const sentAt = Date.now();
   const got = await call(
@@ -125,17 +129,17 @@ async function readAttestedCheckpoint(options: {
   const receivedAt = Date.now();
   const window = { sentAt, receivedAt };
   if (got.status === 404 && isRecord(got.body) && got.body.error === "not_found") {
-    const problem = attestationProblem(got.body, options.orgId, nonce, window, null);
+    const problem = attestationProblem(got.body, options.orgId, nonce, window, null, of);
     return problem ? { ...problem, checkpoint: null } : { ok: true, head: null };
   }
   const cp = isRecord(got.body) && isRecord(got.body.checkpoint) ? got.body.checkpoint : null;
   if (got.status !== 200 || !cp) {
-    return { ok: false, problem: `CounterAudit answered ${got.status} for the review log's signed checkpoint` };
+    return { ok: false, problem: `CounterAudit answered ${got.status} for ${of}'s signed checkpoint` };
   }
   const { signature, ...payload } = cp;
   const signed = verifyCounterauditSignature(payload, signature, COUNTERAUDIT_EXPORT_KEYS);
   if (!signed.valid) {
-    return { ok: false, problem: `the review log's checkpoint is not signed with CounterAudit's export key (${signed.reason})` };
+    return { ok: false, problem: `${of}'s checkpoint is not signed with CounterAudit's export key (${signed.reason})` };
   }
   const issuedAt = typeof payload.issued_at === "string" ? new Date(payload.issued_at) : new Date(NaN);
   if (
@@ -146,13 +150,13 @@ async function readAttestedCheckpoint(options: {
     typeof payload.packet_id !== "string" || !UUID.test(payload.packet_id) ||
     Number.isNaN(issuedAt.getTime())
   ) {
-    return { ok: false, problem: "the review log's checkpoint is not a version 1 chain checkpoint" };
+    return { ok: false, problem: `${of}'s checkpoint is not a version 1 chain checkpoint` };
   }
   if (payload.org_id !== options.orgId) {
-    return { ok: false, problem: "the review log's checkpoint is for another organization" };
+    return { ok: false, problem: `${of}'s checkpoint is for another organization` };
   }
   const head = { sequence: payload.sequence, entryHash: payload.entry_hash, packetId: payload.packet_id, issuedAt };
-  const problem = attestationProblem(got.body, options.orgId, nonce, window, head);
+  const problem = attestationProblem(got.body, options.orgId, nonce, window, head, of);
   return problem ? { ...problem, checkpoint: head } : { ok: true, head };
 }
 
@@ -167,25 +171,26 @@ function attestationProblem(
   orgId: string,
   nonce: string,
   window: { sentAt: number; receivedAt: number },
-  head: Checkpoint | null
+  head: Checkpoint | null,
+  of: string
 ): { ok: false; problem: string; retry?: boolean } | null {
   const attestation = isRecord(body) && isRecord(body.attestation) ? body.attestation : null;
   if (!attestation) {
-    return { ok: false, problem: "CounterAudit's answer for the review log's head carries no attestation over this read's nonce" };
+    return { ok: false, problem: `CounterAudit's answer for ${of}'s head carries no attestation over this read's nonce` };
   }
   const { signature, ...payload } = attestation;
   const signed = verifyCounterauditSignature(payload, signature, COUNTERAUDIT_EXPORT_KEYS);
   if (!signed.valid) {
-    return { ok: false, problem: `the review log's head attestation is not signed with CounterAudit's export key (${signed.reason})` };
+    return { ok: false, problem: `${of}'s head attestation is not signed with CounterAudit's export key (${signed.reason})` };
   }
   if (payload.attestation_type !== HEAD_ATTESTATION_TYPE || payload.attestation_version !== 1) {
-    return { ok: false, problem: "the review log's head attestation is not a version 1 head attestation" };
+    return { ok: false, problem: `${of}'s head attestation is not a version 1 head attestation` };
   }
   if (payload.org_id !== orgId) {
-    return { ok: false, problem: "the review log's head attestation is for another organization" };
+    return { ok: false, problem: `${of}'s head attestation is for another organization` };
   }
   if (payload.nonce !== nonce) {
-    return { ok: false, problem: "the review log's head attestation answers another read's nonce: an old answer, replayed" };
+    return { ok: false, problem: `${of}'s head attestation answers another read's nonce: an old answer, replayed` };
   }
   const servedAt = typeof payload.served_at === "string" ? Date.parse(payload.served_at) : NaN;
   if (!(servedAt >= window.sentAt - CLOCK_SKEW_MS && servedAt <= window.receivedAt + CLOCK_SKEW_MS)) {
@@ -193,7 +198,7 @@ function attestationProblem(
     const said = Number.isNaN(servedAt) ? "no time" : new Date(servedAt).toISOString();
     return {
       ok: false,
-      problem: `the review log's head attestation was not made during this read: CounterAudit says it answered at ${said}, and this read ran from ${new Date(window.sentAt).toISOString()} to ${new Date(window.receivedAt).toISOString()} by this machine's clock`,
+      problem: `${of}'s head attestation was not made during this read: CounterAudit says it answered at ${said}, and this read ran from ${new Date(window.sentAt).toISOString()} to ${new Date(window.receivedAt).toISOString()} by this machine's clock`,
     };
   }
   if (payload.current !== true) {
@@ -201,7 +206,7 @@ function attestationProblem(
     const reason = typeof payload.reason === "string" && /^[a-z_]{1,40}$/.test(payload.reason) ? payload.reason : "no reason given";
     return {
       ok: false,
-      problem: `CounterAudit does not attest its newest checkpoint as the review log's head (${reason})`,
+      problem: `CounterAudit does not attest its newest checkpoint as ${of}'s head (${reason})`,
       retry: reason === "tip_moved",
     };
   }
@@ -218,7 +223,7 @@ function attestationProblem(
       payload.checkpoint_packet_id === null &&
       payload.checkpoint_issued_at === null;
   if (!same) {
-    return { ok: false, problem: "the review log's head attestation names another head than the checkpoint in the same answer" };
+    return { ok: false, problem: `${of}'s head attestation names another head than the checkpoint in the same answer` };
   }
   return null;
 }

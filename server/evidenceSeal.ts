@@ -9,7 +9,7 @@ import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
 import { isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
-import { call, counterauditBase, type Fetch } from "./reviewLogSync";
+import { call, counterauditBase, readCheckpoint, type Fetch } from "./reviewLogSync";
 
 export const EVIDENCE_SCHEMA = "agent-bureau/evidence-result/v1";
 export const EVIDENCE_CONNECTOR_ID = "agent-bureau-evidence-v1";
@@ -110,6 +110,12 @@ export type SealedEvidence = { packetId: string; sequence: number; record: Evide
  * seal still held, as when the retention policy erases the oldest first: otherwise an older seal
  * could stand in for a newer one that was erased, so nothing is read. Anything else that cannot
  * be read stops the reading too.
+ *
+ * The listing is held to CounterAudit's signed head for the organization, attested over a nonce
+ * made for this read and read first (readCheckpoint): walking back from the head by each packet's
+ * previous hash must find every packet down to sequence 0 in the listing, and each evidence seal
+ * must sit at its place in that walk or after the head. A listing that leaves out a newer seal
+ * could otherwise pass an older one off as the last (review AB-01, as it applies to seals).
  */
 export async function readEvidenceSeals(options: {
   apiUrl: string;
@@ -119,6 +125,10 @@ export async function readEvidenceSeals(options: {
 }): Promise<{ seals: Map<string, SealedEvidence> } | { problem: string }> {
   const fetchImpl = options.fetch ?? fetch;
   const base = counterauditBase(options.apiUrl);
+  const signed = await readCheckpoint({ ...options, fetch: fetchImpl, of: "the Bureau organization" });
+  if (!signed.ok) return { problem: signed.problem };
+  // Every listed packet by its entry hash, for the walk back from the signed head.
+  const byEntryHash = new Map<string, { packetId: string; prevHash: string }>();
   const ids: string[] = [];
   // When CounterAudit sealed each evidence packet, and the newest of those it erased.
   const sealedAt = new Map<string, number>();
@@ -132,6 +142,9 @@ export async function readEvidenceSeals(options: {
       return { problem: `CounterAudit answered ${listed.status} when listing the organization's packets` };
     }
     for (const p of listed.body.packets) {
+      if (isRecord(p) && typeof p.packet_id === "string" && typeof p.entry_hash === "string" && typeof p.prev_hash === "string") {
+        byEntryHash.set(p.entry_hash, { packetId: p.packet_id, prevHash: p.prev_hash });
+      }
       if (isRecord(p) && p.connector_id === EVIDENCE_CONNECTOR_ID) {
         if (typeof p.packet_id !== "string" || !UUID.test(p.packet_id)) {
           return { problem: "CounterAudit listed an evidence packet without a packet id" };
@@ -148,6 +161,25 @@ export async function readEvidenceSeals(options: {
     const next = listed.body.next_cursor;
     if (typeof next !== "string" || next === "") break;
     cursor = next;
+  }
+  // Walk back from the signed head to sequence 0: a packet the listing leaves out breaks the walk.
+  // Erasure keeps a packet's hashes, so the walk passes through erased ones.
+  const head = signed.head;
+  const placed = new Map<string, number>();
+  if (head) {
+    let at = head.entryHash;
+    for (let sequence = head.sequence; sequence >= 0; sequence--) {
+      const p = byEntryHash.get(at);
+      if (!p || (sequence === head.sequence && p.packetId !== head.packetId)) {
+        return {
+          problem: `CounterAudit's listing of the Bureau organization's packets leaves out sequence ${sequence}, at or below its signed head at sequence ${head.sequence}`,
+        };
+      }
+      placed.set(p.packetId, sequence);
+      at = p.prevHash;
+    }
+  } else if (byEntryHash.size > 0) {
+    return { problem: "CounterAudit gives no signed checkpoint for a Bureau organization it lists packets in" };
   }
   const seals = new Map<string, SealedEvidence>();
   const held: number[] = [];
@@ -168,6 +200,13 @@ export async function readEvidenceSeals(options: {
     const sequence = packet.sequence;
     if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0) {
       return { problem: `evidence packet ${id} has no sequence` };
+    }
+    // At its place in the walk, or sealed after the head was read.
+    const place = placed.get(id);
+    if (place !== undefined ? sequence !== place : head !== null && sequence <= head.sequence) {
+      return {
+        problem: `evidence packet ${id} says it is at sequence ${sequence}, which is not its place in the chain to CounterAudit's signed head`,
+      };
     }
     const form = checkEvidenceRecord(packet.signed_event);
     if (!form.ok) return { problem: `evidence packet ${id} does not hold an evidence record: ${form.reason}` };
