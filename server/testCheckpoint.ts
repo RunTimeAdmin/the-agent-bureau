@@ -56,13 +56,49 @@ export function checkpointOf(orgId: string, tip: { sequence: number; entryHash: 
   });
 }
 
-/** CounterAudit's answer to GET /v1/audit/chain/:org_id/checkpoint for a chain with this tip. */
+/**
+ * A signed head attestation over a reader's nonce, as CounterAudit gives one with
+ * GET /v1/audit/chain/:org_id/checkpoint?nonce=, naming the checkpoint for this tip (or an empty
+ * chain) as the head now. `fields` replaces any of them.
+ */
+export function attestationOf(
+  orgId: string,
+  tip: { sequence: number; entryHash: string; packetId: string } | null,
+  nonce: string | null,
+  fields: Record<string, unknown> = {}
+) {
+  return signedByTestKey({
+    attestation_type: "counteraudit.chain_head_attestation",
+    attestation_version: 1,
+    org_id: orgId,
+    nonce,
+    // The reader holds this to the time its request took, by its own clock.
+    served_at: new Date().toISOString(),
+    tip_sequence: tip ? tip.sequence : null,
+    checkpoint_sequence: tip ? tip.sequence : null,
+    checkpoint_entry_hash: tip ? tip.entryHash : null,
+    checkpoint_packet_id: tip ? tip.packetId : null,
+    checkpoint_issued_at: tip ? "2026-11-03T12:00:00.000Z" : null,
+    current: true,
+    ...fields,
+  });
+}
+
+/**
+ * CounterAudit's answer to GET /v1/audit/chain/:org_id/checkpoint for a chain with this tip, with a
+ * head attestation over the nonce the request sent.
+ */
 export function checkpointResponse(
   orgId: string,
-  tip: { sequence: number; entryHash: string; packetId: string } | null
+  tip: { sequence: number; entryHash: string; packetId: string } | null,
+  nonce: string | null
 ): Response {
+  const attestation = { attestation: attestationOf(orgId, tip, nonce) };
   if (!tip) {
-    return Response.json({ error: "not_found", message: "No checkpoint yet: the chain has no numbered packets." }, { status: 404 });
+    return Response.json(
+      { error: "not_found", message: "No checkpoint yet: the chain has no numbered packets.", ...attestation },
+      { status: 404 }
+    );
   }
-  return Response.json({ checkpoint: checkpointOf(orgId, tip) });
+  return Response.json({ checkpoint: checkpointOf(orgId, tip), ...attestation });
 }

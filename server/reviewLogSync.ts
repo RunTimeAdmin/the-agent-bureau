@@ -7,6 +7,7 @@
 // a stale or dishonest endpoint, still links. So every read also takes CounterAudit's signed chain
 // checkpoint, the tip sequence and entry hash signed with its export key, and the log read must
 // reach it (review AB-01, docs/review-log-design.md "The signed head").
+import { randomBytes } from "node:crypto";
 import type { InsertReviewLogRecord, ReviewLogRecordRow } from "../drizzle/schema";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { isRecord, verifyCounterauditSignature } from "./outcomeProof";
@@ -76,25 +77,57 @@ export type Head = { sequence: number; entryHash: string };
 export type Checkpoint = Head & { packetId: string; issuedAt: Date };
 
 const CHECKPOINT_TYPE = "counteraudit.chain_checkpoint";
+const HEAD_ATTESTATION_TYPE = "counteraudit.chain_head_attestation";
+// How far CounterAudit's clock may run from this one when it says when it answered.
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+// A read that fails still gives back a checkpoint whose own signature checked out, for the caller
+// to record: one CounterAudit signed is a head the next read must reach, whatever its attestation.
+type CheckpointRead =
+  | { ok: true; head: Checkpoint | null }
+  | { ok: false; problem: string; checkpoint?: Checkpoint | null; retry?: boolean };
 
 /**
- * The review organization's newest chain checkpoint. CounterAudit issues one for the current tip
- * when it has moved, then returns the newest, signed with its export key; the key is the one
- * pinned in server/counterauditKeys.ts, not one the same server hands out. `head` is null only for
- * a log with no numbered packet yet.
+ * The review organization's newest chain checkpoint, attested by CounterAudit as the head over a
+ * nonce made for this read. CounterAudit issues a checkpoint for the current tip when it has
+ * moved, then returns the newest, signed with its export key; the key is the one pinned in
+ * server/counterauditKeys.ts, not one the same server hands out. A checkpoint alone is served
+ * unchanged until the tip moves, so an old one replayed with the log cut to it would look like a
+ * log nothing was sealed in since. The head attestation over this read's own nonce cannot be
+ * replayed, and says whether the checkpoint was the head when CounterAudit answered. `head` is
+ * null only for a log CounterAudit attests has no numbered packet.
  */
 export async function readCheckpoint(options: {
   apiUrl: string;
   readKey: string;
   orgId: string;
   fetch?: Fetch;
-}): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string }> {
+}): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string; checkpoint: Checkpoint | null }> {
+  // Once more when packets kept arriving while CounterAudit answered.
+  const first = await readAttestedCheckpoint(options);
+  const read = !first.ok && first.retry ? await readAttestedCheckpoint(options) : first;
+  return read.ok ? read : { ok: false, problem: read.problem, checkpoint: read.checkpoint ?? null };
+}
+
+async function readAttestedCheckpoint(options: {
+  apiUrl: string;
+  readKey: string;
+  orgId: string;
+  fetch?: Fetch;
+}): Promise<CheckpointRead> {
+  const nonce = randomBytes(16).toString("hex");
+  const sentAt = Date.now();
   const got = await call(
     options.fetch ?? fetch,
-    `${counterauditBase(options.apiUrl)}/v1/audit/chain/${options.orgId}/checkpoint`,
+    `${counterauditBase(options.apiUrl)}/v1/audit/chain/${options.orgId}/checkpoint?nonce=${nonce}`,
     options.readKey
   );
-  if (got.status === 404 && isRecord(got.body) && got.body.error === "not_found") return { ok: true, head: null };
+  const receivedAt = Date.now();
+  const window = { sentAt, receivedAt };
+  if (got.status === 404 && isRecord(got.body) && got.body.error === "not_found") {
+    const problem = attestationProblem(got.body, options.orgId, nonce, window, null);
+    return problem ? { ...problem, checkpoint: null } : { ok: true, head: null };
+  }
   const cp = isRecord(got.body) && isRecord(got.body.checkpoint) ? got.body.checkpoint : null;
   if (got.status !== 200 || !cp) {
     return { ok: false, problem: `CounterAudit answered ${got.status} for the review log's signed checkpoint` };
@@ -118,10 +151,76 @@ export async function readCheckpoint(options: {
   if (payload.org_id !== options.orgId) {
     return { ok: false, problem: "the review log's checkpoint is for another organization" };
   }
-  return {
-    ok: true,
-    head: { sequence: payload.sequence, entryHash: payload.entry_hash, packetId: payload.packet_id, issuedAt },
-  };
+  const head = { sequence: payload.sequence, entryHash: payload.entry_hash, packetId: payload.packet_id, issuedAt };
+  const problem = attestationProblem(got.body, options.orgId, nonce, window, head);
+  return problem ? { ...problem, checkpoint: head } : { ok: true, head };
+}
+
+/**
+ * Why the head attestation in CounterAudit's answer does not show `head` (or, for null, an empty
+ * log) is the review log's head now, or null when it does. It must be signed with the pinned
+ * export key, for the review organization, over this read's nonce, made between sending the read
+ * and its answer (give or take CLOCK_SKEW_MS), `current`, and name the same checkpoint.
+ */
+function attestationProblem(
+  body: unknown,
+  orgId: string,
+  nonce: string,
+  window: { sentAt: number; receivedAt: number },
+  head: Checkpoint | null
+): { ok: false; problem: string; retry?: boolean } | null {
+  const attestation = isRecord(body) && isRecord(body.attestation) ? body.attestation : null;
+  if (!attestation) {
+    return { ok: false, problem: "CounterAudit's answer for the review log's head carries no attestation over this read's nonce" };
+  }
+  const { signature, ...payload } = attestation;
+  const signed = verifyCounterauditSignature(payload, signature, COUNTERAUDIT_EXPORT_KEYS);
+  if (!signed.valid) {
+    return { ok: false, problem: `the review log's head attestation is not signed with CounterAudit's export key (${signed.reason})` };
+  }
+  if (payload.attestation_type !== HEAD_ATTESTATION_TYPE || payload.attestation_version !== 1) {
+    return { ok: false, problem: "the review log's head attestation is not a version 1 head attestation" };
+  }
+  if (payload.org_id !== orgId) {
+    return { ok: false, problem: "the review log's head attestation is for another organization" };
+  }
+  if (payload.nonce !== nonce) {
+    return { ok: false, problem: "the review log's head attestation answers another read's nonce: an old answer, replayed" };
+  }
+  const servedAt = typeof payload.served_at === "string" ? Date.parse(payload.served_at) : NaN;
+  if (!(servedAt >= window.sentAt - CLOCK_SKEW_MS && servedAt <= window.receivedAt + CLOCK_SKEW_MS)) {
+    // Both times, so a clock set wrong here can be told from an old answer.
+    const said = Number.isNaN(servedAt) ? "no time" : new Date(servedAt).toISOString();
+    return {
+      ok: false,
+      problem: `the review log's head attestation was not made during this read: CounterAudit says it answered at ${said}, and this read ran from ${new Date(window.sentAt).toISOString()} to ${new Date(window.receivedAt).toISOString()} by this machine's clock`,
+    };
+  }
+  if (payload.current !== true) {
+    // CounterAudit's own words, printed for the operator: only a plain reason name is shown.
+    const reason = typeof payload.reason === "string" && /^[a-z_]{1,40}$/.test(payload.reason) ? payload.reason : "no reason given";
+    return {
+      ok: false,
+      problem: `CounterAudit does not attest its newest checkpoint as the review log's head (${reason})`,
+      retry: reason === "tip_moved",
+    };
+  }
+  const issuedAt = typeof payload.checkpoint_issued_at === "string" ? Date.parse(payload.checkpoint_issued_at) : NaN;
+  const same = head
+    ? payload.tip_sequence === head.sequence &&
+      payload.checkpoint_sequence === head.sequence &&
+      payload.checkpoint_entry_hash === head.entryHash &&
+      payload.checkpoint_packet_id === head.packetId &&
+      issuedAt === head.issuedAt.getTime()
+    : payload.tip_sequence === null &&
+      payload.checkpoint_sequence === null &&
+      payload.checkpoint_entry_hash === null &&
+      payload.checkpoint_packet_id === null &&
+      payload.checkpoint_issued_at === null;
+  if (!same) {
+    return { ok: false, problem: "the review log's head attestation names another head than the checkpoint in the same answer" };
+  }
+  return null;
 }
 
 /** "sequence:entryhash", as COUNTERAUDIT_REVIEW_MIN_HEAD gives a head someone already holds. */
@@ -173,7 +272,7 @@ export async function readReviewLog(options: {
   // short cache of it: every packet the checkpoint covers is then listed, and one sealed between
   // the two only makes the listing longer. It is checked once the chain is (below).
   const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
-  const shown = checkpoint.ok ? checkpoint.head : null;
+  const shown = checkpoint.ok ? checkpoint.head : checkpoint.checkpoint;
   // Whether packets already read hold another packet at the checkpoint's sequence; then it is not
   // returned to be recorded.
   const contradicted = (held: Array<{ sequence: number; entryHash: string; packetId: string }>) =>

@@ -15,7 +15,7 @@ import {
   readReviewLog,
   submitReviewRecord,
 } from "./reviewLogSync";
-import { checkpointOf, checkpointResponse } from "./testCheckpoint";
+import { attestationOf, checkpointOf, checkpointResponse } from "./testCheckpoint";
 
 const API = "https://api.counteraudit.test";
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -57,17 +57,23 @@ type Tip = { sequence: number; entryHash: string; packetId: string };
 const tipOf = (p: Packet): Tip => ({ sequence: p.sequence, entryHash: p.integrity.entry_hash, packetId: p.packet_id });
 
 // CounterAudit's list (newest first, `page` at a time), verify and checkpoint routes. The
-// checkpoint is signed for the chain's tip unless `checkpoint` names another, or is a Response.
+// checkpoint is signed for the chain's tip, with a head attestation over the request's nonce,
+// unless `checkpoint` names another tip, is a Response, or makes one from the nonce.
 function fakeCounterAudit(
   chain: Packet[],
-  options: { page?: number; status?: Record<string, number>; checkpoint?: Tip | null | Response } = {}
+  options: {
+    page?: number;
+    status?: Record<string, number>;
+    checkpoint?: Tip | null | Response | ((nonce: string | null) => Response);
+  } = {}
 ) {
   return vi.fn(async (url: string, _init?: RequestInit) => {
     const u = new URL(url);
     if (u.pathname === `/v1/audit/chain/${ORG}/checkpoint`) {
       if (options.checkpoint instanceof Response) return options.checkpoint;
+      if (typeof options.checkpoint === "function") return options.checkpoint(u.searchParams.get("nonce"));
       const tip = options.checkpoint !== undefined ? options.checkpoint : chain.length ? tipOf(chain[chain.length - 1]) : null;
-      return checkpointResponse(ORG, tip);
+      return checkpointResponse(ORG, tip, u.searchParams.get("nonce"));
     }
     if (u.pathname === "/v1/audit/packets") {
       const newestFirst = [...chain].reverse();
@@ -301,14 +307,165 @@ describe("the signed head (review AB-01)", () => {
     const chain = packets(5);
     const none = new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
     const result = await read(fakeCounterAudit(chain.slice(0, 3), { checkpoint: none }));
-    expect(result.problem).toBe("CounterAudit gives no signed checkpoint for a review log it lists packets in");
+    expect(result.problem).toBe("CounterAudit's answer for the review log's head carries no attestation over this read's nonce");
     expect(result.checkpoint).toBeNull();
+    // Attested empty, then listing packets: the first packet sealed between the two, or a lie.
+    const empty = (nonce: string | null) => checkpointResponse(ORG, null, nonce);
+    expect((await read(fakeCounterAudit(chain.slice(0, 3), { checkpoint: empty }))).problem).toBe(
+      "CounterAudit gives no signed checkpoint for a review log it lists packets in"
+    );
     const pinned = await readReviewLog({
       apiUrl: API, readKey: KEY, orgId: ORG, known: [], minHead: { sequence: 1, entryHash: hashOf(1) },
-      fetch: fakeCounterAudit(chain.slice(0, 3), { checkpoint: new Response(JSON.stringify({ error: "not_found" }), { status: 404 }) }),
+      fetch: fakeCounterAudit(chain.slice(0, 3), { checkpoint: empty }),
       now: NOW,
     });
     expect(pinned.problem).toBe("CounterAudit gives no signed checkpoint for a review log it lists packets in");
+  });
+
+  describe("the head attestation over this read's nonce", () => {
+    const chain = packets(3);
+    const tip = tipOf(chain[2]);
+    // The checkpoint for `tip`, with an attestation made by `attest` from the request's nonce.
+    const answer = (attest: (nonce: string | null) => Record<string, unknown> | null) => (nonce: string | null) => {
+      const attestation = attest(nonce);
+      return Response.json({ checkpoint: checkpointOf(ORG, tip), ...(attestation ? { attestation } : {}) });
+    };
+
+    it("takes a current attestation over its own nonce, and sends a new nonce each read", async () => {
+      const fetch = fakeCounterAudit(chain);
+      expect((await read(fetch)).problem).toBeNull();
+      await read(fetch);
+      const nonces = fetch.mock.calls
+        .map(([url]) => new URL(url))
+        .filter(u => u.pathname.endsWith("/checkpoint"))
+        .map(u => u.searchParams.get("nonce"));
+      expect(nonces).toHaveLength(2);
+      for (const n of nonces) expect(n).toMatch(/^[0-9a-f]{32}$/);
+      expect(nonces[0]).not.toBe(nonces[1]);
+    });
+
+    it("refuses an attestation over another read's nonce: an old answer replayed", async () => {
+      const replayed = answer(() => attestationOf(ORG, tip, "ab".repeat(16)));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: replayed }))).problem).toBe(
+        "the review log's head attestation answers another read's nonce: an old answer, replayed"
+      );
+    });
+
+    it("refuses an answer with no attestation, or one not made during the read", async () => {
+      expect((await read(fakeCounterAudit(chain, { checkpoint: answer(() => null) }))).problem).toBe(
+        "CounterAudit's answer for the review log's head carries no attestation over this read's nonce"
+      );
+      const old = answer(nonce => attestationOf(ORG, tip, nonce, { served_at: "2026-11-01T00:00:00.000Z" }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: old }))).problem).toMatch(
+        /^the review log's head attestation was not made during this read: CounterAudit says it answered at 2026-11-01T00:00:00\.000Z, and this read ran from \S+ to \S+ by this machine's clock$/
+      );
+      const ahead = answer(nonce =>
+        attestationOf(ORG, tip, nonce, { served_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
+      );
+      expect((await read(fakeCounterAudit(chain, { checkpoint: ahead }))).problem).toMatch(
+        /^the review log's head attestation was not made during this read/
+      );
+    });
+
+    it("refuses an attestation of another type, or one altered after it was signed", async () => {
+      const otherType = answer(nonce => attestationOf(ORG, tip, nonce, { attestation_type: "counteraudit.chain_checkpoint" }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: otherType }))).problem).toBe(
+        "the review log's head attestation is not a version 1 head attestation"
+      );
+      const nextVersion = answer(nonce => attestationOf(ORG, tip, nonce, { attestation_version: 2 }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: nextVersion }))).problem).toBe(
+        "the review log's head attestation is not a version 1 head attestation"
+      );
+      const altered = answer(nonce => ({ ...attestationOf(ORG, tip, nonce, { current: false, reason: "chain_forked" }), current: true }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: altered }))).problem).toMatch(
+        /^the review log's head attestation is not signed with CounterAudit's export key \((digest_mismatch|signature_invalid)\)$/
+      );
+    });
+
+    it("still records a checkpoint whose own signature checks out when its attestation does not", async () => {
+      const cut = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "tail_truncated" }));
+      const result = await read(fakeCounterAudit(chain, { checkpoint: cut }));
+      expect(result.problem).toBe("CounterAudit does not attest its newest checkpoint as the review log's head (tail_truncated)");
+      expect(result.checkpoint).toMatchObject({ sequence: 2, entryHash: hashOf(2), packetId: idOf(2) });
+    });
+
+    it("refuses an attestation that does not call the checkpoint the head, naming why, and asks once", async () => {
+      const cut = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "chain_forked", tip_sequence: 2 }));
+      const fetch = fakeCounterAudit(chain, { checkpoint: cut });
+      expect((await read(fetch)).problem).toBe(
+        "CounterAudit does not attest its newest checkpoint as the review log's head (chain_forked)"
+      );
+      // Only tip_moved is asked again.
+      expect(fetch.mock.calls.filter(([url]) => new URL(url).pathname.endsWith("/checkpoint"))).toHaveLength(1);
+      // Only a plain reason name is printed.
+      const odd = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "see https://example.test" }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: odd }))).problem).toBe(
+        "CounterAudit does not attest its newest checkpoint as the review log's head (no reason given)"
+      );
+    });
+
+    it("asks once more when packets kept arriving while CounterAudit answered", async () => {
+      const nonces: Array<string | null> = [];
+      const moving = answer(nonce => {
+        nonces.push(nonce);
+        return nonces.length === 1
+          ? attestationOf(ORG, tip, nonce, { current: false, reason: "tip_moved", tip_sequence: 3 })
+          : attestationOf(ORG, tip, nonce);
+      });
+      expect((await read(fakeCounterAudit(chain, { checkpoint: moving }))).problem).toBeNull();
+      // Asked again with a new nonce: the first answer is not reused.
+      expect(nonces).toHaveLength(2);
+      expect(nonces[0]).not.toBe(nonces[1]);
+      const stillMoving = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "tip_moved", tip_sequence: 3 }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: stillMoving }))).problem).toBe(
+        "CounterAudit does not attest its newest checkpoint as the review log's head (tip_moved)"
+      );
+    });
+
+    it("refuses an attestation of another head than the checkpoint beside it, field by field", async () => {
+      const mismatch = "the review log's head attestation names another head than the checkpoint in the same answer";
+      for (const fields of [
+        { tip_sequence: 3 },
+        { checkpoint_sequence: 1 },
+        { checkpoint_sequence: "2" },
+        { checkpoint_entry_hash: hashOf(1) },
+        { checkpoint_packet_id: idOf(1) },
+        { checkpoint_issued_at: "2026-11-03T12:00:00.001Z" },
+      ]) {
+        const other = answer(nonce => attestationOf(ORG, tip, nonce, fields));
+        expect((await read(fakeCounterAudit(chain, { checkpoint: other }))).problem, JSON.stringify(fields)).toBe(mismatch);
+      }
+      // An empty-chain answer must attest an empty chain, every field of it.
+      for (const fields of [
+        { tip_sequence: 2 },
+        { checkpoint_sequence: 2 },
+        { checkpoint_entry_hash: hashOf(2) },
+        { checkpoint_packet_id: idOf(2) },
+        { checkpoint_issued_at: "2026-11-03T12:00:00.000Z" },
+      ]) {
+        const emptyButNot = (nonce: string | null) =>
+          Response.json({ error: "not_found", attestation: attestationOf(ORG, null, nonce, fields) }, { status: 404 });
+        expect((await read(fakeCounterAudit([], { checkpoint: emptyButNot }))).problem, JSON.stringify(fields)).toBe(mismatch);
+      }
+    });
+
+    it("checks the signature only against the pinned key, whatever key the answer names", async () => {
+      const elsewhere = answer(nonce => {
+        const signed = attestationOf(ORG, tip, nonce);
+        const signature = signed.signature as Record<string, unknown>;
+        return {
+          ...signed,
+          signature: { ...signature, key_id: "attacker-key", verification_key_url: "https://attacker.test/jwks.json" },
+        };
+      });
+      expect((await read(fakeCounterAudit(chain, { checkpoint: elsewhere }))).problem).toBe(
+        "the review log's head attestation is not signed with CounterAudit's export key (missing_public_key)"
+      );
+      const forOther = answer(nonce => attestationOf("99999999-2222-4333-8444-555555555555", tip, nonce));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: forOther }))).problem).toBe(
+        "the review log's head attestation is for another organization"
+      );
+    });
   });
 
   it("refuses a checkpoint that names another packet at its sequence, and returns none to record", async () => {

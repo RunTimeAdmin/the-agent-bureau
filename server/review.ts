@@ -1051,8 +1051,8 @@ async function headCommand(io: ReviewIO): Promise<number> {
   const cp = read.head;
   io.log(
     cp
-      ? `CounterAudit's signed head: sequence ${cp.sequence}, entry hash ${cp.entryHash}, packet ${cp.packetId}, issued ${cp.issuedAt.toISOString()}. Signature checked against the pinned export key.`
-      : "CounterAudit's signed head: none yet, the review log has no numbered packet."
+      ? `CounterAudit's signed head: sequence ${cp.sequence}, entry hash ${cp.entryHash}, packet ${cp.packetId}, issued ${cp.issuedAt.toISOString()}. Signature checked against the pinned export key, and attested as the head now over this read's own nonce.`
+      : "CounterAudit's signed head: none yet, attested over this read's own nonce: the review log has no numbered packet."
   );
   let failed = false;
   // A database that is set but not ready is a comparison not made, not a head not recorded yet.
