@@ -104,18 +104,22 @@ export type SealedEvidence = { packetId: string; sequence: number; record: Evide
 
 /**
  * The evidence result sealed last for each version of each line (by signed_event_hash), read
- * from the Bureau's organization with its read key. Every packet is listed, bypassing
- * CounterAudit's short cache of the list; each evidence packet is read through its verify route,
- * which checks its seal. Erased packets are left out, but only while each is older than every
- * seal still held, as when the retention policy erases the oldest first: otherwise an older seal
- * could stand in for a newer one that was erased, so nothing is read. Anything else that cannot
- * be read stops the reading too.
+ * from the Bureau's organization with its read key.
  *
- * The listing is held to CounterAudit's signed head for the organization, attested over a nonce
- * made for this read and read first (readCheckpoint): walking back from the head by each packet's
- * previous hash must find every packet down to sequence 0 in the listing, and each evidence seal
- * must sit at its place in that walk or after the head. A listing that leaves out a newer seal
- * could otherwise pass an older one off as the last (review AB-01, as it applies to seals).
+ * The read is held to CounterAudit's signed head for the organization, attested over a nonce made
+ * for this read and read first (readCheckpoint), as the review log's is: a listing that leaves out
+ * a newer seal, or calls it something else, could otherwise pass an older one off as the last
+ * (review AB-01, as it applies to seals). Every listed packet, bypassing CounterAudit's short
+ * cache of the list, is read through its verify route, which checks its seal, and its place,
+ * hashes and connector are taken from there, not from the listing. Walking back from the head by
+ * each packet's previous hash must then find every packet down to sequence 0, and every packet
+ * must sit at its place in that walk or after the head.
+ *
+ * An erased packet's verify route answers 410 and gives nothing, so the listing's hashes stand in
+ * for it, and the listing must say it is erased only of a packet the verify route agrees is.
+ * Erased seals are left out, but only while each is below every seal still held, as when the
+ * retention policy erases the oldest first: otherwise an older seal could stand in for a newer one
+ * that was erased, so nothing is read. Anything else that cannot be read stops the reading too.
  */
 export async function readEvidenceSeals(options: {
   apiUrl: string;
@@ -127,96 +131,141 @@ export async function readEvidenceSeals(options: {
   const base = counterauditBase(options.apiUrl);
   const signed = await readCheckpoint({ ...options, fetch: fetchImpl, of: "the Bureau organization" });
   if (!signed.ok) return { problem: signed.problem };
-  // Every listed packet by its entry hash, for the walk back from the signed head.
-  const byEntryHash = new Map<string, { packetId: string; prevHash: string }>();
-  const ids: string[] = [];
-  // When CounterAudit sealed each evidence packet, and the newest of those it erased.
-  const sealedAt = new Map<string, number>();
-  let newestErased = -Infinity;
+  const head = signed.head;
+
+  // Every packet id, with what the listing says of it, used only for an erased packet.
+  const listed: { id: string; erased: boolean; connector: unknown; prevHash: unknown; entryHash: unknown }[] = [];
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
     if (page === MAX_PAGES) return { problem: "the organization has more packets than one read lists" };
     const query = new URLSearchParams({ limit: String(PAGE), refresh: "1", ...(cursor ? { cursor } : {}) });
-    const listed = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
-    if (listed.status !== 200 || !isRecord(listed.body) || !Array.isArray(listed.body.packets)) {
-      return { problem: `CounterAudit answered ${listed.status} when listing the organization's packets` };
+    const got = await call(fetchImpl, `${base}/v1/audit/packets?${query}`, options.readKey);
+    if (got.status !== 200 || !isRecord(got.body) || !Array.isArray(got.body.packets)) {
+      return { problem: `CounterAudit answered ${got.status} when listing the organization's packets` };
     }
-    for (const p of listed.body.packets) {
-      if (isRecord(p) && typeof p.packet_id === "string" && typeof p.entry_hash === "string" && typeof p.prev_hash === "string") {
-        byEntryHash.set(p.entry_hash, { packetId: p.packet_id, prevHash: p.prev_hash });
+    for (const p of got.body.packets) {
+      if (!isRecord(p) || typeof p.packet_id !== "string" || !UUID.test(p.packet_id)) {
+        return { problem: "CounterAudit listed a packet without a packet id" };
       }
-      if (isRecord(p) && p.connector_id === EVIDENCE_CONNECTOR_ID) {
-        if (typeof p.packet_id !== "string" || !UUID.test(p.packet_id)) {
-          return { problem: "CounterAudit listed an evidence packet without a packet id" };
-        }
-        const at = typeof p.created_at === "string" ? Date.parse(p.created_at) : Number.NaN;
-        if (!Number.isFinite(at)) {
-          return { problem: `CounterAudit listed evidence packet ${p.packet_id} without its time` };
-        }
-        sealedAt.set(p.packet_id, at);
-        if (p.expired_at) newestErased = Math.max(newestErased, at);
-        else ids.push(p.packet_id);
-      }
+      listed.push({
+        id: p.packet_id,
+        erased: Boolean(p.expired_at),
+        connector: p.connector_id,
+        prevHash: p.prev_hash,
+        entryHash: p.entry_hash,
+      });
     }
-    const next = listed.body.next_cursor;
+    const next = got.body.next_cursor;
     if (typeof next !== "string" || next === "") break;
     cursor = next;
   }
-  // Walk back from the signed head to sequence 0: a packet the listing leaves out breaks the walk.
-  // Erasure keeps a packet's hashes, so the walk passes through erased ones.
-  const head = signed.head;
+
+  // Each packet as the verify route gives it, by entry hash.
+  type Node = {
+    id: string;
+    prevHash: string;
+    entryHash: string;
+    connector: unknown;
+    // null for an erased packet, which gives none, and for one from before CounterAudit numbered packets.
+    sequence: number | null;
+    erased: boolean;
+    record?: unknown;
+  };
+  const byEntryHash = new Map<string, Node>();
+  const seenIds = new Set<string>();
+  for (const p of listed) {
+    if (seenIds.has(p.id)) return { problem: `CounterAudit listed packet ${p.id} twice` };
+    seenIds.add(p.id);
+    const got = await call(fetchImpl, `${base}/v1/audit/verify/${p.id}`, options.readKey);
+    let node: Node;
+    if (got.status === 410) {
+      if (typeof p.prevHash !== "string" || !HASH.test(p.prevHash) || typeof p.entryHash !== "string" || !HASH.test(p.entryHash)) {
+        return { problem: `CounterAudit listed erased packet ${p.id} without its hashes` };
+      }
+      node = { id: p.id, prevHash: p.prevHash, entryHash: p.entryHash, connector: p.connector, sequence: null, erased: true };
+    } else {
+      if (p.erased) return { problem: `CounterAudit lists packet ${p.id} as erased, but its verify route holds it` };
+      const body = got.body;
+      if (got.status !== 200 || !isRecord(body) || body.valid !== true || !isRecord(body.packet)) {
+        return { problem: `CounterAudit could not verify packet ${p.id} (${got.status})` };
+      }
+      const packet = body.packet;
+      const integrity = isRecord(packet.integrity) ? packet.integrity : {};
+      if (packet.packet_id !== p.id || packet.org_id !== options.orgId) {
+        return { problem: `packet ${p.id} is not a packet of the Bureau's organization` };
+      }
+      const sequence = packet.sequence;
+      const isEvidence = packet.connector_id === EVIDENCE_CONNECTOR_ID;
+      if (
+        !(sequence === null || sequence === undefined || (typeof sequence === "number" && Number.isSafeInteger(sequence) && sequence >= 0)) ||
+        (isEvidence && typeof sequence !== "number")
+      ) {
+        return { problem: `${isEvidence ? "evidence packet" : "packet"} ${p.id} has no sequence` };
+      }
+      if (typeof integrity.prev_hash !== "string" || !HASH.test(integrity.prev_hash) || typeof integrity.entry_hash !== "string" || !HASH.test(integrity.entry_hash)) {
+        return { problem: `packet ${p.id} is missing its hashes` };
+      }
+      node = {
+        id: p.id,
+        prevHash: integrity.prev_hash,
+        entryHash: integrity.entry_hash,
+        connector: packet.connector_id,
+        sequence: typeof sequence === "number" ? sequence : null,
+        erased: false,
+        record: packet.signed_event,
+      };
+    }
+    if (byEntryHash.has(node.entryHash)) return { problem: `two packets CounterAudit lists share entry hash ${node.entryHash}` };
+    byEntryHash.set(node.entryHash, node);
+  }
+
+  // Walk back from the signed head to sequence 0: a packet left out breaks the walk. An erased
+  // packet's hashes come from the listing, and the verified packets on either side hold them.
   const placed = new Map<string, number>();
   if (head) {
     let at = head.entryHash;
     for (let sequence = head.sequence; sequence >= 0; sequence--) {
-      const p = byEntryHash.get(at);
-      if (!p || (sequence === head.sequence && p.packetId !== head.packetId)) {
+      const node = byEntryHash.get(at);
+      if (!node || (sequence === head.sequence && node.id !== head.packetId)) {
         return {
           problem: `CounterAudit's listing of the Bureau organization's packets leaves out sequence ${sequence}, at or below its signed head at sequence ${head.sequence}`,
         };
       }
-      placed.set(p.packetId, sequence);
-      at = p.prevHash;
+      placed.set(node.id, sequence);
+      at = node.prevHash;
     }
-  } else if (byEntryHash.size > 0) {
-    return { problem: "CounterAudit gives no signed checkpoint for a Bureau organization it lists packets in" };
   }
-  const seals = new Map<string, SealedEvidence>();
-  const held: number[] = [];
-  for (const id of ids) {
-    const got = await call(fetchImpl, `${base}/v1/audit/verify/${id}`, options.readKey);
-    if (got.status === 410) {
-      newestErased = Math.max(newestErased, sealedAt.get(id)!);
-      continue;
-    }
-    const body = got.body;
-    if (got.status !== 200 || !isRecord(body) || body.valid !== true || !isRecord(body.packet)) {
-      return { problem: `CounterAudit could not verify evidence packet ${id} (${got.status})` };
-    }
-    const packet = body.packet;
-    if (packet.org_id !== options.orgId || packet.connector_id !== EVIDENCE_CONNECTOR_ID) {
-      return { problem: `packet ${id} is not an evidence record of the Bureau's organization` };
-    }
-    const sequence = packet.sequence;
-    if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0) {
-      return { problem: `evidence packet ${id} has no sequence` };
-    }
-    // At its place in the walk, or sealed after the head was read.
-    const place = placed.get(id);
-    if (place !== undefined ? sequence !== place : head !== null && sequence <= head.sequence) {
+  // Every numbered packet at its place in the walk, or sealed after the head was read.
+  for (const node of byEntryHash.values()) {
+    if (node.sequence === null) continue;
+    const place = placed.get(node.id);
+    if (place !== undefined ? node.sequence !== place : head !== null && node.sequence <= head.sequence) {
       return {
-        problem: `evidence packet ${id} says it is at sequence ${sequence}, which is not its place in the chain to CounterAudit's signed head`,
+        problem: `packet ${node.id} says it is at sequence ${node.sequence}, which is not its place in the chain to CounterAudit's signed head`,
       };
     }
-    const form = checkEvidenceRecord(packet.signed_event);
-    if (!form.ok) return { problem: `evidence packet ${id} does not hold an evidence record: ${form.reason}` };
+  }
+
+  const seals = new Map<string, SealedEvidence>();
+  const held: number[] = [];
+  let newestErased = -Infinity;
+  for (const node of byEntryHash.values()) {
+    if (node.erased) {
+      // An erased packet's connector is the listing's word; its place is the walk's.
+      if (node.connector === EVIDENCE_CONNECTOR_ID) newestErased = Math.max(newestErased, placed.get(node.id) ?? Infinity);
+      continue;
+    }
+    if (node.connector !== EVIDENCE_CONNECTOR_ID) continue;
+    const sequence = node.sequence as number;
+    const form = checkEvidenceRecord(node.record);
+    if (!form.ok) return { problem: `evidence packet ${node.id} does not hold an evidence record: ${form.reason}` };
     const seen = seals.get(form.record.signed_event_hash);
     if (!seen || sequence > seen.sequence) {
-      seals.set(form.record.signed_event_hash, { packetId: id, sequence, record: form.record });
+      seals.set(form.record.signed_event_hash, { packetId: node.id, sequence, record: form.record });
     }
-    held.push(sealedAt.get(id)!);
+    held.push(sequence);
   }
-  if (held.some(at => at < newestErased)) {
+  if (held.some(sequence => sequence < newestErased)) {
     return {
       problem:
         "CounterAudit erased an evidence seal newer than one it still holds, so the seal held for a line may not be its last",

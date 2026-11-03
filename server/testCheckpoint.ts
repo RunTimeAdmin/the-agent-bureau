@@ -71,19 +71,24 @@ export function chainOf<T extends Listed>(orgId: string, packets: T[]) {
     if (p.sequence !== undefined && Number.isSafeInteger(sequence) && sequence >= 0) placed.set(sequence, p);
   }
   const top = Math.max(-1, ...placed.keys());
-  const chain: Array<(T | { packet_id: string; connector_id: string; sequence: number; created_at: string }) & {
+  const chain: Array<(T | { packet_id: string; org_id: string; connector_id: string; sequence: number; created_at: string }) & {
     prev_hash: string;
     entry_hash: string;
+    integrity: { prev_hash: string; entry_hash: string };
   }> = [];
   for (let sequence = 0; sequence <= top; sequence++) {
     const filler = createHash("sha256").update(`filler:${orgId}:${sequence}`).digest("hex");
     const packet = placed.get(sequence) ?? {
       packet_id: `${filler.slice(0, 8)}-${filler.slice(8, 12)}-4${filler.slice(13, 16)}-8${filler.slice(17, 20)}-${filler.slice(20, 32)}`,
+      org_id: orgId,
       connector_id: "agent-bureau-outcome-v1",
       sequence,
       created_at: "2026-11-02T00:00:00.000Z",
     };
-    chain.push({ ...packet, prev_hash: sequence === 0 ? "0".repeat(64) : hashAt(sequence - 1), entry_hash: hashAt(sequence) });
+    const prev_hash = sequence === 0 ? "0".repeat(64) : hashAt(sequence - 1);
+    const entry_hash = hashAt(sequence);
+    // The listing's hashes at the top, and the verify route's in `integrity`.
+    chain.push({ ...packet, prev_hash, entry_hash, integrity: { prev_hash, entry_hash } });
   }
   const unplaced = packets.filter(p => !Object.values(Object.fromEntries(placed)).includes(p));
   return {
