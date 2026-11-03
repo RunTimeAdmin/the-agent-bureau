@@ -356,16 +356,47 @@ describe("the signed head (review AB-01)", () => {
         "CounterAudit's answer for the review log's head carries no attestation over this read's nonce"
       );
       const old = answer(nonce => attestationOf(ORG, tip, nonce, { served_at: "2026-11-01T00:00:00.000Z" }));
-      expect((await read(fakeCounterAudit(chain, { checkpoint: old }))).problem).toBe(
-        "the review log's head attestation was not made during this read"
+      expect((await read(fakeCounterAudit(chain, { checkpoint: old }))).problem).toMatch(
+        /^the review log's head attestation was not made during this read: CounterAudit says it answered at 2026-11-01T00:00:00\.000Z, and this read ran from \S+ to \S+ by this machine's clock$/
+      );
+      const ahead = answer(nonce =>
+        attestationOf(ORG, tip, nonce, { served_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
+      );
+      expect((await read(fakeCounterAudit(chain, { checkpoint: ahead }))).problem).toMatch(
+        /^the review log's head attestation was not made during this read/
       );
     });
 
-    it("refuses an attestation that does not call the checkpoint the head, naming why", async () => {
+    it("refuses an attestation of another type, or one altered after it was signed", async () => {
+      const otherType = answer(nonce => attestationOf(ORG, tip, nonce, { attestation_type: "counteraudit.chain_checkpoint" }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: otherType }))).problem).toBe(
+        "the review log's head attestation is not a version 1 head attestation"
+      );
+      const nextVersion = answer(nonce => attestationOf(ORG, tip, nonce, { attestation_version: 2 }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: nextVersion }))).problem).toBe(
+        "the review log's head attestation is not a version 1 head attestation"
+      );
+      const altered = answer(nonce => ({ ...attestationOf(ORG, tip, nonce, { current: false, reason: "chain_forked" }), current: true }));
+      expect((await read(fakeCounterAudit(chain, { checkpoint: altered }))).problem).toMatch(
+        /^the review log's head attestation is not signed with CounterAudit's export key \((digest_mismatch|signature_invalid)\)$/
+      );
+    });
+
+    it("still records a checkpoint whose own signature checks out when its attestation does not", async () => {
+      const cut = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "tail_truncated" }));
+      const result = await read(fakeCounterAudit(chain, { checkpoint: cut }));
+      expect(result.problem).toBe("CounterAudit does not attest its newest checkpoint as the review log's head (tail_truncated)");
+      expect(result.checkpoint).toMatchObject({ sequence: 2, entryHash: hashOf(2), packetId: idOf(2) });
+    });
+
+    it("refuses an attestation that does not call the checkpoint the head, naming why, and asks once", async () => {
       const cut = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "chain_forked", tip_sequence: 2 }));
-      expect((await read(fakeCounterAudit(chain, { checkpoint: cut }))).problem).toBe(
+      const fetch = fakeCounterAudit(chain, { checkpoint: cut });
+      expect((await read(fetch)).problem).toBe(
         "CounterAudit does not attest its newest checkpoint as the review log's head (chain_forked)"
       );
+      // Only tip_moved is asked again.
+      expect(fetch.mock.calls.filter(([url]) => new URL(url).pathname.endsWith("/checkpoint"))).toHaveLength(1);
       // Only a plain reason name is printed.
       const odd = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "see https://example.test" }));
       expect((await read(fakeCounterAudit(chain, { checkpoint: odd }))).problem).toBe(
@@ -374,29 +405,48 @@ describe("the signed head (review AB-01)", () => {
     });
 
     it("asks once more when packets kept arriving while CounterAudit answered", async () => {
-      let asked = 0;
-      const moving = answer(nonce =>
-        ++asked === 1 ? attestationOf(ORG, tip, nonce, { current: false, reason: "tip_moved", tip_sequence: 3 }) : attestationOf(ORG, tip, nonce)
-      );
+      const nonces: Array<string | null> = [];
+      const moving = answer(nonce => {
+        nonces.push(nonce);
+        return nonces.length === 1
+          ? attestationOf(ORG, tip, nonce, { current: false, reason: "tip_moved", tip_sequence: 3 })
+          : attestationOf(ORG, tip, nonce);
+      });
       expect((await read(fakeCounterAudit(chain, { checkpoint: moving }))).problem).toBeNull();
-      expect(asked).toBe(2);
+      // Asked again with a new nonce: the first answer is not reused.
+      expect(nonces).toHaveLength(2);
+      expect(nonces[0]).not.toBe(nonces[1]);
       const stillMoving = answer(nonce => attestationOf(ORG, tip, nonce, { current: false, reason: "tip_moved", tip_sequence: 3 }));
       expect((await read(fakeCounterAudit(chain, { checkpoint: stillMoving }))).problem).toBe(
         "CounterAudit does not attest its newest checkpoint as the review log's head (tip_moved)"
       );
     });
 
-    it("refuses an attestation of another head than the checkpoint beside it", async () => {
-      const other = answer(nonce => attestationOf(ORG, tipOf(chain[1]), nonce));
-      expect((await read(fakeCounterAudit(chain, { checkpoint: other }))).problem).toBe(
-        "the review log's head attestation names another head than the checkpoint in the same answer"
-      );
-      // An empty-chain answer must attest an empty chain.
-      const emptyButNot = (nonce: string | null) =>
-        Response.json({ error: "not_found", attestation: attestationOf(ORG, null, nonce, { tip_sequence: 2 }) }, { status: 404 });
-      expect((await read(fakeCounterAudit([], { checkpoint: emptyButNot }))).problem).toBe(
-        "the review log's head attestation names another head than the checkpoint in the same answer"
-      );
+    it("refuses an attestation of another head than the checkpoint beside it, field by field", async () => {
+      const mismatch = "the review log's head attestation names another head than the checkpoint in the same answer";
+      for (const fields of [
+        { tip_sequence: 3 },
+        { checkpoint_sequence: 1 },
+        { checkpoint_sequence: "2" },
+        { checkpoint_entry_hash: hashOf(1) },
+        { checkpoint_packet_id: idOf(1) },
+        { checkpoint_issued_at: "2026-11-03T12:00:00.001Z" },
+      ]) {
+        const other = answer(nonce => attestationOf(ORG, tip, nonce, fields));
+        expect((await read(fakeCounterAudit(chain, { checkpoint: other }))).problem, JSON.stringify(fields)).toBe(mismatch);
+      }
+      // An empty-chain answer must attest an empty chain, every field of it.
+      for (const fields of [
+        { tip_sequence: 2 },
+        { checkpoint_sequence: 2 },
+        { checkpoint_entry_hash: hashOf(2) },
+        { checkpoint_packet_id: idOf(2) },
+        { checkpoint_issued_at: "2026-11-03T12:00:00.000Z" },
+      ]) {
+        const emptyButNot = (nonce: string | null) =>
+          Response.json({ error: "not_found", attestation: attestationOf(ORG, null, nonce, fields) }, { status: 404 });
+        expect((await read(fakeCounterAudit([], { checkpoint: emptyButNot }))).problem, JSON.stringify(fields)).toBe(mismatch);
+      }
     });
 
     it("checks the signature only against the pinned key, whatever key the answer names", async () => {

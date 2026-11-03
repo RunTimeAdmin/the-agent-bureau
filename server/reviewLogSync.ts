@@ -81,7 +81,11 @@ const HEAD_ATTESTATION_TYPE = "counteraudit.chain_head_attestation";
 // How far CounterAudit's clock may run from this one when it says when it answered.
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
-type CheckpointRead = { ok: true; head: Checkpoint | null } | { ok: false; problem: string; retry?: boolean };
+// A read that fails still gives back a checkpoint whose own signature checked out, for the caller
+// to record: one CounterAudit signed is a head the next read must reach, whatever its attestation.
+type CheckpointRead =
+  | { ok: true; head: Checkpoint | null }
+  | { ok: false; problem: string; checkpoint?: Checkpoint | null; retry?: boolean };
 
 /**
  * The review organization's newest chain checkpoint, attested by CounterAudit as the head over a
@@ -98,11 +102,11 @@ export async function readCheckpoint(options: {
   readKey: string;
   orgId: string;
   fetch?: Fetch;
-}): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string }> {
+}): Promise<{ ok: true; head: Checkpoint | null } | { ok: false; problem: string; checkpoint: Checkpoint | null }> {
   // Once more when packets kept arriving while CounterAudit answered.
   const first = await readAttestedCheckpoint(options);
   const read = !first.ok && first.retry ? await readAttestedCheckpoint(options) : first;
-  return read.ok ? read : { ok: false, problem: read.problem };
+  return read.ok ? read : { ok: false, problem: read.problem, checkpoint: read.checkpoint ?? null };
 }
 
 async function readAttestedCheckpoint(options: {
@@ -121,7 +125,8 @@ async function readAttestedCheckpoint(options: {
   const receivedAt = Date.now();
   const window = { sentAt, receivedAt };
   if (got.status === 404 && isRecord(got.body) && got.body.error === "not_found") {
-    return attestationProblem(got.body, options.orgId, nonce, window, null) ?? { ok: true, head: null };
+    const problem = attestationProblem(got.body, options.orgId, nonce, window, null);
+    return problem ? { ...problem, checkpoint: null } : { ok: true, head: null };
   }
   const cp = isRecord(got.body) && isRecord(got.body.checkpoint) ? got.body.checkpoint : null;
   if (got.status !== 200 || !cp) {
@@ -147,7 +152,8 @@ async function readAttestedCheckpoint(options: {
     return { ok: false, problem: "the review log's checkpoint is for another organization" };
   }
   const head = { sequence: payload.sequence, entryHash: payload.entry_hash, packetId: payload.packet_id, issuedAt };
-  return attestationProblem(got.body, options.orgId, nonce, window, head) ?? { ok: true, head };
+  const problem = attestationProblem(got.body, options.orgId, nonce, window, head);
+  return problem ? { ...problem, checkpoint: head } : { ok: true, head };
 }
 
 /**
@@ -183,7 +189,12 @@ function attestationProblem(
   }
   const servedAt = typeof payload.served_at === "string" ? Date.parse(payload.served_at) : NaN;
   if (!(servedAt >= window.sentAt - CLOCK_SKEW_MS && servedAt <= window.receivedAt + CLOCK_SKEW_MS)) {
-    return { ok: false, problem: "the review log's head attestation was not made during this read" };
+    // Both times, so a clock set wrong here can be told from an old answer.
+    const said = Number.isNaN(servedAt) ? "no time" : new Date(servedAt).toISOString();
+    return {
+      ok: false,
+      problem: `the review log's head attestation was not made during this read: CounterAudit says it answered at ${said}, and this read ran from ${new Date(window.sentAt).toISOString()} to ${new Date(window.receivedAt).toISOString()} by this machine's clock`,
+    };
   }
   if (payload.current !== true) {
     // CounterAudit's own words, printed for the operator: only a plain reason name is shown.
@@ -261,7 +272,7 @@ export async function readReviewLog(options: {
   // short cache of it: every packet the checkpoint covers is then listed, and one sealed between
   // the two only makes the listing longer. It is checked once the chain is (below).
   const checkpoint = await readCheckpoint({ ...options, fetch: fetchImpl });
-  const shown = checkpoint.ok ? checkpoint.head : null;
+  const shown = checkpoint.ok ? checkpoint.head : checkpoint.checkpoint;
   // Whether packets already read hold another packet at the checkpoint's sequence; then it is not
   // returned to be recorded.
   const contradicted = (held: Array<{ sequence: number; entryHash: string; packetId: string }>) =>
