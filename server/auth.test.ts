@@ -19,8 +19,8 @@ type CookieCall = {
 // 32 bytes of hex, made for this test file and never deployed.
 const TEST_SECRET = "4f1c9a7e2b6d03c58e9f71a2d4b60c3e57a9f2183c6e0d4b9a1f7e25c08d36b1";
 const OTHER_SECRET = "9b3e0f6a1c7d25e84f0a6b9c3d1e72f5a8c40b6e1d9f37a2c5e08b4d6f1a39c7";
-// Four random words, made for this test file and never deployed.
-const TEST_PASSWORD = "lantern quarry velvet osprey";
+// Five random words, made for this test file and never deployed.
+const TEST_PASSWORD = "lantern quarry velvet osprey thimble";
 
 function createContext(isOperator = false, ip = "198.51.100.20") {
   const setCookies: CookieCall[] = [];
@@ -166,7 +166,7 @@ describe("operator sessions", () => {
   it("reject tokens signed before the password changed", async () => {
     const token = await createOperatorSession();
     expect(await verifyOperatorSession(token)).toBe(true);
-    const rotated = "harbor tinsel walrus quorum";
+    const rotated = "harbor tinsel walrus quorum bramble";
     // Strong enough to sign in with, so it is the change that refuses the token.
     expect(operatorPasswordProblem(rotated)).toBeNull();
     vi.stubEnv("OPERATOR_PASSWORD", rotated);
@@ -212,10 +212,14 @@ describe("auth.logout", () => {
 describe("operator credentials", () => {
   it("take random words and refuse a short password or one built the way people build them", () => {
     expect(operatorPasswordProblem(TEST_PASSWORD)).toBeNull();
-    expect(operatorPasswordProblem("plinth-oxbow-cadenza-myrtle")).toBeNull();
+    expect(operatorPasswordProblem("plinth-oxbow-cadenza-myrtle-gusset")).toBeNull();
+    expect(operatorPasswordProblem("Xq7#mR2!vL9pT4wZ8kN3")).toBeNull();
     expect(operatorPasswordProblem("")).toMatch(/not set/);
     expect(operatorPasswordProblem("short one")).toBe(
-      "OPERATOR_PASSWORD is shorter than 16 characters; use four or more random words"
+      "OPERATOR_PASSWORD is shorter than 16 characters; use five or more random words, or 20 or more random characters"
+    );
+    expect(operatorPasswordProblem("lantern quarry velvet osprey thimble ".repeat(7))).toBe(
+      "OPERATOR_PASSWORD is longer than the 256 characters sign-in accepts"
     );
     // Each passed the rule this replaced: 16 characters, 8 different, none of a list of words.
     for (const weak of [
@@ -230,10 +234,18 @@ describe("operator credentials", () => {
       "1q2w3e4r5t6y7u8i",
       "agent-bureau-inbox",
       "Tr0ub4dor&3Tr0ub4dor&3",
+      // Words of the site's own name, which zxcvbn scored high with spaces between.
+      "Agent Bureau Operator Inbox",
+      "agent-bureau-operator-inbox",
+      "the agent bureau operator",
+      "bureau inbox operator admin",
+      "Sigvara Levy CounterAudit Bureau",
+      "Welcome to The Agent Bureau",
+      "david cooper bureau inbox",
     ]) {
       // The reason goes to the host's log, so it says nothing of what the password holds.
       expect(operatorPasswordProblem(weak), weak).toBe(
-        "OPERATOR_PASSWORD is too easy to guess; use four or more random words"
+        "OPERATOR_PASSWORD is too easy to guess; use five or more random words, or 20 or more random characters"
       );
     }
   });

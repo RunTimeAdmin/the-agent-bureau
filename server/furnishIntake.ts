@@ -135,7 +135,14 @@ export async function newLineIdProblem(
   if (!isRandomEventId(fields.eventId)) {
     return "event_id is not a random lowercase UUIDv4, which every event sealed since 2026-11-02 needs";
   }
-  const target = fields.relationTargetEventId;
+  return relationTargetProblem(fields.relationTargetEventId, isStored);
+}
+
+/** Why a new line's relation cannot name `target`, or null: it must be a random id or a line held. */
+export async function relationTargetProblem(
+  target: string | null,
+  isStored: (eventId: string) => Promise<boolean>
+): Promise<string | null> {
   if (target !== null && !isRandomEventId(target) && !(await isStored(target))) {
     return "relation.target_event_id is neither a random lowercase UUIDv4 nor a line the Bureau already holds";
   }
@@ -632,21 +639,26 @@ async function intakeLine(
   }
   const ref = `${fields.furnisherId}/${fields.eventId}`;
 
-  // A new line's ids are checked before CounterAudit seals the event in the Bureau's organization.
-  // CounterAudit takes any relation target, and a line refused after sealing would leave its
-  // packet, subject_ref and all, where no line leads pnpm lines expire to it (review AB-03).
-  let idProblem: string | null;
-  try {
-    idProblem = (await holdsLine(fields.furnisherId, fields.eventId))
-      ? null
-      : await newLineIdProblem(fields, receivedAt, id => holdsLine(fields.furnisherId, id));
-  } catch (error) {
-    tally.notSent++;
-    return { report: `${ref}: not sent: the Bureau's lines could not be read (${describeError(error)})`, clean: false };
-  }
-  if (idProblem) {
-    tally.notSent++;
-    return { report: `${ref}: not sent: ${idProblem}`, clean: false };
+  // A new line's relation target is checked before CounterAudit seals the event in the Bureau's
+  // organization. CounterAudit refuses an event_id that is not random itself, before it seals
+  // anything, but takes any target, and a line refused after sealing would leave its packet,
+  // subject_ref and all, where no line leads pnpm lines expire to it (review AB-03). A line held
+  // already is found as recordLine finds it, so this never refuses what recordLine would update.
+  const target = fields.relationTargetEventId;
+  if (target !== null && !isRandomEventId(target) && receivedAt.getTime() >= RANDOM_EVENT_IDS_FROM.getTime()) {
+    let targetProblem: string | null;
+    try {
+      targetProblem = (await findOutcomeEvent(fields.furnisherId, fields.eventId))
+        ? null
+        : await relationTargetProblem(target, id => holdsLine(fields.furnisherId, id));
+    } catch (error) {
+      tally.notSent++;
+      return { report: `${ref}: not sent: the Bureau's lines could not be read (${describeError(error)})`, clean: false };
+    }
+    if (targetProblem) {
+      tally.notSent++;
+      return { report: `${ref}: not sent: ${targetProblem}`, clean: false };
+    }
   }
 
   const ingest = await ingestSignedEvent(event);
