@@ -13,10 +13,18 @@ import { fetchProof } from "./counteraudit";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { listFileLines, schemaReady } from "./db";
 import {
+  checkDisputeForm,
   checkLineDisputes,
+  checkStoredRecord,
+  currentDispute,
+  deriveDisputes,
   disputeOf,
+  readController,
+  signedByWallet,
+  type CheckedDisputeRecord,
   type Dispute,
   type DisputeState,
+  type StoredDisputeRecord,
 } from "./dispute";
 import { readEventFields } from "./furnishIntake";
 import { proofAdmissionGate, type AdmissionGate } from "./furnisherAdmission";
@@ -44,8 +52,8 @@ import {
 } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecision";
-import { readBureauOrganization, readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
-import { storeSealedDisputes } from "./disputeSync";
+import { readBureauOrganization, sealFor, type SealedDispute, type SealedEvidence, type SealedLine } from "./evidenceSeal";
+import { erasedByRetention, storeSealedDisputes } from "./disputeSync";
 import type { ReviewLog } from "./reviewLog";
 import { parseHead, readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
@@ -1350,6 +1358,8 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
   }
   // Each line's proof that verified, by packet: --current checks its furnisher's admission by it.
   const proofs = new Map<string, Record<string, unknown>>();
+  // Each line CounterAudit's signed record says it erased, and whether that was before the file's date.
+  const erasedSources = new Map<string, { at: string; early: boolean }>();
   // The signature held, but each line is still read as untrusted JSON.
   for (const entry of entries) {
     const line: Record<string, unknown> = isRecord(entry) ? entry : {};
@@ -1377,6 +1387,7 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
         const early =
           typeof until === "string" &&
           new Date(at).getTime() < new Date(until).getTime();
+        erasedSources.set(packetId, { at, early });
         const stated =
           typeof until === "string"
             ? `, ${early ? "before" : "after"} the file's checkable_until (${printable(until)})`
@@ -1427,7 +1438,7 @@ async function verifyCommand(args: string[], io: FileIO): Promise<number> {
     failed += await checkReviewLog(signed, entries, io);
     return failed === 0 ? 0 : 1;
   }
-  const standing = await checkCurrentReviewStatus(signed, entries, io, proofs);
+  const standing = await checkCurrentReviewStatus(signed, entries, io, proofs, erasedSources);
   if (standing === null) {
     return failed === 0 ? NOT_ESTABLISHED : 1;
   }
@@ -1448,7 +1459,8 @@ async function checkCurrentReviewStatus(
   signed: SignedAgentFile,
   entries: unknown[],
   io: FileIO,
-  proofs: Map<string, Record<string, unknown>>
+  proofs: Map<string, Record<string, unknown>>,
+  erasedSources: Map<string, { at: string; early: boolean }>
 ): Promise<number | null> {
   const unknown = (why: string) => {
     io.log(`Current standing: NOT ESTABLISHED: ${printable(why)}`);
@@ -1480,13 +1492,14 @@ async function checkCurrentReviewStatus(
   if ("problem" in now) {
     return unknown(`the review log could not be read whole: ${now.problem}`);
   }
-  // The evidence result sealed last for each line, as CounterAudit holds them now.
+  // The evidence result sealed last for each line, every dispute record and every line, as
+  // CounterAudit holds them now.
   if (!ENV.counterauditOrgId || !ENV.counterauditReadKey) {
     return unknown("needs COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY to read the evidence seals");
   }
-  let seals: Awaited<ReturnType<typeof readEvidenceSeals>>;
+  let seals: Awaited<ReturnType<typeof readBureauOrganization>>;
   try {
-    seals = await readEvidenceSeals({
+    seals = await readBureauOrganization({
       apiUrl: ENV.counterauditApiUrl,
       readKey: ENV.counterauditReadKey,
       orgId: ENV.counterauditOrgId,
@@ -1502,6 +1515,29 @@ async function checkCurrentReviewStatus(
   const fail = (what: string) => {
     failed++;
     io.log(`Current standing: FAILED: ${printable(what)}`);
+  };
+  // Why a line that fails nothing still cannot be said to stand. A failure outranks it. A dispute
+  // record erased before the file was signed was judged then, with the store to say whether it went
+  // with its line (storeProblems). One erased early since could be a dispute this file should show.
+  const issuedAt = new Date(String(signed.issued_at)).getTime();
+  const erasedEarly = seals.erasedDisputes.find(
+    e => !erasedByRetention(e) && !(e.erasedAt && e.erasedAt.getTime() <= issuedAt)
+  );
+  let undetermined = erasedEarly
+    ? `CounterAudit erased dispute packet ${erasedEarly.packetId} since the file was signed, before its retention ran out, so a dispute may be missing from this read`
+    : null;
+  const lines = seals.furnished.flatMap(sealed => lineFromSeal(sealed) ?? []);
+  const unreadableLine = seals.unreadableLines[0] ?? seals.furnished.find(sealed => !lineFromSeal(sealed))?.packetId;
+  if (unreadableLine) {
+    undetermined ??= `outcome packet ${unreadableLine} holds no event this can read, so a line acting on this file's could be missing`;
+  }
+  const disputeRows = disputeRowsByLine(seals.disputes, lines);
+  // A line that passes the review log's checks stands if it still shows as the file says.
+  const stillShows = async (line: Record<string, unknown>, ca: Record<string, unknown>) => {
+    const found = await lineNow(line, ca, proofs.get(String(ca.packet_id)), { log: now.log, disputeRows, lines }, io);
+    if (found === null) standing++;
+    else if ("unknown" in found) undetermined ??= found.unknown;
+    else fail(found.problem);
   };
   const stated: Record<string, unknown> | null = isRecord(signed.review_log)
     ? signed.review_log
@@ -1529,12 +1565,24 @@ async function checkCurrentReviewStatus(
   }
   const counted = new Set(now.log.decisions.map(d => d.packetId));
   let standing = 0;
+  let expired = 0;
   for (const entry of entries) {
     const line: Record<string, unknown> = isRecord(entry) ? entry : {};
     if (!line.released) continue;
     const ca: Record<string, unknown> = isRecord(line.counteraudit)
       ? line.counteraudit
       : {};
+    // Gone with its source, it no longer stands, and a new file leaves it off. That was to be
+    // expected from the date the file gave, and not before it.
+    const erased = erasedSources.get(String(ca.packet_id));
+    if (erased) {
+      if (erased.early) {
+        fail(`line ${ca.packet_id}: CounterAudit erased its source at ${erased.at}, before the date the file gives; assemble a new file`);
+      } else {
+        expired++;
+      }
+      continue;
+    }
     const named = Array.isArray(line.review_decisions)
       ? (line.review_decisions as unknown[])
       : [];
@@ -1625,6 +1673,10 @@ async function checkCurrentReviewStatus(
       fail(
         `line ${ca.packet_id} has ${approvals} current approval(s) and needs ${needed}`
       );
+    } else if (line.released === "two_person" && approvals < 2) {
+      fail(
+        `line ${ca.packet_id} says two reviewers released it, and has ${approvals} current approval(s); assemble a new file`
+      );
     } else if (line.data_class === "live") {
       const gate = proofAdmission(
         now.log,
@@ -1636,9 +1688,9 @@ async function checkCurrentReviewStatus(
         fail(
           `line ${ca.packet_id}: its furnisher is on probation, when no approval can waive anything for its lines`
         );
-      } else standing++;
+      } else await stillShows(line, ca);
     } else {
-      standing++;
+      await stillShows(line, ca);
     }
   }
   // What the log was held to: CounterAudit's head, attested over this read's own nonce, so an old
@@ -1654,12 +1706,192 @@ async function checkCurrentReviewStatus(
         }`
       : "Review log: empty, as CounterAudit attests over this read's own nonce."
   );
+  if (failed === 0 && undetermined) return unknown(undetermined);
+  if (failed === 0 && expired > 0) {
+    io.log(`${expired} released line(s) expired with their source, as the file said they would, and do not count as standing.`);
+  }
   if (failed === 0) {
     io.log(
-      `Current standing: ${standing} released line(s) still stand in the review log, read whole to sequence ${now.position?.sequence ?? "none"}`
+      `Current standing: ${standing} released line(s) still stand in the review log, read whole to sequence ${now.position?.sequence ?? "none"}, and show as the dispute records and lines CounterAudit holds say`
     );
   }
   return failed;
+}
+
+// Each dispute record CounterAudit holds that a dispute can count on, by the signed event hash of
+// the line its dispute names, in the order sealed. As storeSealedDisputes has it, the first dispute
+// sealed with an id is the one that id means, and one it would refuse (a line it does not hold, at
+// another version, or another subject) is never stored and claims no id. Whether a record counts
+// is for deriveDisputes.
+export function disputeRowsByLine(disputes: SealedDispute[], lines: Line[]): Map<string, StoredDisputeRecord[]> {
+  const filedOn = new Map<string, string>();
+  const byLine = new Map<string, StoredDisputeRecord[]>();
+  for (const sealed of disputes) {
+    const form = checkDisputeForm(sealed.record);
+    if (!form.ok) continue;
+    const { record } = form;
+    if (record.kind === "dispute") {
+      if (filedOn.has(record.dispute_id)) continue;
+      const line = lines.find(l => l.furnisherId === record.line.furnisher_id && l.eventId === record.line.event_id);
+      if (
+        !line ||
+        line.signedEventHash !== record.line.signed_event_hash ||
+        canonicalize(record.subject_ref) !== canonicalize(line.subjectRef)
+      ) {
+        continue;
+      }
+      filedOn.set(record.dispute_id, record.line.signed_event_hash);
+    }
+    const hash = filedOn.get(record.dispute_id);
+    if (!hash) continue;
+    byLine.set(hash, [
+      ...(byLine.get(hash) ?? []),
+      {
+        id: sealed.sequence,
+        disputeId: record.dispute_id,
+        kind: record.kind,
+        record,
+        packetId: sealed.packetId,
+        sequence: sealed.sequence,
+        sealedAt: sealed.sealedAt,
+        signatureOk: false,
+        subjectControlOk: null,
+      },
+    ]);
+  }
+  return byLine;
+}
+
+// A line as its sealed event says it, read without the Bureau's database. CounterAudit checked the
+// event's signature when it sealed it. Its data class is not in the event, so lineNow gives each the
+// class of the line it is judging: a line that acts on another is taken to share its class, which
+// can only hold a line back, never release one.
+export function lineFromSeal(sealed: SealedLine): (Line & { signedEvent: unknown }) | null {
+  const fields = readEventFields(sealed.event);
+  if (typeof fields === "string") return null;
+  let hash: string;
+  try {
+    hash = signedEventHash(sealed.event);
+  } catch {
+    return null;
+  }
+  return {
+    id: sealed.sequence,
+    furnisherId: fields.furnisherId,
+    eventId: fields.eventId,
+    subjectRef: fields.subjectRef,
+    dataClass: "test",
+    proofOk: true,
+    evidenceStatus: null,
+    evidenceResult: null,
+    evidenceKey: null,
+    signedEventHash: hash,
+    displayState: "unverified",
+    relationType: fields.relationType,
+    relationTargetEventId: fields.relationTargetEventId,
+    caCreatedAt: sealed.sealedAt,
+    signedEvent: sealed.event,
+  };
+}
+
+/**
+ * Whether a file's released line still shows as the file says, from what CounterAudit holds now: the
+ * line's event, the lines that act on it and its dispute records, each checked again and added up by
+ * the rules assembly uses (deriveDisputes, lineStates). So a dispute sealed after the file was signed,
+ * one that has moved on since, or a withdrawal or correction since, fails the line without a new file
+ * (review AB-M01). Null when it still shows so; `unknown` when this read cannot say.
+ *
+ * A did:sigvara subject's record is checked against SigvaraIdentity as it stands now, where assembly
+ * uses what the sync read when it stored the record. They agree on a record sealed after the agent
+ * registered, if the registry still holds it. On any other, a difference may be only that, so this
+ * says it cannot tell rather than fail a line, or a fresh file, for it.
+ */
+export async function lineNow(
+  entry: Record<string, unknown>,
+  ca: Record<string, unknown>,
+  proof: Record<string, unknown> | undefined,
+  read: { log: ReviewLog; disputeRows: Map<string, StoredDisputeRecord[]>; lines: Array<Line & { signedEvent: unknown }> },
+  io: Pick<FileIO, "furnishers" | "now" | "sigvara">
+): Promise<{ problem: string } | { unknown: string } | null> {
+  // A proof that failed has failed the file already.
+  if (!proof) return null;
+  const id = String(ca.packet_id);
+  if (ca.org_id !== ENV.counterauditOrgId) {
+    return { unknown: `line ${id} is sealed in ${ca.org_id}, and only the Bureau's organization was read for what acts on it` };
+  }
+  const dataClass = entry.data_class as Line["dataClass"];
+  const lines = read.lines.map(l => ({ ...l, dataClass }));
+  const target = lines.find(l => l.signedEventHash === ca.signed_event_hash);
+  if (!target) {
+    return { unknown: `CounterAudit's read of the Bureau's organization holds no event for line ${id}` };
+  }
+  const ofFurnisher = lines.filter(l => l.furnisherId === target.furnisherId);
+  const relating: Line[] = ofFurnisher
+    .filter(l => l.eventId !== target.eventId && l.relationTargetEventId === target.eventId)
+    .map(r =>
+      r.relationType !== "disputes"
+        ? r
+        : {
+            ...r,
+            displayState: ofFurnisher.some(
+              w => w.relationType === "withdraws" && w.relationTargetEventId === r.eventId && relationProblem(w, r) === null
+            )
+              ? ("withdrawn" as const)
+              : ("unverified" as const),
+          }
+    );
+  const keyed = {
+    furnisherId: target.furnisherId,
+    subjectRef: target.subjectRef,
+    signedEvent: target.signedEvent,
+    receipt: { outcome_claim: proof.outcome_claim },
+  };
+  const records: CheckedDisputeRecord[] = [];
+  let registryMayDiffer = false;
+  try {
+    for (const row of read.disputeRows.get(target.signedEventHash) ?? []) {
+      const form = checkDisputeForm(row.record);
+      if (!form.ok) continue;
+      const control = signedByWallet(form.record) ? await readController(target.subjectRef, io.sigvara, form.record.signer.address) : null;
+      if (control && (!control.ok || control.registeredAt === undefined || BigInt(Math.floor(new Date(row.sealedAt).getTime() / 1000)) < control.registeredAt)) {
+        registryMayDiffer = true;
+      }
+      const stored = { ...row, controllerAddress: control?.controller ?? null };
+      records.push({ ...stored, check: await checkStoredRecord(stored, keyed, io.furnishers) });
+    }
+  } catch (error) {
+    return { unknown: `the dispute records on line ${id} could not be checked: ${describeError(error)}` };
+  }
+  const dispute = currentDispute(
+    deriveDisputes({
+      line: target,
+      records,
+      relating,
+      reviewsOf: l => reviewsFor(l, read.log),
+      now: io.now(),
+      admissionOf: l => admissionFor(l, read.log, io.furnishers),
+    })
+  );
+  const differs = (problem: string) =>
+    registryMayDiffer ? { unknown: `${problem}, though a did:sigvara record on it may have been stored from an earlier read of SigvaraIdentity` } : { problem };
+  if (dispute?.state === "lapsed") {
+    return differs(
+      `line ${id}: its subject's dispute, sealed at ${dispute.filedAt.toISOString()}, lapsed at ${dispute.respondBy.toISOString()} without an answer, which removes the line`
+    );
+  }
+  const shows = dispute ? fileDispute(dispute) : null;
+  if (canonicalize(shows) !== canonicalize(entry.dispute ?? null)) {
+    return differs(
+      `line ${id}: the dispute records CounterAudit holds say ${shows ? canonicalize(shows) : "no dispute counts"}, and the file says ${entry.dispute ? canonicalize(entry.dispute) : "none"}; assemble a new file`
+    );
+  }
+  const display = displayStateFor({
+    ...lineStates(target, relating, [], dispute?.state ?? null),
+    released: entry.released as Release,
+  });
+  return display === entry.display_state
+    ? null
+    : { problem: `line ${id} now shows as ${display}, and the file says ${entry.display_state}; assemble a new file` };
 }
 
 // Whether a live line's furnisher is admitted now for the organization and key CounterAudit's

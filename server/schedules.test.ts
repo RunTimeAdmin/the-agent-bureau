@@ -1,5 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { jobStatus, RETRY_MS, runEvery } from "./schedules";
+import { runDispute } from "./disputeCommand";
+import { runLines } from "./lineExpiry";
+import { jobStatus, RETRY_MS, runEvery, startSchedules } from "./schedules";
+
+vi.mock("./disputeCommand", () => ({ runDispute: vi.fn(async () => 0) }));
+vi.mock("./lineExpiry", () => ({ runLines: vi.fn(async () => 0) }));
+
+describe("startSchedules", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("syncs and settles disputes hourly, and expires lines daily", async () => {
+    vi.useFakeTimers();
+    vi.mocked(runDispute).mockClear();
+    vi.mocked(runLines).mockClear();
+    const stop = startSchedules();
+    await vi.advanceTimersByTimeAsync(0);
+    const runs = () => vi.mocked(runDispute).mock.calls.map(([argv]) => argv[0]).sort();
+    expect(runs()).toEqual(["settle", "sync"]);
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(runs()).toEqual(["settle", "settle", "sync", "sync"]);
+    expect(runLines).toHaveBeenCalledTimes(1);
+    expect(Object.keys(jobStatus(true).jobs).sort()).toEqual(["dispute settle", "dispute sync", "lines expire"]);
+    stop();
+    expect(jobStatus(false).jobs).toEqual({});
+  });
+});
 
 describe("runEvery", () => {
   let stop: (() => void) | undefined;
