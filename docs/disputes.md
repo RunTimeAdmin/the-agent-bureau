@@ -67,7 +67,7 @@ Every step is in CounterAudit's sealed chain, so the subject's view and an audit
 pnpm dispute sign <record.json> --wallet-key <file> --out <file>     # testing only: a subject's real wallet signs it
 pnpm dispute sign <record.json> --furnisher-key <file> --out <file>  # testing only: a response or a furnisher's appeal
 pnpm dispute submit <signed.json>                                    # seal it and record it
-pnpm dispute sync                                                    # store the records sent to CounterAudit directly, then settle
+pnpm dispute sync                                                    # store the records sent to CounterAudit directly, then settle; the server runs it hourly
 pnpm dispute settle                                                  # close lapsed disputes; the server runs it hourly
 pnpm file subject --subject '{"wallet":"0x..."}' --out <file>
 ```
@@ -92,8 +92,6 @@ Where the sections above are silent, `server/dispute.ts` and `pnpm dispute` deci
 ## Not built yet
 
 - A page where subjects file and sign disputes themselves; today they sign a record with their own tool and send it to CounterAudit or to the operator.
-- Running `pnpm dispute sync` on the server's schedule. Until a sync or a file assembly, a dispute sent to CounterAudit directly is not in the Bureau's store, though its deadline runs from when CounterAudit sealed it.
-- `pnpm file verify --current` does not look at disputes: it can say a file still stands although a dispute was sealed on one of its lines since.
 - Reading the organization from a stored position. Every sync and every file reads all of the organization's packets again, one verify call each, and a read stops at 100,000 packets.
 - Disputes on lines about a registry id, and on Sigvara or Nooscape records, which are contested through their own processes.
 - Counting lapsed disputes against the furnisher (`bureau-spec.md`): they are listed in the queue, not yet scored.

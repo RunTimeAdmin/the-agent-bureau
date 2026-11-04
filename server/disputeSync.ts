@@ -54,7 +54,7 @@ export type DisputeSyncResult = {
 
 // CounterAudit's retention erases a packet once its months are up; a day either way for clocks.
 const DAY_MS = 86_400_000;
-const erasedByRetention = (e: ErasedDispute) =>
+export const erasedByRetention = (e: ErasedDispute) =>
   e.sealedAt !== null &&
   e.erasedAt !== null &&
   e.erasedAt.getTime() >= addMonthsUtc(e.sealedAt, RETENTION_MONTHS).getTime() - DAY_MS;

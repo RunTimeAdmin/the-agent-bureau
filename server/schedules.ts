@@ -3,6 +3,8 @@ import { runLines } from "./lineExpiry";
 
 /** How often the server runs pnpm dispute settle. */
 export const DISPUTE_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
+/** How often the server runs pnpm dispute sync. */
+export const DISPUTE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 /** How often the server runs pnpm lines expire. */
 export const LINE_EXPIRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** A failed run is tried again this soon, rather than a whole interval later. */
@@ -115,15 +117,18 @@ export function jobStatus(expected: boolean, at: number = Date.now()) {
 /**
  * The commands the production server runs itself, since it reaches the
  * database already; run by hand from elsewhere, they need a remote access
- * rule. Hourly, pnpm dispute settle, so a dispute the furnisher lets lapse
- * takes its line down. Daily, pnpm lines expire, so a line goes with its
- * CounterAudit source (docs/agent-file.md).
+ * rule. Hourly, pnpm dispute sync, so a dispute a subject or furnisher sent to
+ * CounterAudit reaches the queue well before its deadline, whose clock runs from
+ * the seal. Hourly too, pnpm dispute settle, so a dispute the furnisher lets
+ * lapse takes its line down, even while CounterAudit cannot be read. Daily, pnpm
+ * lines expire, so a line goes with its CounterAudit source (docs/agent-file.md).
+ * Returns a function that stops them.
  */
-export function startSchedules(): void {
-  runEvery(
-    "dispute settle",
-    () => runDispute(["settle"]),
-    DISPUTE_SETTLE_INTERVAL_MS
-  );
-  runEvery("lines expire", () => runLines(["expire"]), LINE_EXPIRY_INTERVAL_MS);
+export function startSchedules(): () => void {
+  const stops = [
+    runEvery("dispute sync", () => runDispute(["sync"]), DISPUTE_SYNC_INTERVAL_MS),
+    runEvery("dispute settle", () => runDispute(["settle"]), DISPUTE_SETTLE_INTERVAL_MS),
+    runEvery("lines expire", () => runLines(["expire"]), LINE_EXPIRY_INTERVAL_MS),
+  ];
+  return () => stops.forEach(stop => stop());
 }

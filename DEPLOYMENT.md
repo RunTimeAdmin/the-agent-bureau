@@ -66,6 +66,7 @@ Keep real credentials out of the Dockerfile, source files, archive, and frontend
 | `SESSION_SECRET` | The hex of at least 32 random bytes, used to sign operator sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Spaces or a newline around it are ignored; anything else keeps the inbox locked. |
 | `OPERATOR_LOGIN_ADDRESSES` | Optional. The operator's own addresses or networks, comma-separated (`203.0.113.7, 2001:db8:5::/48`). Sign-in from them keeps its per-address limit but is left out of the limit for all addresses, so a flood of guesses from elsewhere cannot lock the operator out. |
 | `COUNTERAUDIT_ORG_ID` | The Bureau's CounterAudit organization. The production server needs it for the daily `pnpm lines expire`; without it `/api/jobs` reports `attention`. |
+| `COUNTERAUDIT_READ_KEY` | A read-role key of that organization. The production server needs it for the hourly `pnpm dispute sync`, which brings disputes sent to CounterAudit directly into the queue; without it `/api/jobs` reports `attention`. |
 
 `pnpm file assemble` and `pnpm file verify --current`, run by the operator, also read `COUNTERAUDIT_READ_KEY`, a read-role key of the Bureau's organization, for the evidence seals (`docs/agent-file.md`). The production server does not need it.
 

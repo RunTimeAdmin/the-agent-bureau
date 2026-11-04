@@ -8,7 +8,7 @@ import { EVIDENCE_STATUSES } from "../drizzle/schema";
 import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
-import { isRecord } from "./outcomeProof";
+import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
 import { call, counterauditBase, readCheckpoint, type Fetch } from "./reviewLogSync";
 
@@ -109,6 +109,9 @@ export type SealedDispute = { packetId: string; sequence: number; sealedAt: Date
 /** A dispute record CounterAudit erased, with when it says the packet was sealed and erased. */
 export type ErasedDispute = { packetId: string; sealedAt: Date | null; erasedAt: Date | null };
 
+/** A furnisher's signed event as CounterAudit sealed it, having checked its signature. */
+export type SealedLine = { packetId: string; sequence: number; sealedAt: Date; event: Record<string, unknown> };
+
 /** The evidence results sealed last, as readBureauOrganization reads them. */
 export async function readEvidenceSeals(options: {
   apiUrl: string;
@@ -147,7 +150,7 @@ export async function readBureauOrganization(options: {
   orgId: string;
   fetch?: Fetch;
 }): Promise<
-  | { seals: Map<string, SealedEvidence>; disputes: SealedDispute[]; erasedDisputes: ErasedDispute[] }
+  | { seals: Map<string, SealedEvidence>; disputes: SealedDispute[]; erasedDisputes: ErasedDispute[]; furnished: SealedLine[] }
   | { problem: string }
 > {
   const fetchImpl = options.fetch ?? fetch;
@@ -295,6 +298,7 @@ export async function readBureauOrganization(options: {
   const seals = new Map<string, SealedEvidence>();
   const disputes: SealedDispute[] = [];
   const erasedDisputes: ErasedDispute[] = [];
+  const furnished: SealedLine[] = [];
   const held: number[] = [];
   let newestErased = -Infinity;
   const dateOf = (value: unknown) => {
@@ -320,6 +324,13 @@ export async function readBureauOrganization(options: {
       if (node.connector === EVIDENCE_CONNECTOR_ID) newestErased = Math.max(newestErased, placed.get(node.id) ?? Infinity);
       continue;
     }
+    if (node.connector === FURNISH_CONNECTOR_ID) {
+      const sealedAt = dateOf(node.createdAt);
+      if (isRecord(node.record) && sealedAt && node.sequence !== null) {
+        furnished.push({ packetId: node.id, sequence: node.sequence, sealedAt, event: node.record });
+      }
+      continue;
+    }
     if (node.connector !== EVIDENCE_CONNECTOR_ID) continue;
     const sequence = node.sequence as number;
     const form = checkEvidenceRecord(node.record);
@@ -336,7 +347,7 @@ export async function readBureauOrganization(options: {
         "CounterAudit erased an evidence seal newer than one it still holds, so the seal held for a line may not be its last",
     };
   }
-  return { seals, disputes: disputes.sort((a, b) => a.sequence - b.sequence), erasedDisputes };
+  return { seals, disputes: disputes.sort((a, b) => a.sequence - b.sequence), erasedDisputes, furnished };
 }
 
 /**
