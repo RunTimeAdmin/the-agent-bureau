@@ -81,7 +81,7 @@ export function chainOf<T extends Listed>(orgId: string, packets: T[]) {
     const packet = placed.get(sequence) ?? {
       packet_id: `${filler.slice(0, 8)}-${filler.slice(8, 12)}-4${filler.slice(13, 16)}-8${filler.slice(17, 20)}-${filler.slice(20, 32)}`,
       org_id: orgId,
-      connector_id: "agent-bureau-outcome-v1",
+      connector_id: "an-ordinary-connector",
       sequence,
       created_at: "2026-11-02T00:00:00.000Z",
     };

@@ -791,6 +791,13 @@ describe("pnpm review head", () => {
     const malformed = fakeIO({}, counterAudit(records()));
     expect(await runReview(["head"], malformed.io)).toBe(2);
     expect(malformed.printed()).toBe('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash".');
+
+    // Without the Bureau's read key it cannot compare, and says so.
+    vi.stubEnv("COUNTERAUDIT_MIN_HEAD", `2:${hashOf(2)}`);
+    vi.stubEnv("COUNTERAUDIT_READ_KEY", "");
+    const keyless = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], keyless.io)).toBe(0);
+    expect(keyless.printed()).toContain("COUNTERAUDIT_MIN_HEAD not compared");
   });
 
   it("does not take a database that is set but not ready for one with no head recorded", async () => {

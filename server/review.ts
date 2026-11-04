@@ -1126,6 +1126,8 @@ async function headCommand(io: ReviewIO): Promise<number> {
         io.log(`At or past COUNTERAUDIT_MIN_HEAD (sequence ${orgPinned.sequence}). pnpm file verify --current checks the packet there too.`);
       }
     }
+  } else if (orgPinned) {
+    io.log("COUNTERAUDIT_MIN_HEAD not compared: this needs COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY to read the Bureau organization's head.");
   }
   return failed ? 1 : 0;
 }

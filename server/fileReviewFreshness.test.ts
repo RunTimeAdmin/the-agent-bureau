@@ -239,7 +239,7 @@ function counterAudit(
     evidence?: unknown[];
     disputes?: { record: unknown; sealedAt: Date }[];
     lines?: { event: unknown; sealedAt: Date }[];
-    erasedDisputes?: { sealedAt: Date }[];
+    erasedDisputes?: { sealedAt: Date; erasedAt?: Date }[];
     noLineEvent?: boolean;
   } = {}
 ) {
@@ -295,7 +295,7 @@ function counterAudit(
       sequence: 300 + n,
       connector_id: "agent-bureau-dispute-v1",
       created_at: d.sealedAt.toISOString(),
-      expired_at: d.sealedAt.toISOString(),
+      expired_at: (d.erasedAt ?? d.sealedAt).toISOString(),
     })),
   ]);
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -1060,13 +1060,114 @@ describe("pnpm file verify and the review log", () => {
 
     it("exits 3, not 0, when CounterAudit's read cannot say what has happened to a line", async () => {
       const { text } = await signedFile();
-      const erased = await verifyNow(text, { erasedDisputes: [{ sealedAt: filedAt }] }, later(DAY));
+      const erased = await verifyNow(text, { erasedDisputes: [{ sealedAt: filedAt, erasedAt: later(DAY)() }] }, later(2 * DAY));
       expect(erased.code).toBe(3);
       expect(erased.printed).toContain("before its retention ran out, so a dispute may be missing from this read");
 
       const noEvent = await verifyNow(text, { noLineEvent: true }, later(DAY));
       expect(noEvent.code).toBe(3);
-      expect(noEvent.printed).toContain("holds no event for line");
+      expect(noEvent.printed).toContain("holds no event this can read");
+
+      const unreadable = await verifyNow(text, { lines: [{ event: { not: "an event" }, sealedAt: filedAt }] }, later(DAY));
+      expect(unreadable.code).toBe(3);
+      expect(unreadable.printed).toContain("holds no event this can read");
+    });
+
+    it("does not let a record the store refuses claim a dispute_id, or count alone", async () => {
+      const wrongSubject = await signWithWallet(
+        {
+          schema: DISPUTE_SCHEMA,
+          kind: "dispute",
+          dispute_id: DISPUTE_ID,
+          line: { furnisher_id: LINE.furnisherId, event_id: LINE.eventId, signed_event_hash: LINE.signedEventHash },
+          subject_ref: { wallet: "0x0000000000000000000000000000000000000001" },
+          signer: { type: "eip191", address: WALLET },
+          reason: "Not about this subject.",
+          filed_at: filedAt.toISOString(),
+        },
+        SUBJECT_KEY
+      );
+      const { text } = await signedFile();
+      expect((await verifyNow(text, { disputes: [{ record: wrongSubject, sealedAt: filedAt }] }, later(DAY))).code).toBe(0);
+
+      const both = [
+        { record: wrongSubject, sealedAt: filedAt },
+        { record: await filing(), sealedAt: new Date(filedAt.getTime() + HOUR) },
+      ];
+      expect((await verifyNow(text, { disputes: both }, later(DAY))).code).toBe(1);
+      const { io, files } = fileIO(counterAudit(approved(), { disputes: both }));
+      io.now = later(DAY);
+      expect(await assemble(io, "fresh.json")).toBe(0);
+      expect(JSON.parse(files["fresh.json"]).furnished_outcomes[0].dispute.state).toBe("open");
+      // A fresh file agrees with the read that judges it.
+      expect((await verifyNow(files["fresh.json"], { disputes: both }, later(2 * DAY))).code).toBe(0);
+    });
+
+    it("takes a furnisher's own dispute of a line, until the furnisher withdraws it", async () => {
+      const { text } = await signedFile();
+      const signature = "ed25519:checked-by-counteraudit-when-sealed";
+      const disputing = { ...unsignedEvent, event_id: "event-2", relation: { type: "disputes", target_event_id: LINE.eventId }, signature };
+      const withdrawn = { ...unsignedEvent, event_id: "event-3", relation: { type: "withdraws", target_event_id: "event-2" }, signature };
+      const open = await verifyNow(text, { lines: [{ event: disputing, sealedAt: filedAt }] }, later(DAY));
+      expect(open.code).toBe(1);
+      expect(open.printed).toContain("now shows as disputed, and the file says released");
+      const closed = await verifyNow(
+        text,
+        { lines: [{ event: disputing, sealedAt: filedAt }, { event: withdrawn, sealedAt: filedAt }] },
+        later(DAY)
+      );
+      expect(closed.code).toBe(0);
+    });
+
+    it("judges an erased dispute record by when it went, and its retention", async () => {
+      const { text } = await signedFile();
+      const old = new Date("2024-01-01T00:00:00.000Z");
+      const run = (erased: { sealedAt: Date; erasedAt: Date }) => verifyNow(text, { erasedDisputes: [erased] }, later(2 * DAY));
+      // By the retention policy: a day of clock aside, after its months were up.
+      expect((await run({ sealedAt: old, erasedAt: later(DAY)() })).code).toBe(0);
+      // Early, but before the file was signed: assembly judged it then.
+      expect((await run({ sealedAt: filedAt, erasedAt: new Date(NOW.getTime() - HOUR) })).code).toBe(0);
+      // Early, and since: it could be a dispute this file should show.
+      const since = await run({ sealedAt: filedAt, erasedAt: later(DAY)() });
+      expect(since.code).toBe(3);
+      expect(since.printed).toContain("since the file was signed, before its retention ran out");
+    });
+
+    it("does not count a line gone with its source as standing, and fails one erased early", async () => {
+      const { text } = await signedFile();
+      source.answer = () => gone(tombstoneFor({ expired_at: "2028-11-01T00:00:00.000Z" }));
+      const onDate = await verifyNow(text, {}, later(DAY));
+      expect(onDate.code).toBe(0);
+      expect(onDate.printed).toContain("1 released line(s) expired with their source, as the file said they would");
+      expect(onDate.printed).toContain("Current standing: 0 released line(s) still stand");
+
+      source.answer = () => gone();
+      const early = await verifyNow(text, {}, later(DAY));
+      expect(early.code).toBe(1);
+      expect(early.printed).toContain(`erased its source at ${ERASED_AT}, before the date the file gives`);
+    });
+
+    it("fails a line that says two reviewers released it, when only one approval still counts", async () => {
+      const { text } = await signedFile();
+      const another = signReviewDecision(
+        {
+          schema: REVIEW_SCHEMA,
+          reviewer_id: "rev_bob",
+          furnisher_id: LINE.furnisherId,
+          event_id: LINE.eventId,
+          signed_event_hash: LINE.signedEventHash,
+          data_class: "test",
+          evidence_digest: evidenceDigest({ status: "verified", reasons: ["checked again"] }),
+          decision: "approve",
+          decided_at: "2026-11-01T11:00:00.000Z",
+        },
+        people.bob.privateKeyPem
+      );
+      const { io, out, files } = fileIO(counterAudit([...approved(), another]));
+      io.now = later(DAY);
+      files["one.json"] = text;
+      expect(await runFile(["verify", "one.json", "--current"], io)).toBe(1);
+      expect(out.join("\n")).toContain("says two reviewers released it, and has 1 current approval(s)");
     });
   });
 
@@ -1135,10 +1236,37 @@ describe("pnpm file verify and the review log", () => {
       expect(at.code).toBe(0);
       expect(at.printed).toContain("The Bureau's organization held to COUNTERAUDIT_MIN_HEAD at sequence 100.");
 
+      // A dispute sealed at sequence 200, seen while the chain holds it, and gone once it is restored.
       process.env.COUNTERAUDIT_MIN_HEAD = `200:${orgHash(200)}`;
+      const filedAt = new Date(NOW.getTime() + 3_600_000);
+      const record = await signWithWallet(
+        {
+          schema: DISPUTE_SCHEMA,
+          kind: "dispute",
+          dispute_id: "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+          line: { furnisher_id: LINE.furnisherId, event_id: LINE.eventId, signed_event_hash: LINE.signedEventHash },
+          subject_ref: LINE.subjectRef,
+          signer: { type: "eip191", address: WALLET },
+          reason: "I never received this.",
+          filed_at: filedAt.toISOString(),
+        },
+        SUBJECT_KEY
+      );
+      const whole = fileIO(counterAudit(records, { disputes: [{ record, sealedAt: filedAt }] }));
+      whole.io.now = () => new Date(NOW.getTime() + 86_400_000);
+      whole.files["one.json"] = text;
+      expect(await runFile(["verify", "one.json", "--current"], whole.io)).toBe(1);
       const behind = await run();
       expect(behind.code).toBe(3);
       expect(behind.printed).toContain("below sequence 200, which it has already reached: its head went back");
+
+      // An erased packet at the pin still has its place in the chain, from the listing.
+      process.env.COUNTERAUDIT_MIN_HEAD = `300:${orgHash(300)}`;
+      const erasedAt = fileIO(
+        counterAudit(records, { erasedDisputes: [{ sealedAt: new Date("2024-01-01T00:00:00.000Z"), erasedAt: new Date(NOW.getTime() + 3_600_000) }] })
+      );
+      erasedAt.files["one.json"] = text;
+      expect(await runFile(["verify", "one.json", "--current"], erasedAt.io)).toBe(0);
 
       process.env.COUNTERAUDIT_MIN_HEAD = `50:${orgHash(51)}`;
       const another = await run();
