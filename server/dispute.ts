@@ -604,12 +604,18 @@ export type SubjectControl = Check & {
  */
 export async function readController(
   subjectRef: unknown,
-  sigvara: SigvaraClient
+  sigvara: SigvaraClient,
+  signerAddress?: string
 ): Promise<SubjectControl | null> {
   const ref = asRecord(subjectRef);
   const did = ref ? parseSigvaraDid(ref) : null;
   if (!did) return null;
   const none = (problem: string) => ({ ok: false, problem, controller: null });
+  // Only the did's own address can control it (below), so Sigvara need not be read for a record
+  // another wallet signed.
+  if (signerAddress !== undefined && signerAddress.toLowerCase() !== did.address) {
+    return none(`the record is signed by ${signerAddress}, not by the did's own address`);
+  }
   if (did.chainId !== SIGVARA_ARC_TESTNET.chainId) {
     return none(
       `the did names chain ${did.chainId}; the Bureau reads Sigvara on chain ${SIGVARA_ARC_TESTNET.chainId} only`
@@ -689,7 +695,7 @@ export async function checkSubjectControl(
   signerAddress: string,
   sigvara: SigvaraClient
 ): Promise<SubjectControl> {
-  const read = await readController(subjectRef, sigvara);
+  const read = await readController(subjectRef, sigvara, signerAddress);
   if (read && !read.ok) return read;
   const controller = read?.controller ?? null;
   const problem = subjectControlProblem(subjectRef, signerAddress, controller);
@@ -918,8 +924,35 @@ export type DisputeInput = {
 export function deriveDisputes(input: DisputeInput): Dispute[] {
   const { line, relating, now } = input;
   const counted = countedRecords(input.records);
-  const ids = [...new Set(counted.map(c => c.row.disputeId))];
+  // Each dispute in the order CounterAudit sealed its filing, as the gates below judge them.
+  const filedAt = (id: string) =>
+    counted.find(c => c.row.disputeId === id && c.record.kind === "dispute")?.at ?? Infinity;
+  const ids = [...new Set(counted.map(c => c.row.disputeId))].sort((a, b) => filedAt(a) - filedAt(b));
   const disputes: Dispute[] = [];
+  // When each dispute counted so far stopped being open, and whether it lapsed (removing the line).
+  const closings: { filedAt: number; closedAt: number; lapsed: boolean }[] = [];
+  // Whether the line could be disputed when CounterAudit sealed a dispute at `at`: a reviewer had
+  // approved this version of it by a decision sealed before then, and no line of its furnisher
+  // sealed before then withdrew, corrected or replaced it. Only what was sealed before `at`
+  // decides, so nothing that changes later (the line's evidence checked again, a reviewer
+  // suspended, the furnisher's admission) can take back a dispute that once counted (review AB-02).
+  const onFileAt = (at: number) =>
+    input
+      .reviewsOf(line)
+      .some(
+        r =>
+          (r.decision === "approve" || r.decision === "approve_with_waiver") &&
+          r.signedEventHash === line.signedEventHash &&
+          (r.sealedAt === undefined || r.sealedAt.getTime() < at)
+      ) &&
+    !relating.some(
+      r =>
+        r.caCreatedAt !== undefined &&
+        time(r.caCreatedAt) < at &&
+        r.relationType !== null &&
+        ["withdraws", "corrects", "supersedes"].includes(r.relationType) &&
+        relationProblem(r, line) === null
+    );
   for (const id of ids) {
     const records = counted.filter(c => c.row.disputeId === id);
     const filing = records.find(c => c.record.kind === "dispute");
@@ -929,6 +962,16 @@ export function deriveDisputes(input: DisputeInput): Dispute[] {
       about.furnisher_id !== line.furnisherId ||
       about.event_id !== line.eventId ||
       about.signed_event_hash !== line.signedEventHash
+    ) {
+      continue;
+    }
+    // A dispute counts only where pnpm dispute submit would have sealed it, judged when
+    // CounterAudit sealed it: one sent to CounterAudit directly was not checked first (review
+    // AB-02). The line could be disputed then, and no other dispute on it was open, or had lapsed
+    // and removed it.
+    if (
+      !onFileAt(filing.at) ||
+      closings.some(c => c.filedAt <= filing.at && (c.lapsed ? true : filing.at < c.closedAt))
     ) {
       continue;
     }
@@ -953,6 +996,19 @@ export function deriveDisputes(input: DisputeInput): Dispute[] {
     else if (has("corrects", "supersedes")) state = "corrected";
     else if (confirm) state = "confirmed";
     else state = now.getTime() >= deadline ? "lapsed" : "open";
+
+    // When it stopped being open: its answer, or its deadline, whichever came first.
+    const answeredAt = Math.min(
+      confirm ? confirm.at : Infinity,
+      ...acting
+        .filter(r => r.relationType !== null && ["withdraws", "corrects", "supersedes"].includes(r.relationType))
+        .map(r => time(r.caCreatedAt as Date | string))
+    );
+    closings.push({
+      filedAt: filing.at,
+      closedAt: Math.min(answeredAt, deadline),
+      lapsed: state === "lapsed",
+    });
 
     const confirmed = state === "confirmed" ? confirm : undefined;
     const statement = confirmed

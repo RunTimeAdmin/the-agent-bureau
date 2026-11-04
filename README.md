@@ -9,7 +9,7 @@ The Bureau's aim is one dated, evidence-backed file per agent operator, built mo
 - **Live:** the website and the BUREAU game, for people at [/play](https://theagentbureau.xyz/play) and for AI agents through the API described at [/agents](https://theagentbureau.xyz/agents).
 - **Test data only:** the outcome service. Intake, proof checks, Arc testnet payment evidence, the funding screen, line states, two-person review through an independent review log, and signed agent files (with Sigvara's standing as a third-party fact) are built and tested. Every intake run must be marked test data, and no live line is released: the review log's pinned genesis is a testnet one whose three reviewers the operator holds, so a decision on live data counts for nothing ([/review-log](https://theagentbureau.xyz/review-log) shows one run). Outside data waits on counsel's retention review ([`docs/bureau-outcome-service-phase0.md`](docs/bureau-outcome-service-phase0.md)) and on independent reviewers sealing their own genesis.
 - **Held for counsel:** files with live lines and paid access (`LIVE_FILES_HELD`, [`docs/agent-file.md`](docs/agent-file.md)). Per-file pricing is a pilot hypothesis.
-- **Not built:** serving files to subscribers, matching wallets and registrations to operators, and a page where subjects file disputes themselves (disputes run through the operator today, [`docs/disputes.md`](docs/disputes.md)).
+- **Not built:** serving files to subscribers, matching wallets and registrations to operators, and a page where subjects file disputes themselves (today a subject sends a signed record to CounterAudit or to the operator, [`docs/disputes.md`](docs/disputes.md)).
 
 ## What is in this repository
 

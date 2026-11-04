@@ -224,17 +224,21 @@ async function derive(
     relating?: Line[];
     reviews?: Map<string, Review[]>;
     line?: Line;
+    /** Leave out the approval that released each line before the dispute. */
+    unreleased?: boolean;
   } = {}
 ) {
   const line = await checkLineDisputes(
     { ...(options.line ?? LINE), disputeRecords: records },
     {}
   );
+  // Each line was released, as a disputed line must have been, by an approval sealed before it.
+  const released = (l: Line) => (options.unreleased ? [] : [review(l, "approve", at(-1))]);
   return deriveDisputes({
     line,
     records: line.checkedDisputes,
     relating: options.relating ?? [],
-    reviewsOf: l => options.reviews?.get(l.eventId) ?? [],
+    reviewsOf: l => [...released(l), ...(options.reviews?.get(l.eventId) ?? [])],
     now,
   });
 }
@@ -368,11 +372,13 @@ describe("control of the subject", () => {
       controller: SUBJECT,
     });
     expect(chain.identity).toHaveBeenCalledWith(expect.any(String), 1234n);
+    // Only the did's own address can control it, so another wallet's record needs no read.
     expect(await checkSubjectControl(did, OTHER, chain)).toEqual({
       ok: false,
-      problem: `signed by ${OTHER}, not the agent address SigvaraIdentity holds for the did:sigvara (${SUBJECT})`,
-      controller: SUBJECT,
+      problem: `the record is signed by ${OTHER}, not by the did's own address`,
+      controller: null,
     });
+    expect(chain.identity).toHaveBeenCalledTimes(1);
     expect(
       await checkSubjectControl(did, SUBJECT, sigvara(SUBJECT, 0n))
     ).toMatchObject({
@@ -380,7 +386,7 @@ describe("control of the subject", () => {
       problem: "the agent is not registered in SigvaraIdentity at block 1234",
     });
     // A genuine SigvaraIdentity never answers with another address.
-    expect(await checkSubjectControl(did, OTHER, sigvara(OTHER))).toEqual({
+    expect(await checkSubjectControl(did, SUBJECT, sigvara(OTHER))).toEqual({
       ok: false,
       problem: `SigvaraIdentity holds agent address ${OTHER} for the did, not the did's own address`,
       controller: null,
@@ -610,6 +616,53 @@ describe("what a dispute's records add up to", () => {
         line,
       })
     ).toEqual([]);
+  });
+});
+
+describe("a dispute sealed without the operator's checks (review AB-02)", () => {
+  const ID2 = "7e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b";
+  const ids = async (records: StoredDisputeRecord[], now: Date, options: Parameters<typeof derive>[2] = {}) =>
+    (await derive(records, now, options)).map(d => `${d.disputeId === ID ? "first" : "second"}:${d.state}`);
+
+  it("counts only on a line that was on a file when CounterAudit sealed it", async () => {
+    const records = [stored(await filing(), T0)];
+    expect(await ids(records, at(1))).toEqual(["first:open"]);
+    // Never released, or released only after the dispute was sealed.
+    expect(await ids(records, at(1), { unreleased: true })).toEqual([]);
+    const later = new Map([[LINE.eventId, [review(LINE, "approve", at(0, 1))]]]);
+    expect(await ids(records, at(1), { unreleased: true, reviews: later })).toEqual([]);
+    // Withdrawn by its furnisher before the dispute was sealed.
+    expect(await ids(records, at(1), { relating: [relatingLine("withdraws", at(-1))] })).toEqual([]);
+  });
+
+  it("counts a second dispute only once the first is no longer open, and none after a lapse", async () => {
+    const first = stored(await filing(), T0);
+    // Sealed while the first was open: it does not count, and cannot lapse the line in its place.
+    const during = stored(await filing({ dispute_id: ID2 }), at(2));
+    expect(await ids([first, during], at(5))).toEqual(["first:open"]);
+    const confirmed = stored(await response(), at(3));
+    expect(await ids([first, during, confirmed], at(20))).toEqual(["first:confirmed"]);
+    // After the furnisher confirmed the first, the subject may dispute again.
+    const after = stored(await filing({ dispute_id: ID2 }), at(5));
+    expect(await ids([first, confirmed, after], at(6))).toEqual(["first:confirmed", "second:open"]);
+    // After the first lapsed the line is removed, and nothing more counts on it.
+    const lapsedLater = stored(await filing({ dispute_id: ID2 }), at(16));
+    expect(await ids([first, lapsedLater], at(17))).toEqual(["first:lapsed"]);
+  });
+
+  it("keeps counting a dispute that lapsed when the line's evidence is checked again, or its approver suspended, later", async () => {
+    const records = [stored(await filing(), T0)];
+    // Approved over the evidence result of the time; the line's result has changed since.
+    const approvedThen = new Map([[LINE.eventId, [review(LINE, "approve", at(-1))]]]);
+    const checkedAgain: Line = { ...LINE, evidenceResult: { ...EVIDENCE, reasons: ["checked again"] } };
+    expect(await ids(records, at(17), { unreleased: true, reviews: approvedThen, line: checkedAgain })).toEqual([
+      "first:lapsed",
+    ]);
+    const suspended = new Map([[LINE.eventId, [{ ...review(LINE, "approve", at(-1)), suspended: true }]]]);
+    expect(await ids(records, at(17), { unreleased: true, reviews: suspended })).toEqual(["first:lapsed"]);
+    // A rejection is no approval.
+    const rejected = new Map([[LINE.eventId, [review(LINE, "reject", at(-1))]]]);
+    expect(await ids(records, at(17), { unreleased: true, reviews: rejected })).toEqual([]);
   });
 });
 

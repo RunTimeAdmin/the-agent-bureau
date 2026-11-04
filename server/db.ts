@@ -823,6 +823,29 @@ export async function eraseDisputeRecordContent(
   return result.affectedRows;
 }
 
+// Every stored dispute record, with the line it is stored on, so a sync can hold each one to the
+// record CounterAudit sealed and store each sealed record once.
+export async function listStoredDisputes() {
+  const db = await requireDb();
+  return db
+    .select({
+      packetId: disputeRecords.packetId,
+      disputeId: disputeRecords.disputeId,
+      kind: disputeRecords.kind,
+      outcomeEventId: disputeRecords.outcomeEventId,
+      record: disputeRecords.record,
+      sequence: disputeRecords.sequence,
+      sealedAt: disputeRecords.sealedAt,
+      lineFurnisherId: outcomeEvents.furnisherId,
+      lineEventId: outcomeEvents.eventId,
+      lineSignedEventHash: outcomeEvents.signedEventHash,
+      lineExpiredAt: outcomeEvents.expiredAt,
+    })
+    .from(disputeRecords)
+    .leftJoin(outcomeEvents, eq(outcomeEvents.id, disputeRecords.outcomeEventId))
+    .orderBy(asc(disputeRecords.id));
+}
+
 // Stores a sealed dispute record. Returns false when its packet is stored already.
 export async function insertDisputeRecord(
   row: InsertDisputeRecord

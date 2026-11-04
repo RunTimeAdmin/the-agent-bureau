@@ -268,7 +268,7 @@ async function assemble(rows: StoredLine[], now: Date) {
 describe("a subject dispute on an agent's file", () => {
   it("says on every file how a subject disputes a line", () => {
     expect(NOT_ON_FILE).toContain(
-      "Inquiries are not built yet. A subject disputes a line through the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built."
+      "Inquiries are not built yet. A subject disputes a line by sending a signed record to CounterAudit or to the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built."
     );
     expect(NOT_ON_FILE.join(" ")).not.toContain("Disputes and statements");
   });

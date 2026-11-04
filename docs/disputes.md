@@ -19,7 +19,29 @@ A wallet signature proves control of the wallet the line names. A line about a `
 
 ## Sealing and checking
 
-The operator seals each record in the Bureau's CounterAudit organization through the connector `agent-bureau-dispute-v1`, which checks the record's form and seals it whole, as the review connector does. The Bureau checks the signatures itself (`server/dispute.ts`): the subject's against the wallet the line names, the furnisher's against the key that signed the disputed line or a key `server/furnishers.ts` lists for that furnisher. A record whose signature does not check is sealed and then counts for nothing. Dispute records are never public: they hold the subject's reasons. They take the organization's 24-month retention, like the lines.
+Each record is sealed in the Bureau's CounterAudit organization through the connector `agent-bureau-dispute-v1`, which checks the record's form and seals it whole, as the review connector does. The operator seals the records sent to it (`pnpm dispute submit`). The subject or the furnisher can also send a record to CounterAudit themselves, so the operator cannot keep one out of the log (review AB-02):
+
+```http
+POST /v1/public/disputes/<org_id>
+Content-Type: application/json
+
+{"record": { ...the signed record... }}
+```
+
+It needs no API key, for an organization CounterAudit lists in `CA_PUBLIC_DISPUTE_ORGS`. CounterAudit seals the record only if it passes its form check and these, which keep anyone but a line's subject and furnisher from writing to the chain:
+
+- A `dispute` names a line sealed in the organization, at that `signed_event_hash`, with the line's `subject_ref` exactly. A line its furnisher sealed in its own organization (`docs/cross-org-intake.md`) is not covered: disputes on it go through the operator.
+- Any later record names a dispute sealed there. A dispute with a `dispute_id` sealed before is refused (409), so its sender can pick another.
+- A subject's record is signed by the line's subject: the wallet the line names, or a `did:sigvara`'s own address. Other subjects cannot dispute yet.
+- A furnisher's record names the dispute's furnisher, and is signed with a key registered for it among the organization's outcome signers (`/v1/admin/outcome-signers`) that is still active. A furnisher whose key is only in `server/furnishers.ts` sends its records through the operator.
+
+The sender gets the packet's signed receipt. CounterAudit seals at most 20 records sent this way from each party on a line, and turns an address away after 10 refused requests in an hour. It does not count these records against the organization's plan, so an operator cannot shut them out by letting the plan run out. Whether a record comes in its turn, and for a `did:sigvara` whether SigvaraIdentity holds that address, is the Bureau's to judge, as for a record the operator seals.
+
+The Bureau reads these records back from its organization, through CounterAudit's verify route, to the organization's attested head (as it reads the evidence seals, `docs/agent-file.md`, "Evidence seals"). `pnpm dispute sync` stores each one it does not hold, and `pnpm file assemble` does the same before it reads any line, so a dispute counts on the next file whether or not anyone ran sync. A record stored this way has no receipt: CounterAudit gave the receipt to its sender.
+
+Both also hold the store to what was sealed. Each stored record must be the record sealed in its packet, at that packet's sequence and seal time, and stored on the line it names. Each dispute packet CounterAudit erased must have gone with its line or by the retention policy. Otherwise sync settles nothing and no file is signed, since a changed row, or a dispute erased early, could leave a dispute off a file.
+
+The Bureau checks the signatures itself (`server/dispute.ts`): the subject's against the wallet the line names, the furnisher's against the key that signed the disputed line or a key `server/furnishers.ts` lists for that furnisher. A record whose signature does not check is sealed and then counts for nothing. Dispute records are never public: they hold the subject's reasons. They take the organization's 24-month retention, like the lines.
 
 ## What happens
 
@@ -45,11 +67,12 @@ Every step is in CounterAudit's sealed chain, so the subject's view and an audit
 pnpm dispute sign <record.json> --wallet-key <file> --out <file>     # testing only: a subject's real wallet signs it
 pnpm dispute sign <record.json> --furnisher-key <file> --out <file>  # testing only: a response or a furnisher's appeal
 pnpm dispute submit <signed.json>                                    # seal it and record it
+pnpm dispute sync                                                    # store the records sent to CounterAudit directly, then settle
 pnpm dispute settle                                                  # close lapsed disputes; the server runs it hourly
 pnpm file subject --subject '{"wallet":"0x..."}' --out <file>
 ```
 
-`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `settle` seals nothing and needs only `DATABASE_URL`. The production server runs it at start and every hour after (`server/schedules.ts`), so nobody has to; running it by hand as well does no harm. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
+`pnpm dispute submit` needs the same settings as the intake (`COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_INGEST_KEY`, `DATABASE_URL`); `sync` needs `COUNTERAUDIT_ORG_ID`, `COUNTERAUDIT_READ_KEY` and `DATABASE_URL`; `settle` seals nothing and needs only `DATABASE_URL`. Run `sync` before `pnpm review queue` so the queue lists the disputes sent to CounterAudit directly. The production server runs it at start and every hour after (`server/schedules.ts`), so nobody has to; running it by hand as well does no harm. `pnpm file subject` needs what `pnpm file assemble` does, without a file key. The shared vectors for the connector's form are `server/fixtures/dispute-vectors/dispute-records-v1.json` (`pnpm dispute:vectors` rebuilds them).
 
 ## Choices in the code
 
@@ -62,11 +85,15 @@ Where the sections above are silent, `server/dispute.ts` and `pnpm dispute` deci
 - **Checking again.** Every settle, file, `pnpm review queue` and subject view checks each stored record again from the record itself: its form and signature, the subject's against the line's subject. The one stored value those checks rely on is the agent address read from SigvaraIdentity for a `did:sigvara`, and it counts only if it is the DID's own address: SigvaraIdentity forms the DID from the agent address and never changes it, so a genuine read always is, and an address edited into the row counts for nothing. What the checks found at submission is kept beside each record and never decides anything, so a row whose stored result was edited counts for nothing, as an edited review decision does (`docs/two-person-review.md`).
 - **Retention.** When `pnpm lines expire` erases a line, it erases the same from the line's dispute records: the record, CounterAudit's receipt, the agent address and the text of why a check failed, which names wallets. Each row keeps its ids, kind, packet, sequence, seal time and what its checks found at submission. An erased record counts for nothing.
 - **Appeals.** The subject appeals a confirmed dispute, after the confirmation. The furnisher appeals a lapsed one, after the deadline, naming a stored line of its own that `corrects` the removed one. One appeal counts per dispute, whichever party makes it. A review decision counts for an appeal when the review log sealed it after CounterAudit sealed the appeal, comparing the two organizations' seal times. Each reviewer's latest such decision counts, and a current rejection decides the appeal even beside approvals.
+- **Records sent to CounterAudit directly.** Nobody ran submit's checks before sealing them, so each counts only where submit would have sealed it, judged at its seal time. A dispute counts on a line a reviewer had approved, at that version, by a decision sealed before it, and that no line sealed before it withdrew, corrected or replaced, while no other dispute on the line was open and none had lapsed. Only what was sealed before the dispute decides, so nothing later (the line's evidence checked again, a reviewer suspended, the furnisher's admission) can take back a dispute that once counted. That makes it a looser test than submit's, which wants the line released. Sync stores nothing, and lists as counting for nothing, a record that fails the connector's form, reuses a `dispute_id`, names another version of the line than the Bureau holds or a line that expired, or names the subject otherwise. It waits, and the next sync tries again, for a record about a line or a dispute the Bureau does not hold yet. A record whose signature or subject control fails is stored and counts for nothing, as with submit. Statements, answers and appeals count in their turn by seal time, as for every record (above).
 - **What submit refuses.** It sends nothing, and exits 2, for a record that fails the connector's form, names a line or dispute the Bureau does not hold or a dispute that counted for nothing, reuses a `dispute_id`, names the subject otherwise, disputes a line not on a file or one with an open dispute, answers a dispute that is not open, adds a statement before the confirmation or a second one, or appeals out of turn or a second time. A record whose signature or subject control fails is sealed and stored, counts for nothing, and `submit` exits 1. When Sigvara cannot be read, nothing is sealed.
 - **The subject's view.** A line was ever released when reviewers released it at some point in the review log's order, judged against its current evidence result, or when the subject disputed it. The furnisher is named by its `furnisher_id` and category: the Bureau holds no other name for it. The view is not signed.
 
 ## Not built yet
 
-- A page where subjects file and sign disputes themselves; today they sign a file and send it to the operator.
+- A page where subjects file and sign disputes themselves; today they sign a record with their own tool and send it to CounterAudit or to the operator.
+- Running `pnpm dispute sync` on the server's schedule. Until a sync or a file assembly, a dispute sent to CounterAudit directly is not in the Bureau's store, though its deadline runs from when CounterAudit sealed it.
+- `pnpm file verify --current` does not look at disputes: it can say a file still stands although a dispute was sealed on one of its lines since.
+- Reading the organization from a stored position. Every sync and every file reads all of the organization's packets again, one verify call each, and a read stops at 100,000 packets.
 - Disputes on lines about a registry id, and on Sigvara or Nooscape records, which are contested through their own processes.
 - Counting lapsed disputes against the furnisher (`bureau-spec.md`): they are listed in the queue, not yet scored.

@@ -5,6 +5,7 @@
 // Bureau's rows could put back an older result reviewers once approved. CounterAudit's chain is
 // append-only: a file counts approvals only against the result sealed last for its line.
 import { EVIDENCE_STATUSES } from "../drizzle/schema";
+import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
 import { isRecord } from "./outcomeProof";
@@ -102,9 +103,28 @@ export function evidenceRecordFor(
 /** An evidence record as CounterAudit sealed it. */
 export type SealedEvidence = { packetId: string; sequence: number; record: EvidenceRecord };
 
+/** A dispute record as CounterAudit sealed it, by whoever sent it (docs/disputes.md). Not yet checked. */
+export type SealedDispute = { packetId: string; sequence: number; sealedAt: Date; record: unknown };
+
+/** A dispute record CounterAudit erased, with when it says the packet was sealed and erased. */
+export type ErasedDispute = { packetId: string; sealedAt: Date | null; erasedAt: Date | null };
+
+/** The evidence results sealed last, as readBureauOrganization reads them. */
+export async function readEvidenceSeals(options: {
+  apiUrl: string;
+  readKey: string;
+  orgId: string;
+  fetch?: Fetch;
+}): Promise<{ seals: Map<string, SealedEvidence> } | { problem: string }> {
+  const read = await readBureauOrganization(options);
+  return "problem" in read ? read : { seals: read.seals };
+}
+
 /**
- * The evidence result sealed last for each version of each line (by signed_event_hash), read
- * from the Bureau's organization with its read key.
+ * The evidence result sealed last for each version of each line (by signed_event_hash), and every
+ * dispute record sealed there in sequence order, read from the Bureau's organization with its read
+ * key. A dispute record its operator did not seal, because the subject or furnisher sent it to
+ * CounterAudit themselves (review AB-02), is read the same way as one it did.
  *
  * The read is held to CounterAudit's signed head for the organization, attested over a nonce made
  * for this read and read first (readCheckpoint), as the review log's is: a listing that leaves out
@@ -121,12 +141,15 @@ export type SealedEvidence = { packetId: string; sequence: number; record: Evide
  * retention policy erases the oldest first: otherwise an older seal could stand in for a newer one
  * that was erased, so nothing is read. Anything else that cannot be read stops the reading too.
  */
-export async function readEvidenceSeals(options: {
+export async function readBureauOrganization(options: {
   apiUrl: string;
   readKey: string;
   orgId: string;
   fetch?: Fetch;
-}): Promise<{ seals: Map<string, SealedEvidence> } | { problem: string }> {
+}): Promise<
+  | { seals: Map<string, SealedEvidence>; disputes: SealedDispute[]; erasedDisputes: ErasedDispute[] }
+  | { problem: string }
+> {
   const fetchImpl = options.fetch ?? fetch;
   const base = counterauditBase(options.apiUrl);
   const signed = await readCheckpoint({ ...options, fetch: fetchImpl, of: "the Bureau organization" });
@@ -134,7 +157,15 @@ export async function readEvidenceSeals(options: {
   const head = signed.head;
 
   // Every packet id, with what the listing says of it, used only for an erased packet.
-  const listed: { id: string; erased: boolean; connector: unknown; prevHash: unknown; entryHash: unknown }[] = [];
+  const listed: {
+    id: string;
+    erased: boolean;
+    connector: unknown;
+    prevHash: unknown;
+    entryHash: unknown;
+    createdAt: unknown;
+    expiredAt: unknown;
+  }[] = [];
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
     if (page === MAX_PAGES) return { problem: "the organization has more packets than one read lists" };
@@ -153,6 +184,8 @@ export async function readEvidenceSeals(options: {
         connector: p.connector_id,
         prevHash: p.prev_hash,
         entryHash: p.entry_hash,
+        createdAt: p.created_at,
+        expiredAt: p.expired_at,
       });
     }
     const next = got.body.next_cursor;
@@ -170,6 +203,9 @@ export async function readEvidenceSeals(options: {
     sequence: number | null;
     erased: boolean;
     record?: unknown;
+    createdAt?: unknown;
+    // For an erased packet, the listing's word on when it was erased.
+    expiredAt?: unknown;
   };
   const byEntryHash = new Map<string, Node>();
   const seenIds = new Set<string>();
@@ -182,7 +218,16 @@ export async function readEvidenceSeals(options: {
       if (typeof p.prevHash !== "string" || !HASH.test(p.prevHash) || typeof p.entryHash !== "string" || !HASH.test(p.entryHash)) {
         return { problem: `CounterAudit listed erased packet ${p.id} without its hashes` };
       }
-      node = { id: p.id, prevHash: p.prevHash, entryHash: p.entryHash, connector: p.connector, sequence: null, erased: true };
+      node = {
+        id: p.id,
+        prevHash: p.prevHash,
+        entryHash: p.entryHash,
+        connector: p.connector,
+        sequence: null,
+        erased: true,
+        createdAt: p.createdAt,
+        expiredAt: p.expiredAt,
+      };
     } else {
       if (p.erased) return { problem: `CounterAudit lists packet ${p.id} as erased, but its verify route holds it` };
       const body = got.body;
@@ -213,6 +258,7 @@ export async function readEvidenceSeals(options: {
         sequence: typeof sequence === "number" ? sequence : null,
         erased: false,
         record: packet.signed_event,
+        createdAt: packet.created_at,
       };
     }
     if (byEntryHash.has(node.entryHash)) return { problem: `two packets CounterAudit lists share entry hash ${node.entryHash}` };
@@ -247,9 +293,28 @@ export async function readEvidenceSeals(options: {
   }
 
   const seals = new Map<string, SealedEvidence>();
+  const disputes: SealedDispute[] = [];
+  const erasedDisputes: ErasedDispute[] = [];
   const held: number[] = [];
   let newestErased = -Infinity;
+  const dateOf = (value: unknown) => {
+    const at = typeof value === "string" ? new Date(value) : null;
+    return at && !Number.isNaN(at.getTime()) ? at : null;
+  };
   for (const node of byEntryHash.values()) {
+    // Whether an erased dispute record went with its line is for storeSealedDisputes to judge.
+    if (node.erased && node.connector === DISPUTE_CONNECTOR_ID) {
+      erasedDisputes.push({ packetId: node.id, sealedAt: dateOf(node.createdAt), erasedAt: dateOf(node.expiredAt) });
+      continue;
+    }
+    if (!node.erased && node.connector === DISPUTE_CONNECTOR_ID) {
+      const sealedAt = typeof node.createdAt === "string" ? new Date(node.createdAt) : new Date(Number.NaN);
+      if (node.sequence === null || Number.isNaN(sealedAt.getTime())) {
+        return { problem: `dispute packet ${node.id} has no sequence or seal time` };
+      }
+      disputes.push({ packetId: node.id, sequence: node.sequence, sealedAt, record: node.record });
+      continue;
+    }
     if (node.erased) {
       // An erased packet's connector is the listing's word; its place is the walk's.
       if (node.connector === EVIDENCE_CONNECTOR_ID) newestErased = Math.max(newestErased, placed.get(node.id) ?? Infinity);
@@ -271,7 +336,7 @@ export async function readEvidenceSeals(options: {
         "CounterAudit erased an evidence seal newer than one it still holds, so the seal held for a line may not be its last",
     };
   }
-  return { seals };
+  return { seals, disputes: disputes.sort((a, b) => a.sequence - b.sequence), erasedDisputes };
 }
 
 /**

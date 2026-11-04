@@ -44,7 +44,8 @@ import {
 } from "./outcomeProof";
 import { evidenceLabel, PAYMENT_OUTCOMES } from "./review";
 import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecision";
-import { readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
+import { readBureauOrganization, readEvidenceSeals, sealFor, type SealedEvidence } from "./evidenceSeal";
+import { storeSealedDisputes } from "./disputeSync";
 import type { ReviewLog } from "./reviewLog";
 import { parseHead, readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
@@ -102,7 +103,7 @@ export const NOT_ON_FILE = [
   "Subject matching: only lines naming exactly this subject reference are here (an EVM address, in a wallet or a did:sigvara, compares without case). Other spellings, registrations, wallets or DIDs of the same operator are not matched (Phase 3).",
   "Lines reviewers have not released are held and not shown, whatever their outcome.",
   "Public record and payment history are not assembled into files yet. Third-party standing comes only from Sigvara, and only for a did:sigvara agent on Arc testnet.",
-  "Inquiries are not built yet. A subject disputes a line through the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built.",
+  "Inquiries are not built yet. A subject disputes a line by sending a signed record to CounterAudit or to the Bureau's operator (docs/disputes.md); a page where subjects file disputes themselves is not built.",
 ];
 
 // Subscribers see a furnisher's category, not its name (bureau-spec.md). Listed
@@ -949,15 +950,11 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
     io.log(`Not signed: Sigvara could not be read: ${describeError(error)}`);
     return 1;
   }
-  // Each line's dispute records are checked again from the records themselves.
-  const rows: StoredLine[] = [];
-  for (const row of (await listFileLines()) as StoredLine[]) {
-    rows.push(await checkLineDisputes(row, io.furnishers));
-  }
-  // The evidence result sealed last for each line, as CounterAudit holds them now.
-  let seals: Awaited<ReturnType<typeof readEvidenceSeals>>;
+  // The evidence result sealed last for each line, and every dispute record, as CounterAudit
+  // holds them now, read to the organization's attested head.
+  let seals: Awaited<ReturnType<typeof readBureauOrganization>>;
   try {
-    seals = await readEvidenceSeals({
+    seals = await readBureauOrganization({
       apiUrl: ENV.counterauditApiUrl,
       readKey: ENV.counterauditReadKey,
       orgId: ENV.counterauditOrgId,
@@ -969,6 +966,25 @@ async function assemble(args: string[], io: FileIO): Promise<number> {
   if ("problem" in seals) {
     io.log(`Not signed: the evidence seals could not be read: ${printable(seals.problem)}`);
     return 1;
+  }
+  // A dispute the subject or furnisher sent to CounterAudit themselves is stored before anything
+  // is read from the store, so it counts on this file whether or not anyone synced it (review
+  // AB-02).
+  try {
+    const synced = await storeSealedDisputes(seals, io);
+    if (synced.stored > 0) io.log(`Stored ${synced.stored} dispute record${synced.stored === 1 ? "" : "s"} sealed in CounterAudit.`);
+    if (synced.problems.length > 0) {
+      io.log(`Not signed: the stored dispute records do not match what CounterAudit sealed: ${printable(synced.problems.join("; "))}`);
+      return 1;
+    }
+  } catch (error) {
+    io.log(`Not signed: the dispute records sealed in CounterAudit could not be stored: ${describeError(error)}`);
+    return 1;
+  }
+  // Each line's dispute records are checked again from the records themselves.
+  const rows: StoredLine[] = [];
+  for (const row of (await listFileLines()) as StoredLine[]) {
+    rows.push(await checkLineDisputes(row, io.furnishers));
   }
   const reviewsOf = (line: Line) => reviewsFor(line, log);
   const assembleOptions: AssembleOptions = {
