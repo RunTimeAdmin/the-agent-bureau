@@ -10,7 +10,7 @@ import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
 import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
 import { evidenceDigest } from "./reviewDecision";
-import { call, counterauditBase, readCheckpoint, type Fetch } from "./reviewLogSync";
+import { call, counterauditBase, readCheckpoint, type Fetch, type Head } from "./reviewLogSync";
 
 export const EVIDENCE_SCHEMA = "agent-bureau/evidence-result/v1";
 export const EVIDENCE_CONNECTOR_ID = "agent-bureau-evidence-v1";
@@ -143,12 +143,17 @@ export async function readEvidenceSeals(options: {
  * Erased seals are left out, but only while each is below every seal still held, as when the
  * retention policy erases the oldest first: otherwise an older seal could stand in for a newer one
  * that was erased, so nothing is read. Anything else that cannot be read stops the reading too.
+ *
+ * A CounterAudit restored behind a head still attests to its own stale tip, and a dispute sealed
+ * after that tip is simply gone from the read. `minHead` is a head the reader already holds
+ * (COUNTERAUDIT_MIN_HEAD): a chain behind it, or holding another packet there, stops the reading.
  */
 export async function readBureauOrganization(options: {
   apiUrl: string;
   readKey: string;
   orgId: string;
   fetch?: Fetch;
+  minHead?: Head | null;
 }): Promise<
   | { seals: Map<string, SealedEvidence>; disputes: SealedDispute[]; erasedDisputes: ErasedDispute[]; furnished: SealedLine[] }
   | { problem: string }
@@ -282,6 +287,18 @@ export async function readBureauOrganization(options: {
       }
       placed.set(node.id, sequence);
       at = node.prevHash;
+    }
+  }
+  const minHead = options.minHead ?? null;
+  if (minHead && (!head || head.sequence < minHead.sequence)) {
+    return {
+      problem: `CounterAudit's signed head for the Bureau organization is ${head ? `at sequence ${head.sequence}` : "empty"}, below sequence ${minHead.sequence}, which it has already reached: its head went back`,
+    };
+  }
+  if (minHead) {
+    const at = byEntryHash.get(minHead.entryHash);
+    if (!at || placed.get(at.id) !== minHead.sequence) {
+      return { problem: `the Bureau organization holds another packet at sequence ${minHead.sequence} than the head held for it` };
     }
   }
   // Every numbered packet at its place in the walk, or sealed after the head was read.

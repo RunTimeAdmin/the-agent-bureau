@@ -482,7 +482,9 @@ beforeEach(() => {
   process.env.COUNTERAUDIT_REVIEW_ORG_ID = REVIEW_ORG;
   process.env.COUNTERAUDIT_REVIEW_READ_KEY = "ca_read_review";
   process.env.COUNTERAUDIT_API_URL = API;
-  delete process.env.COUNTERAUDIT_REVIEW_MIN_HEAD;
+  // Early heads every chain here reaches, for the tests that are not about the pins.
+  process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `0:${hashOf(0)}`;
+  process.env.COUNTERAUDIT_MIN_HEAD = `0:${createHash("sha256").update(`${BUREAU_ORG}:0`).digest("hex")}`;
 });
 
 describe("pnpm file assemble and a dispute sent to CounterAudit directly (review AB-02)", () => {
@@ -915,16 +917,6 @@ describe("pnpm file verify and the review log", () => {
     expect(keyless.out.join("\n")).toContain("COUNTERAUDIT_REVIEW_READ_KEY");
   });
 
-  it("--current says when no head is pinned, which a CounterAudit restored behind a head would pass", async () => {
-    const { records, text } = await signedFile();
-    const unpinned = fileIO(counterAudit(records));
-    unpinned.files["one.json"] = text;
-    expect(await runFile(["verify", "one.json", "--current"], unpinned.io)).toBe(0);
-    expect(unpinned.out.join("\n")).toContain(
-      "COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so a CounterAudit restored behind a head you hold would pass: set it from pnpm review head."
-    );
-  });
-
   it("--current exits 3 when the review log is short of a head pinned in COUNTERAUDIT_REVIEW_MIN_HEAD", async () => {
     const { records, text } = await signedFile();
     const last = records.length - 1;
@@ -1075,6 +1067,88 @@ describe("pnpm file verify and the review log", () => {
       const noEvent = await verifyNow(text, { noLineEvent: true }, later(DAY));
       expect(noEvent.code).toBe(3);
       expect(noEvent.printed).toContain("holds no event for line");
+    });
+  });
+
+  describe("--current and heads held outside CounterAudit (review AB-M02)", () => {
+    const orgHash = (n: number) => createHash("sha256").update(`${BUREAU_ORG}:${n}`).digest("hex");
+
+    it("exits 3 without both pins, naming what is missing, though a failure still comes first", async () => {
+      const { records, text } = await signedFile();
+      const run = async (fetch: FileIO["fetch"]) => {
+        const { io, out, files } = fileIO(fetch);
+        files["one.json"] = text;
+        return { code: await runFile(["verify", "one.json", "--current"], io), printed: out.join("\n") };
+      };
+      delete process.env.COUNTERAUDIT_REVIEW_MIN_HEAD;
+      delete process.env.COUNTERAUDIT_MIN_HEAD;
+      const neither = await run(counterAudit(records));
+      expect(neither.code).toBe(3);
+      expect(neither.printed).toContain(
+        "COUNTERAUDIT_REVIEW_MIN_HEAD and COUNTERAUDIT_MIN_HEAD not set, so a CounterAudit restored behind a head you hold would pass: set from pnpm review head"
+      );
+      expect(neither.printed).not.toContain("still stand in the review log");
+
+      process.env.COUNTERAUDIT_MIN_HEAD = `0:${orgHash(0)}`;
+      const one = await run(counterAudit(records));
+      expect(one.code).toBe(3);
+      expect(one.printed).toContain("Current standing: NOT ESTABLISHED: COUNTERAUDIT_REVIEW_MIN_HEAD not set");
+
+      process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `0:${hashOf(0)}`;
+      delete process.env.COUNTERAUDIT_MIN_HEAD;
+      const other = await run(counterAudit(records));
+      expect(other.code).toBe(3);
+      expect(other.printed).toContain("Current standing: NOT ESTABLISHED: COUNTERAUDIT_MIN_HEAD not set");
+
+      delete process.env.COUNTERAUDIT_REVIEW_MIN_HEAD;
+      const rejected = await run(counterAudit([...records, decision("carol", "reject", "2026-11-01T11:00:00.000Z")]));
+      expect(rejected.code).toBe(1);
+    });
+
+    it("exits 3 when a restored log has lost a rejection sealed after the file's position", async () => {
+      const { records, text } = await signedFile();
+      const withRejection = [...records, decision("carol", "reject", "2026-11-01T11:00:00.000Z")];
+      const held = withRejection.length - 1;
+      process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `${held}:${hashOf(held)}`;
+
+      const whole = fileIO(counterAudit(withRejection));
+      whole.files["one.json"] = text;
+      expect(await runFile(["verify", "one.json", "--current"], whole.io)).toBe(1);
+
+      // The log as a restore leaves it: valid, linked, still holding the file's position, and short of the rejection.
+      const restored = fileIO(counterAudit(records));
+      restored.files["one.json"] = text;
+      expect(await runFile(["verify", "one.json", "--current"], restored.io)).toBe(3);
+      expect(restored.out.join("\n")).toContain("its head went back");
+    });
+
+    it("holds the Bureau's organization to its pin, so a restore cannot hide a dispute", async () => {
+      const { records, text } = await signedFile();
+      const run = async () => {
+        const { io, out, files } = fileIO(counterAudit(records));
+        files["one.json"] = text;
+        return { code: await runFile(["verify", "one.json", "--current"], io), printed: out.join("\n") };
+      };
+      // The evidence seal is the last packet in this chain, at sequence 100.
+      process.env.COUNTERAUDIT_MIN_HEAD = `100:${orgHash(100)}`;
+      const at = await run();
+      expect(at.code).toBe(0);
+      expect(at.printed).toContain("The Bureau's organization held to COUNTERAUDIT_MIN_HEAD at sequence 100.");
+
+      process.env.COUNTERAUDIT_MIN_HEAD = `200:${orgHash(200)}`;
+      const behind = await run();
+      expect(behind.code).toBe(3);
+      expect(behind.printed).toContain("below sequence 200, which it has already reached: its head went back");
+
+      process.env.COUNTERAUDIT_MIN_HEAD = `50:${orgHash(51)}`;
+      const another = await run();
+      expect(another.code).toBe(3);
+      expect(another.printed).toContain("holds another packet at sequence 50 than the head held for it");
+
+      process.env.COUNTERAUDIT_MIN_HEAD = "latest";
+      const malformed = await run();
+      expect(malformed.code).toBe(3);
+      expect(malformed.printed).toContain('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash"');
     });
   });
 

@@ -765,6 +765,34 @@ describe("pnpm review head", () => {
     expect(malformed.printed()).toBe('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash".');
   });
 
+  it("states the Bureau organization's head where it can be read, and checks COUNTERAUDIT_MIN_HEAD", async () => {
+    vi.stubEnv("COUNTERAUDIT_ORG_ID", "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1");
+    vi.stubEnv("COUNTERAUDIT_READ_KEY", "ca_read_bureau");
+    const open = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], open.io)).toBe(0);
+    expect(open.printed()).toContain(`The Bureau organization's signed head: sequence 4, entry hash ${hashOf(4)}.`);
+
+    vi.stubEnv("COUNTERAUDIT_MIN_HEAD", `2:${hashOf(2)}`);
+    const at = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], at.io)).toBe(0);
+    expect(at.printed()).toContain("At or past COUNTERAUDIT_MIN_HEAD (sequence 2).");
+
+    vi.stubEnv("COUNTERAUDIT_MIN_HEAD", `6:${hashOf(6)}`);
+    const behind = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], behind.io)).toBe(1);
+    expect(behind.printed()).toContain("BEHIND: the Bureau organization's head is below COUNTERAUDIT_MIN_HEAD (sequence 6).");
+
+    vi.stubEnv("COUNTERAUDIT_MIN_HEAD", `4:${hashOf(99)}`);
+    const other = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], other.io)).toBe(1);
+    expect(other.printed()).toContain("DIFFERS: the Bureau organization's head names another packet at sequence 4 than COUNTERAUDIT_MIN_HEAD.");
+
+    vi.stubEnv("COUNTERAUDIT_MIN_HEAD", "4");
+    const malformed = fakeIO({}, counterAudit(records()));
+    expect(await runReview(["head"], malformed.io)).toBe(2);
+    expect(malformed.printed()).toBe('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash".');
+  });
+
   it("does not take a database that is set but not ready for one with no head recorded", async () => {
     vi.stubEnv("DATABASE_URL", "mysql://bureau@127.0.0.1/bureau");
     db.schemaReady.mockResolvedValueOnce(false);
