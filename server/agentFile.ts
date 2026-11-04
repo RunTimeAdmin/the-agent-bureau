@@ -1476,6 +1476,11 @@ async function checkCurrentReviewStatus(
   if (ENV.counterauditReviewMinHead && !pinned) {
     return unknown('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash"');
   }
+  // The same for the Bureau's organization, which holds the dispute records and evidence seals.
+  const orgPinned = ENV.counterauditMinHead ? parseHead(ENV.counterauditMinHead) : null;
+  if (ENV.counterauditMinHead && !orgPinned) {
+    return unknown('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash"');
+  }
   let now: Awaited<ReturnType<typeof readReviewLogNow>>;
   try {
     now = await readReviewLogNow({
@@ -1504,6 +1509,7 @@ async function checkCurrentReviewStatus(
       readKey: ENV.counterauditReadKey,
       orgId: ENV.counterauditOrgId,
       fetch: io.fetch,
+      minHead: orgPinned,
     });
   } catch (error) {
     return unknown(`the evidence seals could not be read: ${describeError(error)}`);
@@ -1526,6 +1532,15 @@ async function checkCurrentReviewStatus(
   let undetermined = erasedEarly
     ? `CounterAudit erased dispute packet ${erasedEarly.packetId} since the file was signed, before its retention ran out, so a dispute may be missing from this read`
     : null;
+  // A CounterAudit restored behind a head attests to its stale tip, so only a head held elsewhere
+  // shows the log or the organization went back (review AB-M02).
+  const unpinned = [
+    ...(pinned ? [] : ["COUNTERAUDIT_REVIEW_MIN_HEAD"]),
+    ...(orgPinned ? [] : ["COUNTERAUDIT_MIN_HEAD"]),
+  ];
+  if (unpinned.length > 0) {
+    undetermined ??= `${unpinned.join(" and ")} not set, so a CounterAudit restored behind a head you hold would pass: set from pnpm review head`;
+  }
   const lines = seals.furnished.flatMap(sealed => lineFromSeal(sealed) ?? []);
   const unreadableLine = seals.unreadableLines[0] ?? seals.furnished.find(sealed => !lineFromSeal(sealed))?.packetId;
   if (unreadableLine) {
@@ -1694,18 +1709,16 @@ async function checkCurrentReviewStatus(
     }
   }
   // What the log was held to: CounterAudit's head, attested over this read's own nonce, so an old
-  // answer cannot stand in for it (review AB-01). A CounterAudit that holds its export key and
-  // serves a database restored behind a head is caught only by a head given here.
+  // answer cannot stand in for it (review AB-01).
   const cp = now.checkpoint;
   io.log(
     cp
       ? `Review log held to CounterAudit's signed checkpoint at sequence ${cp.sequence} (entry hash ${cp.entryHash}, issued ${cp.issuedAt.toISOString()}), attested as the head over this read's own nonce${
-          pinned
-            ? `, and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.`
-            : `. COUNTERAUDIT_REVIEW_MIN_HEAD is not set, so a CounterAudit restored behind a head you hold would pass: set it from pnpm review head.`
+          pinned ? `, and to COUNTERAUDIT_REVIEW_MIN_HEAD at sequence ${pinned.sequence}.` : "."
         }`
       : "Review log: empty, as CounterAudit attests over this read's own nonce."
   );
+  if (orgPinned) io.log(`The Bureau's organization held to COUNTERAUDIT_MIN_HEAD at sequence ${orgPinned.sequence}.`);
   if (failed === 0 && undetermined) return unknown(undetermined);
   if (failed === 0 && expired > 0) {
     io.log(`${expired} released line(s) expired with their source, as the file said they would, and do not count as standing.`);

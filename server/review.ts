@@ -1015,8 +1015,9 @@ async function sync(io: ReviewIO) {
  * export key, beside the newest the Bureau has recorded and a head given in
  * COUNTERAUDIT_REVIEW_MIN_HEAD. A reviewer runs it with their own read key and compares it with the
  * sequence in their latest receipt: CounterAudit's head at or past it, and the Bureau's recorded one
- * not behind, is the review log as the reviewer knows it. Exits 1 when a head went back or a check
- * failed.
+ * not behind, is the review log as the reviewer knows it. Where the Bureau's organization can be
+ * read too, its signed head, beside COUNTERAUDIT_MIN_HEAD: pnpm file verify --current holds each to
+ * its pin. Exits 1 when a head went back or a check failed.
  */
 async function headCommand(io: ReviewIO): Promise<number> {
   const missing = [
@@ -1030,6 +1031,11 @@ async function headCommand(io: ReviewIO): Promise<number> {
   const pinned = ENV.counterauditReviewMinHead ? parseHead(ENV.counterauditReviewMinHead) : null;
   if (ENV.counterauditReviewMinHead && !pinned) {
     io.log('COUNTERAUDIT_REVIEW_MIN_HEAD is not "sequence:entryhash".');
+    return 2;
+  }
+  const orgPinned = ENV.counterauditMinHead ? parseHead(ENV.counterauditMinHead) : null;
+  if (ENV.counterauditMinHead && !orgPinned) {
+    io.log('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash".');
     return 2;
   }
   let read: Awaited<ReturnType<typeof readCheckpoint>>;
@@ -1084,6 +1090,44 @@ async function headCommand(io: ReviewIO): Promise<number> {
     } else {
       io.log(`At or past COUNTERAUDIT_REVIEW_MIN_HEAD (sequence ${pinned.sequence}). pnpm file verify --current checks the packet there too.`);
     }
+  }
+  if (ENV.counterauditOrgId && ENV.counterauditReadKey) {
+    let org: Awaited<ReturnType<typeof readCheckpoint>>;
+    try {
+      org = await readCheckpoint({
+        apiUrl: ENV.counterauditApiUrl,
+        readKey: ENV.counterauditReadKey,
+        orgId: ENV.counterauditOrgId,
+        fetch: io.fetch,
+        of: "the Bureau organization",
+      });
+    } catch (error) {
+      io.log(`Could not read the Bureau organization's checkpoint: ${describeError(error)}.`);
+      return 2;
+    }
+    if (!org.ok) {
+      io.log(`Stopped: ${org.problem}.`);
+      return 1;
+    }
+    const head = org.head;
+    io.log(
+      head
+        ? `The Bureau organization's signed head: sequence ${head.sequence}, entry hash ${head.entryHash}. Signature and head attestation checked against CounterAudit's pinned export key.`
+        : "The Bureau organization's signed head: none yet, attested over this read's own nonce."
+    );
+    if (orgPinned) {
+      if (!head || head.sequence < orgPinned.sequence) {
+        io.log(`BEHIND: the Bureau organization's head is below COUNTERAUDIT_MIN_HEAD (sequence ${orgPinned.sequence}).`);
+        failed = true;
+      } else if (head.sequence === orgPinned.sequence && head.entryHash !== orgPinned.entryHash) {
+        io.log(`DIFFERS: the Bureau organization's head names another packet at sequence ${orgPinned.sequence} than COUNTERAUDIT_MIN_HEAD.`);
+        failed = true;
+      } else {
+        io.log(`At or past COUNTERAUDIT_MIN_HEAD (sequence ${orgPinned.sequence}). pnpm file verify --current checks the packet there too.`);
+      }
+    }
+  } else if (orgPinned) {
+    io.log("COUNTERAUDIT_MIN_HEAD not compared: this needs COUNTERAUDIT_ORG_ID and COUNTERAUDIT_READ_KEY to read the Bureau organization's head.");
   }
   return failed ? 1 : 0;
 }
