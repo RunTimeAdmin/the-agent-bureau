@@ -72,7 +72,7 @@ The contract addresses are pinned in `server/sigvaraStanding.ts` from Sigvara's 
 
 ## Not on file yet
 
-Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record and payment history, third-party standing other than Sigvara's, and inquiries. It also says that a subject disputes a line through the Bureau's operator, and that a page where subjects file disputes themselves is not built. A line with a dispute carries it in `dispute`.
+Each file lists what it cannot show, in `not_on_file`: lines for other registrations, wallets or DIDs of the same operator (subject matching is Phase 3), held lines, public record and payment history, third-party standing other than Sigvara's, and inquiries. It also says that a subject disputes a line by sending a signed record to CounterAudit or to the Bureau's operator, and that a page where subjects file disputes themselves is not built. A line with a dispute carries it in `dispute`.
 
 Matching is exact apart from EVM addresses in a wallet or a `did:sigvara`, so a subject spelled another way (an address in a DID or registry id in other case, say) gets a file with no lines. `--subject` must be one of the outcome event v1 `subject_ref` forms, and `pnpm file assemble` warns when no line matches.
 

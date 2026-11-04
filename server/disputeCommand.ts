@@ -45,6 +45,9 @@ import {
 import { canonicalizeJson, isRecord } from "./outcomeProof";
 import { reviewerPublicKey } from "./reviewDecision";
 import type { ReviewLog } from "./reviewLog";
+import { readBureauOrganization } from "./evidenceSeal";
+import { storeSealedDisputes } from "./disputeSync";
+import type { Fetch } from "./reviewLogSync";
 import { admissionFor, loadReviewLog, reviewsFor, settle } from "./settleLines";
 import { rpcSigvaraClient, type SigvaraClient } from "./sigvaraStanding";
 
@@ -53,6 +56,7 @@ export const USAGE = [
   "  pnpm dispute sign <record.json> --wallet-key <file> --out <file>",
   "  pnpm dispute sign <record.json> --furnisher-key <file> --out <file>",
   "  pnpm dispute submit <signed.json>",
+  "  pnpm dispute sync",
   "  pnpm dispute settle",
 ].join("\n");
 
@@ -65,6 +69,8 @@ export type DisputeIO = {
   ingest(record: Record<string, unknown>): Promise<DisputeIngestResult>;
   sigvara: SigvaraClient;
   furnishers: Record<string, Furnisher>;
+  /** For reading the Bureau's organization in CounterAudit; the global fetch unless given. */
+  fetch?: Fetch;
 };
 
 const defaultIO: DisputeIO = {
@@ -452,7 +458,7 @@ async function submit(args: string[], io: DisputeIO): Promise<number> {
   let unread: string | null = null;
   if (signedByWallet(record)) {
     try {
-      const read = await readController(subject, io.sigvara);
+      const read = await readController(subject, io.sigvara, record.signer.address);
       controller = read?.controller ?? null;
       unread = read && !read.ok ? read.problem : null;
     } catch (error) {
@@ -600,6 +606,59 @@ async function settleCommand(io: DisputeIO): Promise<number> {
  * sealed record counts for nothing or CounterAudit or Sigvara could not be
  * used, 2 when nothing was sent.
  */
+/**
+ * pnpm dispute sync: stores every dispute record sealed in the Bureau's organization that the
+ * Bureau does not hold, the ones subjects and furnishers sent to CounterAudit themselves among
+ * them (storeSealedDisputes), read to the organization's attested head; then settles every line.
+ * File assembly does the same before it signs, so a dispute nobody synced still counts on a file.
+ */
+async function syncCommand(io: DisputeIO): Promise<number> {
+  const missing = [
+    ["COUNTERAUDIT_ORG_ID", ENV.counterauditOrgId],
+    ["COUNTERAUDIT_READ_KEY", ENV.counterauditReadKey],
+    ["DATABASE_URL", ENV.databaseUrl],
+  ].filter(([, value]) => !value);
+  if (missing.length > 0) {
+    io.log(`Not set: ${missing.map(([name]) => name).join(", ")}. See docs/disputes.md.`);
+    return 2;
+  }
+  if (!(await needDatabase(io))) return 2;
+  let read: Awaited<ReturnType<typeof readBureauOrganization>>;
+  try {
+    read = await readBureauOrganization({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReadKey,
+      orgId: ENV.counterauditOrgId,
+      fetch: io.fetch,
+    });
+  } catch (error) {
+    read = { problem: describeError(error) };
+  }
+  if ("problem" in read) {
+    io.log(`Not read: the Bureau's organization could not be read whole: ${read.problem}.`);
+    return 1;
+  }
+  let result: Awaited<ReturnType<typeof storeSealedDisputes>>;
+  try {
+    result = await storeSealedDisputes(read, io);
+  } catch (error) {
+    io.log(`Stopped: ${describeError(error)}.`);
+    return 1;
+  }
+  io.log(
+    `${read.disputes.length} dispute record${read.disputes.length === 1 ? "" : "s"} sealed; ${result.stored} stored now.`
+  );
+  for (const r of result.refused) io.log(`Counts for nothing: ${r}.`);
+  for (const w of result.waiting) io.log(`Waiting: ${w}.`);
+  // A store that does not hold what CounterAudit sealed is not settled from: no file signs over it.
+  if (result.problems.length > 0) {
+    for (const p of result.problems) io.log(`Problem: ${p}.`);
+    io.log("Not settled: the stored dispute records do not match what CounterAudit sealed.");
+    return 1;
+  }
+  return settleCommand(io);
+}
+
 export async function runDispute(
   argv: string[],
   io: DisputeIO = defaultIO
@@ -610,6 +669,12 @@ export async function runDispute(
       return signCommand(args, io);
     case "submit":
       return submit(args, io);
+    case "sync":
+      if (args.length > 0) {
+        io.log(USAGE);
+        return 2;
+      }
+      return syncCommand(io);
     case "settle":
       if (args.length > 0) {
         io.log(USAGE);

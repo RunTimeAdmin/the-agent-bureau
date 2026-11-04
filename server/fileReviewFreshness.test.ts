@@ -4,15 +4,46 @@
 // its source's retention date: checkable until then, and expired, not failed, once erased.
 import { createHash, createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import bs58 from "bs58";
+import { generatePrivateKey } from "viem/accounts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = vi.hoisted(() => ({
   lines: [] as unknown[],
   log: [] as { id: number; sequence: number; [k: string]: unknown }[],
+  disputes: [] as { packetId: string; disputeId: string; outcomeEventId: number; [k: string]: unknown }[],
 }));
 vi.mock("./db", () => ({
   schemaReady: vi.fn(async () => true),
-  listFileLines: vi.fn(async () => store.lines),
+  listFileLines: vi.fn(async () =>
+    (store.lines as { id: number }[]).map(l => ({
+      ...l,
+      disputeRecords: store.disputes.filter(d => d.outcomeEventId === l.id),
+    }))
+  ),
+  listStoredDisputes: vi.fn(async () =>
+    store.disputes.map(d => {
+      const line = (store.lines as { id: number; furnisherId: string; eventId: string; signedEventHash: string }[]).find(
+        l => l.id === d.outcomeEventId
+      );
+      return {
+        ...d,
+        lineFurnisherId: line?.furnisherId ?? null,
+        lineEventId: line?.eventId ?? null,
+        lineSignedEventHash: line?.signedEventHash ?? null,
+        lineExpiredAt: null,
+      };
+    })
+  ),
+  listDisputeRecords: vi.fn(async (id: string) => store.disputes.filter(d => d.disputeId === id)),
+  findDisputeLine: vi.fn(async (f: string, e: string) =>
+    (store.lines as { furnisherId: string; eventId: string }[]).find(l => l.furnisherId === f && l.eventId === e)
+  ),
+  getDisputeLine: vi.fn(async (id: number) => (store.lines as { id: number }[]).find(l => l.id === id)),
+  insertDisputeRecord: vi.fn(async (row: (typeof store.disputes)[number]) => {
+    if (store.disputes.some(d => d.packetId === row.packetId)) return false;
+    store.disputes.push({ ...row, id: store.disputes.length + 1 });
+    return true;
+  }),
   listReviewLogRecords: vi.fn(async () =>
     [...store.log].sort((a, b) => a.sequence - b.sequence)
   ),
@@ -44,6 +75,7 @@ vi.mock("./reviewLog", async importOriginal => {
 
 import { runFile, signFile, type FileIO, type SignedAgentFile } from "./agentFile";
 import type { ProofResult } from "./counteraudit";
+import { DISPUTE_SCHEMA, signWithWallet, walletAddress } from "./dispute";
 import { canonicalizeJson, signedEventHash } from "./outcomeProof";
 import {
   REVIEW_SCHEMA,
@@ -70,7 +102,9 @@ const NOW = new Date("2026-11-01T12:00:00.000Z");
 const API = "https://api.counteraudit.test";
 const REVIEW_ORG = "11111111-2222-4333-8444-555555555555";
 const BUREAU_ORG = "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1";
-const WALLET = "0x090F6D72F49ABaBbD3FfD2ebA26D6B8A374b5b77";
+// The line's subject, whose wallet signs a dispute in one test.
+const SUBJECT_KEY = generatePrivateKey();
+const WALLET = walletAddress(SUBJECT_KEY);
 const EVIDENCE = { status: "verified", reasons: [] };
 const people = {
   alice: newReviewerKey(),
@@ -195,11 +229,16 @@ const lineSeal = (changes: Partial<EvidenceRecord> = {}): EvidenceRecord => ({
 const sealId = (n: number) => `e0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 // CounterAudit's list and verify routes over a review organization holding these records, and,
-// for the Bureau's read key, the Bureau's organization holding LINE's packet and these evidence
-// records (by default one sealing LINE's result).
+// for the Bureau's read key, the Bureau's organization holding LINE's packet, these evidence
+// records (by default one sealing LINE's result) and these dispute records.
 function counterAudit(
   records: unknown[],
-  options: { skip?: number[]; swap?: Record<number, unknown>; evidence?: unknown[] } = {}
+  options: {
+    skip?: number[];
+    swap?: Record<number, unknown>;
+    evidence?: unknown[];
+    disputes?: { record: unknown; sealedAt: Date }[];
+  } = {}
 ) {
   const chain = records
     .map((record, n) => ({
@@ -228,6 +267,14 @@ function counterAudit(
       signed_event: record,
       integrity: { prev_hash: hashOf(99 + n), entry_hash: hashOf(100 + n) },
       created_at: NOW.toISOString(),
+    })),
+    ...(options.disputes ?? []).map((d, n) => ({
+      packet_id: `d0000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+      org_id: BUREAU_ORG,
+      sequence: 200 + n,
+      connector_id: "agent-bureau-dispute-v1",
+      signed_event: d.record,
+      created_at: d.sealedAt.toISOString(),
     })),
   ]);
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -404,6 +451,7 @@ beforeEach(() => {
   source.answer = () => ({ ok: true, proof: proofFor() });
   store.lines = [LINE];
   store.log = [];
+  store.disputes = [];
   pin.genesis = genesisHash(TEAM);
   process.env.DATABASE_URL = "mysql://test";
   process.env.COUNTERAUDIT_ORG_ID = BUREAU_ORG;
@@ -412,6 +460,58 @@ beforeEach(() => {
   process.env.COUNTERAUDIT_REVIEW_READ_KEY = "ca_read_review";
   process.env.COUNTERAUDIT_API_URL = API;
   delete process.env.COUNTERAUDIT_REVIEW_MIN_HEAD;
+});
+
+describe("pnpm file assemble and a dispute sent to CounterAudit directly (review AB-02)", () => {
+  it("stores the dispute before it reads the lines, so the file shows it whether or not anyone synced it", async () => {
+    const records = [
+      ...genesis(),
+      decision("alice", "approve", "2026-11-01T10:00:00.000Z"),
+      decision("bob", "approve", "2026-11-01T10:05:00.000Z"),
+    ];
+    // An hour after the release decisions were sealed, by the line's subject, not the operator.
+    const filedAt = new Date(NOW.getTime() + 3_600_000);
+    const record = await signWithWallet(
+      {
+        schema: DISPUTE_SCHEMA,
+        kind: "dispute",
+        dispute_id: "6d1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+        line: { furnisher_id: LINE.furnisherId, event_id: LINE.eventId, signed_event_hash: LINE.signedEventHash },
+        subject_ref: LINE.subjectRef,
+        signer: { type: "eip191", address: WALLET },
+        reason: "I never received this.",
+        filed_at: filedAt.toISOString(),
+      },
+      SUBJECT_KEY
+    );
+    const { io, files, out } = fileIO(counterAudit(records, { disputes: [{ record, sealedAt: filedAt }] }));
+    io.now = () => new Date(NOW.getTime() + 86_400_000);
+    expect(await assemble(io, "one.json")).toBe(0);
+    expect(out).toContain("Stored 1 dispute record sealed in CounterAudit.");
+    expect(store.disputes).toHaveLength(1);
+    expect(store.disputes[0]).toMatchObject({
+      kind: "dispute",
+      outcomeEventId: LINE.id,
+      receipt: null,
+      signatureOk: true,
+      subjectControlOk: true,
+    });
+    const file = JSON.parse(files["one.json"]) as SignedAgentFile;
+    expect(file.furnished_outcomes[0]).toMatchObject({
+      display_state: "disputed",
+      dispute: { state: "open", filed_at: filedAt.toISOString() },
+    });
+
+    // The next file reads it again and stores nothing more.
+    expect(await assemble(io, "two.json")).toBe(0);
+    expect(store.disputes).toHaveLength(1);
+
+    // Moved earlier in the store, it could count where it did not: no file is signed over it.
+    store.disputes[0].sealedAt = NOW;
+    expect(await assemble(io, "three.json")).toBe(1);
+    expect(out.at(-1)).toContain("Not signed: the stored dispute records do not match what CounterAudit sealed");
+    expect(files["three.json"]).toBeUndefined();
+  });
 });
 
 describe("pnpm file assemble and the review log", () => {

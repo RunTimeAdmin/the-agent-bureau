@@ -1,5 +1,5 @@
-// pnpm dispute submit, settle and sign, and the dispute lines of pnpm review queue, against the
-// Bureau's lines, dispute records and review log in memory, with CounterAudit and Sigvara stood in.
+// pnpm dispute submit, sync, settle and sign, and the dispute lines of pnpm review queue, against
+// the Bureau's lines, dispute records and review log in memory, with CounterAudit and Sigvara stood in.
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generatePrivateKey } from "viem/accounts";
@@ -60,6 +60,18 @@ const db = vi.hoisted(() => ({
   listDisputeRecords: vi.fn(async (id: string) =>
     store.disputes.filter(d => d.disputeId === id).map(d => ({ ...d }))
   ),
+  listStoredDisputes: vi.fn(async () =>
+    store.disputes.map(d => {
+      const line = store.rows.find(r => r.id === d.outcomeEventId);
+      return {
+        ...d,
+        lineFurnisherId: line?.furnisherId ?? null,
+        lineEventId: line?.eventId ?? null,
+        lineSignedEventHash: line?.signedEventHash ?? null,
+        lineExpiredAt: line?.expiredAt ?? null,
+      };
+    })
+  ),
   insertDisputeRecord: vi.fn(async (row: Omit<DisputeRow, "id">) => {
     if (store.disputes.some(d => d.packetId === row.packetId)) return false;
     store.disputes.push({ ...row, id: store.disputes.length + 1 });
@@ -105,6 +117,15 @@ import {
 } from "./reviewDecision";
 import { REVIEWER_KEY_SCHEMA, genesisHash, signKeyRecord } from "./reviewLog";
 import type { SigvaraClient } from "./sigvaraStanding";
+
+// The Bureau organization's checkpoints in these fakes are signed with a key made for the test run
+// (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+vi.mock("./counterauditKeys", async importOriginal => {
+  const actual = await importOriginal<typeof import("./counterauditKeys")>();
+  const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
+  return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
+});
+import { chainOf, checkpointResponse } from "./testCheckpoint";
 
 const T0 = new Date("2026-11-01T10:00:00.000Z");
 const DAY = 86_400_000;
@@ -359,6 +380,7 @@ beforeEach(() => {
   process.env.DATABASE_URL = "mysql://test";
   process.env.COUNTERAUDIT_ORG_ID = "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1";
   process.env.COUNTERAUDIT_INGEST_KEY = "ca_ingest_test";
+  process.env.COUNTERAUDIT_READ_KEY = "ca_read_test";
 });
 
 describe("pnpm dispute submit", () => {
@@ -534,6 +556,247 @@ describe("pnpm dispute submit", () => {
       `It counts for nothing: the signature does not verify with ${FURNISHER}'s key levy-key-1.`
     );
     expect(printed).toContain(`Dispute ${DISPUTE_1} is open`);
+  });
+});
+
+describe("pnpm dispute sync", () => {
+  const ORG = "4702bb18-c7e5-4cfc-93e2-e0eab848e5c1";
+  // CounterAudit's checkpoint, list and verify routes over the Bureau's organization holding these
+  // dispute records from sequence 10, each sealed at its time, in a whole chain (chainOf). Nobody
+  // gave them to the operator: their senders sent them to CounterAudit themselves (review AB-02).
+  function bureauOrg(
+    records: { record: unknown; sealedAt: Date; erasedAt?: Date }[],
+    checkpointStatus?: number
+  ) {
+    const { packets, tip } = chainOf(
+      ORG,
+      records.map((r, n) => ({
+        packet_id: idOf(300 + n),
+        org_id: ORG,
+        sequence: 10 + n,
+        connector_id: "agent-bureau-dispute-v1",
+        signed_event: r.record,
+        created_at: r.sealedAt.toISOString(),
+      }))
+    );
+    const erasedAt = (packetId: string) => records.find((_, n) => idOf(300 + n) === packetId)?.erasedAt;
+    return vi.fn(async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname === `/v1/audit/chain/${ORG}/checkpoint`) {
+        return checkpointStatus
+          ? Response.json({ error: "unavailable" }, { status: checkpointStatus })
+          : checkpointResponse(ORG, tip, u.searchParams.get("nonce"));
+      }
+      if (u.pathname === "/v1/audit/packets") {
+        return Response.json({
+          packets: packets.map(p => ({
+            packet_id: p.packet_id,
+            connector_id: p.connector_id,
+            created_at: p.created_at,
+            expired_at: erasedAt(p.packet_id)?.toISOString() ?? null,
+            prev_hash: p.prev_hash,
+            entry_hash: p.entry_hash,
+          })),
+          next_cursor: null,
+        });
+      }
+      const packet = packets.find(p => u.pathname.endsWith(`/${p.packet_id}`));
+      if (packet && erasedAt(packet.packet_id)) return Response.json({ error: "gone" }, { status: 410 });
+      return packet
+        ? Response.json({ valid: true, packet: { org_id: ORG, ...packet } })
+        : Response.json({ error: "not_found" }, { status: 404 });
+    });
+  }
+  async function sync(
+    records: { record: unknown; sealedAt: Date; erasedAt?: Date }[],
+    now: Date,
+    checkpointStatus?: number
+  ) {
+    clock.now = now;
+    const f = disputeIO();
+    f.io.fetch = bureauOrg(records, checkpointStatus);
+    const code = await runDispute(["sync"], f.io);
+    return { code, printed: f.out.join("\n") };
+  }
+
+  it("stores a dispute its subject sealed in CounterAudit directly, once, and settles its line", async () => {
+    const sealed = [{ record: await filing(), sealedAt: T0 }];
+    const first = await sync(sealed, at(1));
+    expect(first.code).toBe(0);
+    expect(store.disputes).toHaveLength(1);
+    expect(store.disputes[0]).toMatchObject({
+      disputeId: DISPUTE_1,
+      kind: "dispute",
+      outcomeEventId: 1,
+      packetId: idOf(300),
+      sequence: 10,
+      sealedAt: T0,
+      // The receipt went to whoever sent it.
+      receipt: null,
+      signatureOk: true,
+      subjectControlOk: true,
+      checkProblem: null,
+    });
+    expect(first.printed).toContain("1 dispute record sealed; 1 stored now.");
+    expect(first.printed).toContain(`${FURNISHER}/${EVENT}: released -> disputed`);
+    expect(store.rows[0].displayState).toBe("disputed");
+
+    const again = await sync(sealed, at(2));
+    expect(again.code).toBe(0);
+    expect(again.printed).toContain("1 dispute record sealed; 0 stored now.");
+    expect(store.disputes).toHaveLength(1);
+  });
+
+  it("stores a later record on its dispute's line, and waits for a line or dispute it does not hold", async () => {
+    const OTHER_EVENT = "levy-sub8-charge9";
+    const elsewhere = await filing({
+      dispute_id: DISPUTE_2,
+      line: { furnisher_id: FURNISHER, event_id: OTHER_EVENT, signed_event_hash: "cd".repeat(32) },
+    });
+    const elsewhereStatement = await signWithWallet(
+      {
+        schema: DISPUTE_SCHEMA,
+        kind: "statement",
+        dispute_id: DISPUTE_2,
+        signer: { type: "eip191", address: SUBJECT },
+        text: "Not mine either.",
+        stated_at: at(1).toISOString(),
+      },
+      SUBJECT_KEY
+    );
+    const sealed = [
+      { record: elsewhereStatement, sealedAt: at(-1) },
+      { record: elsewhere, sealedAt: at(-1) },
+      { record: await filing(), sealedAt: T0 },
+      { record: confirm(), sealedAt: at(2) },
+      { record: await statement("The order log shows another wallet."), sealedAt: at(3) },
+    ];
+    const first = await sync(sealed, at(4));
+    expect(first.code).toBe(0);
+    expect(store.disputes.map(d => [d.kind, d.outcomeEventId, d.signatureOk])).toEqual([
+      ["dispute", 1, true],
+      ["response", 1, true],
+      ["statement", 1, true],
+    ]);
+    expect(first.printed).toContain(
+      `Waiting: packet ${idOf(300)} (statement of dispute ${DISPUTE_2}): the Bureau holds no dispute ${DISPUTE_2} yet.`
+    );
+    expect(first.printed).toContain(
+      `Waiting: packet ${idOf(301)} (dispute of dispute ${DISPUTE_2}): the Bureau holds no line ${FURNISHER}/${OTHER_EVENT} yet.`
+    );
+
+    // Once the line is held, the next sync stores the dispute, and the one after it the statement
+    // that waited for it, though CounterAudit sealed the statement first.
+    store.rows.push(line({ eventId: OTHER_EVENT, signedEventHash: "cd".repeat(32) }));
+    const second = await sync(sealed, at(5));
+    expect(second.printed).toContain("5 dispute records sealed; 1 stored now.");
+    const third = await sync(sealed, at(5));
+    expect(third.printed).toContain("5 dispute records sealed; 1 stored now.");
+    expect(store.disputes.slice(3).map(d => [d.kind, d.outcomeEventId])).toEqual([
+      ["dispute", 2],
+      ["statement", 2],
+    ]);
+  });
+
+  it("counts for nothing what submit would have refused, and stores a forged record as failed", async () => {
+    const sealed = [
+      { record: await filing(), sealedAt: T0 },
+      // The same dispute_id again, another version of the line, and another subject.
+      { record: await filing({ reason: "Filed twice." }), sealedAt: at(1) },
+      {
+        record: await filing({
+          dispute_id: DISPUTE_2,
+          line: { furnisher_id: FURNISHER, event_id: EVENT, signed_event_hash: "ef".repeat(32) },
+        }),
+        sealedAt: at(1),
+      },
+      { record: await filing({ dispute_id: DISPUTE_2, subject_ref: { wallet: OTHER } }), sealedAt: at(1) },
+      { record: { schema: DISPUTE_SCHEMA, kind: "dispute" }, sealedAt: at(1) },
+      // Signed with a key that is not the furnisher's.
+      { record: confirm(strangerKey.privateKeyPem), sealedAt: at(2) },
+    ];
+    const { code, printed } = await sync(sealed, at(3));
+    expect(code).toBe(0);
+    expect(store.disputes.map(d => [d.kind, d.signatureOk])).toEqual([
+      ["dispute", true],
+      ["response", false],
+    ]);
+    expect(printed).toContain(
+      `Counts for nothing: packet ${idOf(301)} (dispute of dispute ${DISPUTE_1}): the dispute_id was used by a dispute sealed before.`
+    );
+    expect(printed).toContain(
+      `Counts for nothing: packet ${idOf(302)} (dispute of dispute ${DISPUTE_2}): it names another version of ${FURNISHER}/${EVENT} than the Bureau holds.`
+    );
+    expect(printed).toContain(
+      `Counts for nothing: packet ${idOf(303)} (dispute of dispute ${DISPUTE_2}): subject_ref is not exactly the line's.`
+    );
+    expect(printed).toContain(`Counts for nothing: packet ${idOf(304)}: `);
+    // The forged confirmation does not answer the dispute.
+    expect(store.rows[0].displayState).toBe("disputed");
+  });
+
+  it("settles nothing over a stored record that is not the one CounterAudit sealed, or was never sealed", async () => {
+    const sealed = [{ record: await filing(), sealedAt: T0 }];
+    expect((await sync(sealed, at(1))).code).toBe(0);
+    const kept = { ...store.disputes[0] };
+    const problem = async (change: () => void, reason: string) => {
+      change();
+      const { code, printed } = await sync(sealed, at(2));
+      expect(code).toBe(1);
+      expect(printed).toContain(`Problem: ${reason}.`);
+      expect(printed).toContain("Not settled: the stored dispute records do not match what CounterAudit sealed.");
+      store.disputes = [{ ...kept }];
+    };
+    await problem(
+      () => (store.disputes[0].sealedAt = at(-3)),
+      `stored dispute record ${idOf(300)} is not at the sequence and seal time CounterAudit gives it`
+    );
+    await problem(
+      () => (store.disputes[0].record = { ...(kept.record as Record<string, unknown>), reason: "Edited." }),
+      `stored dispute record ${idOf(300)} is not the record CounterAudit sealed`
+    );
+    store.rows.push(line({ eventId: "levy-sub8-charge9" }));
+    await problem(
+      () => (store.disputes[0].outcomeEventId = 2),
+      `stored dispute record ${idOf(300)} is stored on another line than the one its dispute names`
+    );
+    await problem(
+      () => store.disputes.push({ ...kept, id: 2, packetId: idOf(999), disputeId: DISPUTE_2 }),
+      `stored dispute record ${idOf(999)} names a packet the Bureau's organization does not hold`
+    );
+    // As sealed, it settles again.
+    expect((await sync(sealed, at(2))).code).toBe(0);
+  });
+
+  it("settles nothing when CounterAudit erased a dispute before its line expired or its retention ran out", async () => {
+    const early = await sync([{ record: await filing(), sealedAt: T0, erasedAt: at(2) }], at(3));
+    expect(early.code).toBe(1);
+    expect(early.printed).toContain(
+      `Problem: CounterAudit erased dispute packet ${idOf(300)} before its line expired or its retention ran out.`
+    );
+    // Erased by the retention policy, 24 months after it was sealed.
+    const retained = await sync([{ record: await filing(), sealedAt: T0, erasedAt: new Date("2028-11-01T10:00:00.000Z") }], at(3));
+    expect(retained.code).toBe(0);
+    // Erased with its line, after the Bureau stored it.
+    store.disputes = [];
+    expect((await sync([{ record: await filing(), sealedAt: T0 }], at(3))).code).toBe(0);
+    store.rows[0].expiredAt = at(4);
+    store.disputes[0].record = null;
+    expect((await sync([{ record: await filing(), sealedAt: T0, erasedAt: at(4) }], at(5))).code).toBe(0);
+  });
+
+  it("stores nothing when the organization cannot be read whole, or without its read key", async () => {
+    const sealed = [{ record: await filing(), sealedAt: T0 }];
+    const unread = await sync(sealed, at(1), 503);
+    expect(unread.code).toBe(1);
+    expect(unread.printed).toContain("Not read: the Bureau's organization could not be read whole:");
+    expect(store.disputes).toHaveLength(0);
+
+    delete process.env.COUNTERAUDIT_READ_KEY;
+    const keyless = await sync(sealed, at(1));
+    expect(keyless.code).toBe(2);
+    expect(keyless.printed).toContain("Not set: COUNTERAUDIT_READ_KEY.");
+    expect(store.disputes).toHaveLength(0);
   });
 });
 
@@ -740,7 +1003,24 @@ describe("pnpm review queue and subject disputes", () => {
     );
     expect(printed).toContain("0 open, 0 lapsed, 1 appeal open.");
 
-    // A second line whose dispute lapsed.
+    // A second line whose dispute lapsed. Reviewers released it before it was disputed, as a line
+    // must have been for its dispute to count.
+    reviewLog([
+      signReviewDecision(
+        {
+          schema: REVIEW_SCHEMA,
+          reviewer_id: "rev_alice",
+          furnisher_id: FURNISHER,
+          event_id: "levy-sub8-charge2",
+          signed_event_hash: "cd".repeat(32),
+          data_class: "test",
+          evidence_digest: evidenceDigest(EVIDENCE),
+          decision: "approve",
+          decided_at: at(-5).toISOString(),
+        },
+        people.alice.privateKeyPem
+      ),
+    ]);
     store.rows.push(
       line({
         id: 2,
