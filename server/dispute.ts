@@ -595,6 +595,8 @@ export function checkFurnisherRecord(
 export type SubjectControl = Check & {
   /** For a did:sigvara: the agent address SigvaraIdentity held, as read. */
   controller: string | null;
+  /** When SigvaraIdentity registered the agent, in seconds, where it was read. */
+  registeredAt?: bigint;
 };
 
 /**
@@ -642,7 +644,7 @@ export async function readController(
       `SigvaraIdentity holds agent address ${identity.agentAddress} for the did, not the did's own address`
     );
   }
-  return { ok: true, problem: null, controller: identity.agentAddress };
+  return { ok: true, problem: null, controller: identity.agentAddress, registeredAt: identity.registeredAt };
 }
 
 /**

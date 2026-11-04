@@ -150,7 +150,14 @@ export async function readBureauOrganization(options: {
   orgId: string;
   fetch?: Fetch;
 }): Promise<
-  | { seals: Map<string, SealedEvidence>; disputes: SealedDispute[]; erasedDisputes: ErasedDispute[]; furnished: SealedLine[] }
+  | {
+      seals: Map<string, SealedEvidence>;
+      disputes: SealedDispute[];
+      erasedDisputes: ErasedDispute[];
+      furnished: SealedLine[];
+      /** Outcome packets that hold no event or seal time to read. */
+      unreadableLines: string[];
+    }
   | { problem: string }
 > {
   const fetchImpl = options.fetch ?? fetch;
@@ -299,6 +306,7 @@ export async function readBureauOrganization(options: {
   const disputes: SealedDispute[] = [];
   const erasedDisputes: ErasedDispute[] = [];
   const furnished: SealedLine[] = [];
+  const unreadableLines: string[] = [];
   const held: number[] = [];
   let newestErased = -Infinity;
   const dateOf = (value: unknown) => {
@@ -328,6 +336,8 @@ export async function readBureauOrganization(options: {
       const sealedAt = dateOf(node.createdAt);
       if (isRecord(node.record) && sealedAt && node.sequence !== null) {
         furnished.push({ packetId: node.id, sequence: node.sequence, sealedAt, event: node.record });
+      } else {
+        unreadableLines.push(node.id);
       }
       continue;
     }
@@ -347,7 +357,7 @@ export async function readBureauOrganization(options: {
         "CounterAudit erased an evidence seal newer than one it still holds, so the seal held for a line may not be its last",
     };
   }
-  return { seals, disputes: disputes.sort((a, b) => a.sequence - b.sequence), erasedDisputes, furnished };
+  return { seals, disputes: disputes.sort((a, b) => a.sequence - b.sequence), erasedDisputes, furnished, unreadableLines };
 }
 
 /**
