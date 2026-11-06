@@ -51,6 +51,7 @@ The game is fiction. No real agent, person or business appears in a case, and ga
 | [`review-log-design.md`](docs/review-log-design.md)                         | The independent review log in CounterAudit and its rules for reviewer keys           |
 | [`agent-file.md`](docs/agent-file.md)                                       | What an agent's file holds, how it is signed, and how a reader checks it             |
 | [`disputes.md`](docs/disputes.md)                                           | Subject disputes, the furnisher's answer, appeals and the subject's view             |
+| [`key-custody.md`](docs/key-custody.md)                                     | Who holds each key and secret, and what to do when one is lost or leaks              |
 | [`e2e-file-expiry.md`](docs/e2e-file-expiry.md)                             | An end-to-end run of a line expiring with its CounterAudit source                    |
 
 ## Run it locally

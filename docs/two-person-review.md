@@ -192,5 +192,5 @@ The `outcome_reviews` table (migration 0009), where `pnpm review apply` recorded
 - **No reviewer-side replay yet.** `pnpm review head` gives a reviewer CounterAudit's signed head with their own read key, but comparing the queue's decisions with the log is still done through CounterAudit's API; `pnpm review` has no command that replays it.
 - **One run at a time.** `pnpm review sync`, `pnpm review move`, `pnpm review settle` and the intake do not lock lines against each other, and the server's own runs of `pnpm dispute settle` and `pnpm lines expire` (`server/schedules.ts`) take no lock either. The server runs both when it starts, then `dispute settle` every hour and `lines expire` every 24 hours, and tries a failed run again an hour later, so their times follow the server's start, not the clock. Run the manual commands one after the other, when neither scheduled run is due: `/api/jobs` gives each one's `last_run_at`.
 - **Command line only.** There is no review screen in the inbox.
-- **No passphrase on private keys.**
+- **No passphrase on private keys.** The disk is their only protection at rest (`docs/key-custody.md`).
 - **Not yet covered:** subject matching changes (Phase 0 item 6 names them too; subject matching is Phase 3). Released lines appear on an agent's file (`docs/agent-file.md`).
