@@ -123,11 +123,11 @@ pnpm file verify file.json
 
 `pnpm file subject --subject '{"wallet":"0x..."}' --out view.json` writes the subject's view (`docs/disputes.md`): every line ever released on the subject, with the furnisher, the signed event and the rest a file leaves out. It needs the same settings as assemble, but no file key: the view is not signed.
 
-A key has no validity window: a key kept in `server/bureauFileKeys.ts` so old files still verify could sign a new file dated in the past. When a key is retired, destroy its private key. The site serves only pinned keys that parse, with a five-minute cache and open CORS so a subscriber's page can read them.
+A key has no validity window: a key kept in `server/bureauFileKeys.ts` so old files still verify could sign a new file dated in the past. When a key is retired, destroy its private key; `docs/key-custody.md` says where a key may live and how to replace or withdraw one. The site serves only pinned keys that parse, with a five-minute cache and open CORS so a subscriber's page can read them.
 
 ## Held for counsel
 
-Files with live lines, and paid access to files, wait for counsel's review of how the Bureau keeps and uses them (the owner's decision, 2026-11-02). Until a pull request that cites that review sets `LIVE_FILES_HELD` in `server/agentFile.ts` to false, `pnpm file assemble` signs a file only when every line on it is test data, and refuses with the count of live lines otherwise. Leaving the live lines off instead would make the file say less than the Bureau holds. Reviewers releasing a live line does not lift the hold, and neither does the review log's genesis.
+Files with live lines, and paid access to files, wait for counsel's review of how the Bureau keeps and uses them (the owner's decision, 2026-11-02). Until a pull request that cites that review sets `LIVE_FILES_HELD` in `server/agentFile.ts` to false, `pnpm file assemble` signs a file only when every line on it is test data, and refuses with the count of live lines otherwise. Leaving the live lines off instead would make the file say less than the Bureau holds. Reviewers releasing a live line does not lift the hold, and neither does the review log's genesis. `docs/key-custody.md` lists what must also be done before that pull request.
 
 ## Not built yet
 
