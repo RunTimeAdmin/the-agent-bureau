@@ -65,7 +65,7 @@ So the key is withdrawn, not retired. Files it honestly signed then fail too, wi
 - **May have leaked.** Any one reviewer suspends it at once, and every line on which it holds a current decision is held. Two reviewers then rotate it.
 - **Lost.** Two reviewers rotate it.
 - **After a rotation** every decision signed with the old key stops counting, and the reviewer signs again what should stand. A file that named those decisions fails `pnpm file verify --current`, so assemble a new one. Furnisher admissions stand: they count by the key held when they were sealed.
-- **Two keys stolen.** Two of three keys are the authority in the review log, so its own rules cannot recover from this, and the recovery is not built yet (see Before live files). Stop file runs and tell every reader on the private list: a file still passes a `pnpm file verify` that has no review key, since that run does not read the log.
+- **Two keys stolen.** Two of three keys are the authority in the review log, so its own rules cannot recover from this. Stop file runs and tell every reader on the private list: a file still passes a `pnpm file verify` that has no review key, since that run does not read the log. The reviewers then make new keys and seal a new genesis in a new review organization, a pull request pins both, and `pnpm review move` takes the Bureau's copy there (`docs/two-person-review.md`, Moving to a new review organization). Decisions in the old log stop counting and furnisher admissions start over. The old organization stays governed by the stolen keys in CounterAudit, though the Bureau no longer reads it.
 
 The pinned genesis is a testnet one today: the operator holds all three keys, so the two-person guarantee does not hold and only test data can be released (`docs/two-person-review.md`, Testnet).
 
@@ -116,8 +116,8 @@ Head pins (`COUNTERAUDIT_MIN_HEAD`, `COUNTERAUDIT_REVIEW_MIN_HEAD`) are kept whe
 
 - [ ] A new file key that meets the list above, pinned in the pull request that unpins `bureau-file-2026-11`, which has signed only test files.
 - [ ] Replacing and withdrawing a key rehearsed once on test data.
-- [ ] `pnpm review sync` can move to a new review organization. Its store holds one organization's log (`review_log_records`, `review_log_sync`) and no command clears it, so it refuses a second organization's packets today. The first independent genesis needs this, and so does recovery from two stolen keys.
-- [ ] Independent reviewers hold their own keys, `REVIEW_GENESIS` names their genesis, and the testnet keys are destroyed.
+- [ ] Every read checks each packet's body against the signed head.
+- [ ] Independent reviewers hold their own keys, `REVIEW_GENESIS` and `REVIEW_ORG_ID` name their genesis and organization, `pnpm review move` has taken the Bureau's copy there, and the testnet keys are destroyed.
 - [ ] A change to a pinned file needs an approver other than its author.
 - [ ] `/inbox` has a second factor or sits behind a stronger sign-in (`DEPLOYMENT.md`).
 - [ ] The operator's private list of signed files is in use.

@@ -446,6 +446,14 @@ async function main(): Promise<void> {
   );
   const [minMonths, maxAgeDays] = JSON.parse(limits.stdout) as [number, number];
 
+  const tag = randomBytes(4).toString("hex");
+
+  // The review organization, made first: the hook pins it when server/reviewLog.ts loads.
+  const reviewOrg = await ca("POST", "/v1/auth/signup", null, {
+    email: `e2e-review-${tag}@example.test`,
+  });
+  process.env.COUNTERAUDIT_REVIEW_ORG_ID = reviewOrg.body?.org_id;
+
   // The Bureau's modules, loaded now that the review genesis hook is in place.
   const db = await import("../../server/db");
   closeDb = db.closeDb;
@@ -472,7 +480,6 @@ async function main(): Promise<void> {
     `the review log counts only the genesis pinned in server/reviewLog.ts, whose reviewers' keys the operator holds. This run seals its own reviewers' genesis in a local review organization, and a loader hook (scripts/e2e/review-genesis-pin.mjs) puts its hash ${genesis.slice(0, 12)}... in place of the pin in this process (REVIEW_GENESIS, and TESTNET_GENESIS while it is the same: testnet ${REVIEW_GENESIS === TESTNET_GENESIS}). The decisions themselves are real: signed, sealed and read back.`
   );
 
-  const tag = randomBytes(4).toString("hex");
   const line = (furnisherId: string, eventId: string) =>
     db
       .listFileLines()
@@ -626,27 +633,19 @@ async function main(): Promise<void> {
     `${JSON.stringify({ packet_id: packetId, event })}\n`
   );
   note(
-    "the intake checks proofs against the export keys pinned in server/counterauditKeys.ts and takes none from its caller, so the local server's export key is added to that list in memory for the intake's run only, and taken out after it."
+    "the intake checks proofs against the export keys pinned in server/counterauditKeys.ts and takes none from its caller, and pnpm review sync and file assembly check signed heads against that list too, so the local server's export key is added to it in memory for the rest of the run."
   );
   const intake = output();
   COUNTERAUDIT_EXPORT_KEYS.keys.push(localJwk);
-  let intakeCode: number;
-  try {
-    intakeCode = await runIntake(
-      ["--test-data", "--sealed", sealedPath],
-      {
-        readText: path => readFile(path, "utf8"),
-        log: intake.log,
-        now: () => new Date(),
-      },
-      furnishers
-    );
-  } finally {
-    COUNTERAUDIT_EXPORT_KEYS.keys.splice(
-      COUNTERAUDIT_EXPORT_KEYS.keys.indexOf(localJwk),
-      1
-    );
-  }
+  const intakeCode = await runIntake(
+    ["--test-data", "--sealed", sealedPath],
+    {
+      readText: path => readFile(path, "utf8"),
+      log: intake.log,
+      now: () => new Date(),
+    },
+    furnishers
+  );
   const stored = await line(furnisherId, event.event_id);
   expect(
     intakeCode === 0 &&
@@ -659,9 +658,6 @@ async function main(): Promise<void> {
   if (!stored) throw new Stop("no stored line");
 
   // The review organization: the reviewers' ingest keys and the Bureau's read key.
-  const reviewOrg = await ca("POST", "/v1/auth/signup", null, {
-    email: `e2e-review-${tag}@example.test`,
-  });
   const adminR: string = reviewOrg.body?.api_key;
   const readKey = await ca("POST", "/v1/admin/keys", adminR, {
     label: "e2e bureau read",
@@ -684,7 +680,6 @@ async function main(): Promise<void> {
     "2b a review organization with an ingest key for each reviewer and a read key for the Bureau",
     brief(readKey)
   );
-  process.env.COUNTERAUDIT_REVIEW_ORG_ID = reviewOrg.body.org_id;
   process.env.COUNTERAUDIT_REVIEW_READ_KEY = readKey.body.api_key;
 
   const review = output();

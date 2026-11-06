@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const store = vi.hoisted(() => ({
   lines: [] as unknown[],
   log: [] as { id: number; sequence: number; [k: string]: unknown }[],
+  orgId: null as string | null,
   disputes: [] as { packetId: string; disputeId: string; outcomeEventId: number; [k: string]: unknown }[],
 }));
 vi.mock("./db", () => ({
@@ -58,15 +59,22 @@ vi.mock("./db", () => ({
   }),
   getReviewLogHead: vi.fn(async () => null),
   recordReviewLogCheckpoint: vi.fn(async () => {}),
+  getReviewLogSync: vi.fn(async () => (store.orgId ? { orgId: store.orgId } : undefined)),
+  bindReviewLogOrg: vi.fn(async (orgId: string) => {
+    store.orgId ??= orgId;
+  }),
 }));
 
-const pin = vi.hoisted(() => ({ genesis: null as string | null }));
+const pin = vi.hoisted(() => ({ genesis: null as string | null, org: "11111111-2222-4333-8444-555555555555" }));
 vi.mock("./reviewLog", async importOriginal => {
   const actual = await importOriginal<typeof import("./reviewLog")>();
   return {
     ...actual,
     get REVIEW_GENESIS() {
       return pin.genesis;
+    },
+    get REVIEW_ORG_ID() {
+      return pin.org;
     },
     replayReviewLog: (records: Parameters<typeof actual.replayReviewLog>[0]) =>
       actual.replayReviewLog(records, pin.genesis),
@@ -474,6 +482,8 @@ beforeEach(() => {
   source.answer = () => ({ ok: true, proof: proofFor() });
   store.lines = [LINE];
   store.log = [];
+  store.orgId = null;
+  pin.org = "11111111-2222-4333-8444-555555555555";
   store.disputes = [];
   pin.genesis = genesisHash(TEAM);
   process.env.DATABASE_URL = "mysql://test";
@@ -563,6 +573,56 @@ describe("pnpm file assemble and the review log", () => {
       { sequence: 3, packet_id: idOf(3), decision: "approve" },
       { sequence: 4, packet_id: idOf(4), decision: "approve" },
     ]);
+  });
+
+  it("records the organization whose log it read, and refuses to sign from another", async () => {
+    const { io } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "one.json")).toBe(0);
+    expect(store.orgId).toBe(REVIEW_ORG);
+
+    const NEW_ORG = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    process.env.COUNTERAUDIT_REVIEW_ORG_ID = NEW_ORG;
+    const notPinned = fileIO(counterAudit(approved()));
+    expect(await assemble(notPinned.io, "two.json")).toBe(1);
+    expect(notPinned.files["two.json"]).toBeUndefined();
+    expect(notPinned.out.join("\n")).toContain(
+      `Not signed: the review log could not be brought up to date: organization ${NEW_ORG} is not the review organization pinned`
+    );
+
+    pin.org = NEW_ORG;
+    const moved = fileIO(counterAudit(approved()));
+    expect(await assemble(moved.io, "three.json")).toBe(1);
+    expect(moved.files["three.json"]).toBeUndefined();
+    expect(moved.out.join("\n")).toContain(
+      `Not signed: the review log could not be brought up to date: the Bureau's copy of the review log is organization ${REVIEW_ORG}'s`
+    );
+  });
+
+  it("does not let --current or a plain verify take a log from outside the pinned organization", async () => {
+    const { io, files } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "one.json")).toBe(0);
+    // A reader is told to read this organization, which the file names, though the pin has moved on.
+    const NEW_ORG = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    pin.org = NEW_ORG;
+    process.env.COUNTERAUDIT_REVIEW_MIN_HEAD = `4:${hashOf(4)}`;
+
+    const plain = fileIO(counterAudit(approved()));
+    plain.files["one.json"] = files["one.json"];
+    expect(await runFile(["verify", "one.json"], plain.io)).not.toBe(0);
+    expect(plain.out.join("\n")).toContain(`Review log: FAILED: the file names organization ${REVIEW_ORG}, not the review organization pinned`);
+    // Nor does it take the file with no key to read the log.
+    const key = process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    const keyless = fileIO(counterAudit(approved()));
+    keyless.files["one.json"] = files["one.json"];
+    expect(await runFile(["verify", "one.json"], keyless.io)).not.toBe(0);
+    expect(keyless.out.join("\n")).toContain("Review log: FAILED");
+    process.env.COUNTERAUDIT_REVIEW_READ_KEY = key;
+
+    const current = fileIO(counterAudit(approved()));
+    current.files["one.json"] = files["one.json"];
+    expect(await runFile(["verify", "one.json", "--current"], current.io)).toBe(3);
+    expect(current.out.join("\n")).toContain(`organization ${REVIEW_ORG} is not the review organization pinned`);
   });
 
   it("signs no file with a live line, though two reviewers released it, until counsel's review", async () => {

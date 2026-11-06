@@ -4,9 +4,11 @@
 // the intake and by pnpm review.
 import type { ReviewLogRecordRow } from "../drizzle/schema";
 import {
+  bindReviewLogOrg,
   findRelatingOutcomeLines,
   getOutcomeLine,
   getReviewLogHead,
+  getReviewLogSync,
   insertReviewLogRecords,
   listReviewLogRecords,
   recordReviewLogCheckpoint,
@@ -24,7 +26,7 @@ import {
   type Review,
 } from "./lineState";
 import { replayReviewLog, type ReviewLog } from "./reviewLog";
-import { readReviewLog, type Checkpoint, type Fetch, type Head } from "./reviewLogSync";
+import { pinnedOrgProblem, readReviewLog, type Checkpoint, type Fetch, type Head } from "./reviewLogSync";
 
 const MAX_RELATION_HOPS = 10;
 
@@ -46,10 +48,28 @@ function linkedRecords(rows: ReviewLogRecordRow[]): ReviewLogRecordRow[] {
  * The review log as stored by pnpm review sync, with its rules applied. Only
  * what reviewers sealed there counts; nothing the operator hands over does.
  * Only the run of packets linked from sequence 0 is read: a stored packet
- * missing or out of place stops it there, as a gap stops pnpm review sync.
+ * missing or out of place stops it there, as a gap stops pnpm review sync. A copy the pin has moved
+ * on from counts for nothing, whatever it holds, until pnpm review move replaces it.
  */
 export async function loadReviewLog(): Promise<ReviewLog> {
+  const held = (await getReviewLogSync())?.orgId ?? null;
+  if (held !== null && pinnedOrgProblem(held)) return replayLinked([]);
   return replayLinked(linkedRecords(await listReviewLogRecords()));
+}
+
+/**
+ * Why the Bureau's copy of the review log cannot be read as this organization's, or null. Only the
+ * pinned organization is read. The copy holds one organization's log, and its recorded head is that
+ * log's, so when the pin has moved on, only pnpm review move replaces it.
+ */
+export async function reviewLogOrgProblem(orgId: string): Promise<string | null> {
+  const notPinned = pinnedOrgProblem(orgId);
+  if (notPinned) return notPinned;
+  const sync = await getReviewLogSync();
+  const held = sync?.orgId ?? null;
+  return held !== null && held !== orgId
+    ? `the Bureau's copy of the review log is organization ${held}'s, not ${orgId}, the one pinned now. Only pnpm review move replaces it`
+    : null;
 }
 
 /** Where the review log stood when a decision was taken from it: its newest packet. */
@@ -67,6 +87,8 @@ export async function loadCurrentReviewLog(options: {
   fetch?: Fetch;
   now?: Date;
 }): Promise<{ log: ReviewLog; position: ReviewLogPosition | null } | { problem: string }> {
+  const wrongOrg = await reviewLogOrgProblem(options.orgId);
+  if (wrongOrg) return { problem: wrongOrg };
   // Not below the newest signed checkpoint any read has reached (review AB-01).
   const read = await readReviewLog({
     ...options,
@@ -74,9 +96,14 @@ export async function loadCurrentReviewLog(options: {
     minHead: await getReviewLogHead(),
   });
   // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
-  if (read.checkpoint) await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date());
+  if (read.checkpoint) {
+    await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date(), {
+      orgId: options.orgId,
+      whole: read.problem === null,
+    });
+  }
   if (read.problem) return { problem: read.problem };
-  await insertReviewLogRecords(read.rows);
+  await insertReviewLogRecords(read.rows, options.orgId);
   const stored = await listReviewLogRecords();
   const linked = linkedRecords(stored);
   if (linked.length !== stored.length) {
@@ -86,6 +113,7 @@ export async function loadCurrentReviewLog(options: {
   if (stored.length !== read.listed) {
     return { problem: `the Bureau holds ${stored.length} review-log packets and CounterAudit lists ${read.listed}` };
   }
+  await bindReviewLogOrg(options.orgId, options.now ?? new Date());
   const tip = linked.at(-1);
   return {
     log: replayLinked(linked),

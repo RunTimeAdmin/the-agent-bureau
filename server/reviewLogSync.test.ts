@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReviewLogRecordRow } from "../drizzle/schema";
 
 // The checkpoints below are signed with a key made for this run; the pinned keys gain it here only.
+vi.mock("./reviewLog", async importOriginal => ({
+  ...(await importOriginal<typeof import("./reviewLog")>()),
+  REVIEW_ORG_ID: "11111111-2222-4333-8444-555555555555",
+}));
 vi.mock("./counterauditKeys", async importOriginal => {
   const actual = await importOriginal<typeof import("./counterauditKeys")>();
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
@@ -108,6 +112,26 @@ const stored = (rows: Awaited<ReturnType<typeof read>>["rows"]) =>
   rows.map((row, i) => ({ id: i + 1, ...row }) as ReviewLogRecordRow);
 
 describe("reading the review log", () => {
+  it("refuses any organization but the pinned one, before anything is sent to it", async () => {
+    const fetch = fakeCounterAudit(packets(3));
+    const result = await readReviewLog({
+      apiUrl: API,
+      readKey: KEY,
+      orgId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      known: [],
+      fetch,
+      now: NOW,
+    });
+    expect(result).toEqual({
+      rows: [],
+      listed: 0,
+      listedComplete: false,
+      problem: "organization aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee is not the review organization pinned in server/reviewLog.ts (REVIEW_ORG_ID)",
+      checkpoint: null,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("reads every packet across pages, in sequence order, linked from sequence 0", async () => {
     const chain = packets(5);
     chain[3].connector_id = "other-connector";

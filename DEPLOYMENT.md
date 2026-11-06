@@ -26,7 +26,7 @@ Set `DATABASE_URL` to your own database connection string. The server applies pe
 pnpm db:migrate
 ```
 
-On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `dispute_records`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, `plays`, `review_log_records`, and `review_log_sync`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
+On a fresh database this creates the tables `/api/ready` checks for: `agents`, `daily_usage`, `dispute_records`, `inquiries`, `outcome_events`, `outcome_reviews`, `play_questions`, `plays`, `review_log_moves`, `review_log_records`, and `review_log_sync`. (Migration `0000` creates a legacy `users` table and `0002` drops it again.) Do not point `DATABASE_URL` at an unrelated database without reviewing the migrations first.
 
 Rebuild after changing source files or the public origin:
 

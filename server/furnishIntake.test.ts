@@ -7,6 +7,7 @@ const db = vi.hoisted(() => ({
   findOtherOutcomeEventWithEvidence: vi.fn(),
   findRelatingOutcomeLines: vi.fn(),
   getOutcomeLine: vi.fn(),
+  getReviewLogSync: vi.fn(async () => undefined),
   listReviewLogRecords: vi.fn(),
   setOutcomeEventDisplayState: vi.fn(),
   findOutcomeEvent: vi.fn(),

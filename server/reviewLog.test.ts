@@ -8,6 +8,7 @@ import {
   signKeyRecord,
   type KeyChange,
   type LogRecord,
+  TESTNET_GENESIS,
 } from "./reviewLog";
 import {
   REVIEW_SCHEMA,
@@ -335,5 +336,13 @@ describe("replaying the review log", () => {
   it("reads records in sequence order whatever order they are given", () => {
     const records = chain(...signedGenesis(), decision("alice"));
     expect(replayReviewLog([...records].reverse(), PIN).decisions).toHaveLength(1);
+  });
+});
+
+describe("the pinned genesis", () => {
+  it("never changes TESTNET_GENESIS, which says the operator holds these keys", () => {
+    // Only REVIEW_GENESIS moves to a new genesis. Editing this one instead, with the pin left on the
+    // operator-held genesis, would let its decisions count for live data.
+    expect(TESTNET_GENESIS).toBe("8cb804864151e37ef952ddfef76ff788dffe6508bab7d50cfb17a5f51b5456df");
   });
 });

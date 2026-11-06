@@ -113,6 +113,23 @@ A checkpoint says where the chain stood when it was signed, not that it is still
 
 What this does not cover: a server that holds CounterAudit's export key and serves a database restored behind a head signs a fresh attestation of the stale tip. A reader that holds a later head refuses it: the Bureau's recorded head where it has a database, `COUNTERAUDIT_REVIEW_MIN_HEAD` for `pnpm file verify --current`, which exits 3 when it is not set, and `COUNTERAUDIT_MIN_HEAD` for the Bureau's organization, whose dispute records a restore could otherwise hide from that read. The receipts reviewers keep, compared with `pnpm review head`, are the check for the rest. CounterAudit allows 60 checkpoint and chain reads per organization in 15 minutes (`CA_CHAIN_VERIFY_RATE_MAX`), shared by every key of the review organization; a read refused for that stops and can run again later.
 
+### One organization's log
+
+A genesis hash does not say where the log is. CounterAudit takes a review record in any organization, a key record counts if it is sealed within a day of being signed (Rules), and a decision counts whenever it is sealed. So while a genesis is being signed its records could be sealed in a second organization too, and that copy kept short of a rejection. `REVIEW_ORG_ID` (`server/reviewLog.ts`), set by the same pull request as `REVIEW_GENESIS`, names the one organization that is read: a read of any other is refused before anything is sent to it, and `pnpm file verify` fails a file that names another, with or without a key to read the log.
+
+A recorded head is a head of one organization's chain, so the copy records which (`review_log_sync.orgId`, migration 0018), and a read refuses while the pin has moved on from it. A copy the pin has moved on from counts for nothing, whatever it holds. Until an organization is recorded, a stopped read records no head, since it may be of another log.
+
+`pnpm review move` replaces the copy when the pin has moved. The threat is an operator using it to swap a log for one that leaves out a rejection, or for an older one:
+
+- **It goes only to the pinned organization,** so it rests on a pull request anyone can see, which the reviewers check.
+- **It lands only where the pin counts.** The pinned genesis must have taken effect in that organization's whole log, read to its attested head.
+- **A return is held to what was reached.** `review_log_moves` keeps the head the copy had reached in each organization it left, and a read of that organization must reach it again. A copy holding packets with no organization recorded is refused, since its head could not be kept.
+- **It acts on what it checked.** Under a lock on the sync row it checks that the copy's organization and size have not changed since its checks. A read that a move overtakes has its packets refused and its head ignored. What it notes for the queue (`problem`, `listedCount`) can land, and the next sync corrects it.
+
+The copy is replaced, not kept beside the new log. Nothing reads the old rows once the pin has moved, and CounterAudit keeps the packets, which a review organization never erases.
+
+What this does not cover: whoever can merge can change both pins, which anyone can see, and whoever can deploy can run other code, which they cannot. Whoever can write to the Bureau's database can change the recorded organization, as they can the recorded head, which is why `pnpm file verify --current` holds a pin of its own. Moving away from stolen reviewer keys leaves the old organization governed by those keys in CounterAudit, though the Bureau no longer reads it, and furnisher admissions start over under the new genesis. Reviewers who keep their keys across a move can have old decisions sealed again in the new log by whoever holds an ingest key there, so a new genesis uses new keys. Checking each packet's body against the signed head is separate work.
+
 ### CounterAudit
 
 - **The connector** `agent-bureau-review-v1`, global like `agent-bureau-outcome-v1`. It refuses a record that is not one of the three forms above, seals the signed record in the packet body, and returns a receipt. Review packets are not public (`public_proof` is refused): reasons are for the subject and the reviewers.
