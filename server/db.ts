@@ -33,6 +33,7 @@ import {
   outcomeEvents,
   playQuestions,
   plays,
+  reviewLogMoves,
   reviewLogRecords,
   reviewLogSync,
 } from "../drizzle/schema";
@@ -319,7 +320,7 @@ export async function pingDb(): Promise<boolean> {
 
 // The Bureau tables the app needs to serve games, inquiries and the inbox, and
 // to hold furnished outcome events, the review log and subject disputes.
-// The most recent migration adds review_log_sync.checkpointSequence, so that
+// The most recent migration adds review_log_sync.orgId, so that
 // column's presence doubles as a check that migrations ran to the current version.
 const REQUIRED_TABLES = [
   "agents",
@@ -331,6 +332,7 @@ const REQUIRED_TABLES = [
   "outcome_reviews",
   "play_questions",
   "plays",
+  "review_log_moves",
   "review_log_records",
   "review_log_sync",
 ] as const;
@@ -346,12 +348,12 @@ export async function schemaReady(): Promise<boolean> {
     const result = await db.execute(
       sql`select count(*) as present from information_schema.tables
           where table_schema = database()
-            and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'login_attempts', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_records', 'review_log_sync')`
+            and table_name in ('agents', 'daily_usage', 'dispute_records', 'inquiries', 'login_attempts', 'outcome_events', 'outcome_reviews', 'play_questions', 'plays', 'review_log_moves', 'review_log_records', 'review_log_sync')`
     );
     const columns = await db.execute(
       sql`select count(*) as present from information_schema.columns
           where table_schema = database()
-            and table_name = 'review_log_sync' and column_name = 'checkpointSequence'`
+            and table_name = 'review_log_sync' and column_name = 'orgId'`
     );
     const present = (r: unknown) =>
       Number(((Array.isArray(r) ? r[0] : r) as unknown as Array<{ present?: number | string }>)?.[0]?.present ?? 0);
@@ -917,6 +919,72 @@ export async function recordReviewLogCheckpoint(checkpoint: {
         or(isNull(reviewLogSync.checkpointSequence), lt(reviewLogSync.checkpointSequence, checkpoint.sequence))
       )
     );
+}
+
+// Records whose log the copy holds, the first time a read reaches the whole of it. Never changes
+// one already recorded: only moveReviewLog does.
+export async function bindReviewLogOrg(orgId: string, at: Date): Promise<void> {
+  const db = await requireDb();
+  await db
+    .insert(reviewLogSync)
+    .values({ id: 1, lastAttemptAt: at })
+    .onDuplicateKeyUpdate({ set: { id: sql`${reviewLogSync.id}` } });
+  await db
+    .update(reviewLogSync)
+    .set({ orgId })
+    .where(and(eq(reviewLogSync.id, 1), isNull(reviewLogSync.orgId)));
+}
+
+// The head the copy had reached when it last left this organization, or null if it never did.
+export async function getReviewLogMoveHead(orgId: string): Promise<{ sequence: number; entryHash: string } | null> {
+  const db = await requireDb();
+  const [left] = await db
+    .select()
+    .from(reviewLogMoves)
+    .where(eq(reviewLogMoves.fromOrgId, orgId))
+    .orderBy(desc(reviewLogMoves.id))
+    .limit(1);
+  if (!left || left.fromCheckpointSequence === null || left.fromCheckpointEntryHash === null) return null;
+  return { sequence: left.fromCheckpointSequence, entryHash: left.fromCheckpointEntryHash };
+}
+
+// Replaces the copy with another organization's whole log, all at once (pnpm review move, which
+// checks that it may). What it held is noted in review_log_moves; CounterAudit keeps the packets.
+export async function moveReviewLog(move: {
+  toOrgId: string;
+  rows: InsertReviewLogRecord[];
+  checkpoint: { sequence: number; entryHash: string; issuedAt: Date } | null;
+  pinnedGenesis: string | null;
+  at: Date;
+}): Promise<void> {
+  const db = await requireDb();
+  await db.transaction(async tx => {
+    const [sync] = await tx.select().from(reviewLogSync).where(eq(reviewLogSync.id, 1));
+    const [held] = await tx.select({ packets: sql<number>`count(*)` }).from(reviewLogRecords);
+    await tx.insert(reviewLogMoves).values({
+      fromOrgId: sync?.orgId ?? null,
+      toOrgId: move.toOrgId,
+      fromPackets: Number(held.packets),
+      fromCheckpointSequence: sync?.checkpointSequence ?? null,
+      fromCheckpointEntryHash: sync?.checkpointEntryHash ?? null,
+      pinnedGenesis: move.pinnedGenesis,
+      movedAt: move.at,
+    });
+    await tx.delete(reviewLogRecords);
+    for (const row of move.rows) await tx.insert(reviewLogRecords).values(row);
+    const set = {
+      orgId: move.toOrgId,
+      lastAttemptAt: move.at,
+      lastSuccessAt: move.at,
+      listedCount: move.rows.length,
+      listedAt: move.at,
+      problem: null,
+      checkpointSequence: move.checkpoint?.sequence ?? null,
+      checkpointEntryHash: move.checkpoint?.entryHash ?? null,
+      checkpointIssuedAt: move.checkpoint?.issuedAt ?? null,
+    };
+    await tx.insert(reviewLogSync).values({ id: 1, ...set }).onDuplicateKeyUpdate({ set });
+  });
 }
 
 // The review log's packets, in sequence order (server/reviewLog.ts).

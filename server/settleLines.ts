@@ -4,9 +4,11 @@
 // the intake and by pnpm review.
 import type { ReviewLogRecordRow } from "../drizzle/schema";
 import {
+  bindReviewLogOrg,
   findRelatingOutcomeLines,
   getOutcomeLine,
   getReviewLogHead,
+  getReviewLogSync,
   insertReviewLogRecords,
   listReviewLogRecords,
   recordReviewLogCheckpoint,
@@ -52,6 +54,19 @@ export async function loadReviewLog(): Promise<ReviewLog> {
   return replayLinked(linkedRecords(await listReviewLogRecords()));
 }
 
+/**
+ * Why the Bureau's copy of the review log cannot be read as this organization's, or null. The copy
+ * holds one organization's log, and its recorded head is that log's. Reading another into it would
+ * take away what a head protects, so only pnpm review move changes it.
+ */
+export async function reviewLogOrgProblem(orgId: string): Promise<string | null> {
+  const sync = await getReviewLogSync();
+  const held = sync?.orgId ?? null;
+  return held !== null && held !== orgId
+    ? `the Bureau's copy of the review log is organization ${held}'s, not ${orgId}, which COUNTERAUDIT_REVIEW_ORG_ID names. Only pnpm review move changes that, and only once a new genesis is pinned`
+    : null;
+}
+
 /** Where the review log stood when a decision was taken from it: its newest packet. */
 export type ReviewLogPosition = { sequence: number; entryHash: string; packetId: string };
 
@@ -67,6 +82,8 @@ export async function loadCurrentReviewLog(options: {
   fetch?: Fetch;
   now?: Date;
 }): Promise<{ log: ReviewLog; position: ReviewLogPosition | null } | { problem: string }> {
+  const wrongOrg = await reviewLogOrgProblem(options.orgId);
+  if (wrongOrg) return { problem: wrongOrg };
   // Not below the newest signed checkpoint any read has reached (review AB-01).
   const read = await readReviewLog({
     ...options,
@@ -86,6 +103,7 @@ export async function loadCurrentReviewLog(options: {
   if (stored.length !== read.listed) {
     return { problem: `the Bureau holds ${stored.length} review-log packets and CounterAudit lists ${read.listed}` };
   }
+  await bindReviewLogOrg(options.orgId, options.now ?? new Date());
   const tip = linked.at(-1);
   return {
     log: replayLinked(linked),

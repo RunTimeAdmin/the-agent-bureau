@@ -307,9 +307,28 @@ export const reviewLogSync = mysqlTable("review_log_sync", {
   checkpointSequence: int("checkpointSequence"),
   checkpointEntryHash: varchar("checkpointEntryHash", { length: 64 }),
   checkpointIssuedAt: datetime("checkpointIssuedAt", { fsp: 3 }),
+  // The CounterAudit organization whose log review_log_records holds. Set by the first read that
+  // reaches the whole log, and changed only by pnpm review move.
+  orgId: varchar("orgId", { length: 36 }),
 });
 
 export type ReviewLogSyncRow = typeof reviewLogSync.$inferSelect;
+
+// Each pnpm review move: what the copy held when it left an organization, so a return to it is held
+// to the head it had reached. The packets themselves stay in CounterAudit, which never erases them
+// from a review organization.
+export const reviewLogMoves = mysqlTable("review_log_moves", {
+  id: int("id").autoincrement().primaryKey(),
+  // Null for a copy from before the organization was recorded.
+  fromOrgId: varchar("fromOrgId", { length: 36 }),
+  toOrgId: varchar("toOrgId", { length: 36 }).notNull(),
+  fromPackets: int("fromPackets").notNull(),
+  fromCheckpointSequence: int("fromCheckpointSequence"),
+  fromCheckpointEntryHash: varchar("fromCheckpointEntryHash", { length: 64 }),
+  // REVIEW_GENESIS when it moved: the pull request that made the move possible.
+  pinnedGenesis: varchar("pinnedGenesis", { length: 64 }),
+  movedAt: datetime("movedAt", { fsp: 3 }).notNull(),
+});
 
 // The kinds of record in a subject dispute (docs/disputes.md).
 export const DISPUTE_KINDS = [

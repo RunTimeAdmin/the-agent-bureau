@@ -26,6 +26,8 @@ vi.mock("./db", () => ({
   }),
   getReviewLogHead: vi.fn(async () => null),
   recordReviewLogCheckpoint: vi.fn(async () => {}),
+  getReviewLogSync: vi.fn(async () => undefined),
+  bindReviewLogOrg: vi.fn(async () => {}),
 }));
 
 const pin = vi.hoisted(() => ({ genesis: null as string | null }));

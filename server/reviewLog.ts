@@ -41,7 +41,9 @@ export const REVIEW_GENESIS: string | null = "8cb804864151e37ef952ddfef76ff788df
 // testnet review organization, so the review flow runs end to end on testnet. While it is the
 // pinned genesis, a decision on live data counts for nothing, so no live line is released: live
 // data waits for a genesis of independent reviewers, in a review organization of their own, whose
-// hash replaces the pin. The testnet reviewers' decisions then stop counting.
+// hash replaces the pin. The testnet reviewers' decisions then stop counting. This value never
+// changes: only REVIEW_GENESIS moves. Edited with the pin left on it, the operator-held reviewers'
+// decisions would count for live data.
 export const TESTNET_GENESIS = "8cb804864151e37ef952ddfef76ff788dffe6508bab7d50cfb17a5f51b5456df";
 const SIGNING_CONTEXT = `${REVIEWER_KEY_SCHEMA}\n`;
 const SIGNATURE_PREFIX = "ed25519:";

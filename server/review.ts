@@ -6,12 +6,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { ENV } from "./_core/env";
 import {
+  bindReviewLogOrg,
   findRelatingOutcomeLines,
   getReviewLogHead,
+  getReviewLogMoveHead,
   getReviewLogSync,
   insertReviewLogRecords,
   listOutcomeLines,
   listReviewLogRecords,
+  moveReviewLog,
   recordReviewLogCheckpoint,
   recordReviewLogSync,
   schemaReady,
@@ -69,7 +72,14 @@ import {
   submitReviewRecord,
   type Fetch,
 } from "./reviewLogSync";
-import { admissionFor, loadReviewLog, reviewsFor, settle } from "./settleLines";
+import {
+  admissionFor,
+  loadReviewLog,
+  readReviewLogNow,
+  reviewLogOrgProblem,
+  reviewsFor,
+  settle,
+} from "./settleLines";
 import { REVIEW_DECISIONS } from "../drizzle/schema";
 
 export const USAGE = [
@@ -85,6 +95,7 @@ export const USAGE = [
   "  pnpm review submit <record-file>",
   "  pnpm review approve-key --key <private-key-file> --reviewer <rev_id> --request <request.json> --out <approval-file>",
   "  pnpm review sync",
+  "  pnpm review move",
   "  pnpm review head",
   "  pnpm review queue",
   "  pnpm review admissions",
@@ -768,6 +779,7 @@ const SYNC_STALE_MS = 24 * 3_600_000;
 async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
   const sync = await getReviewLogSync();
   const held = log.readTo === null ? 0 : log.readTo + 1;
+  const org = sync?.orgId ? [`Review organization: ${sync.orgId}.`] : [];
   const when = (at: Date) => {
     const hours = Math.floor((now.getTime() - at.getTime()) / 3_600_000);
     return `${at.toISOString()} (${hours < 1 ? "under an hour" : `${hours} hour${hours === 1 ? "" : "s"}`} ago)`;
@@ -787,7 +799,7 @@ async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
     out.push("STALE: no sync has read the whole log in the last 24 hours; run pnpm review sync.");
   }
   if (out.length === 2) out.push("Up to date as of the last sync.");
-  return out;
+  return [...org, ...out];
 }
 
 /**
@@ -969,16 +981,19 @@ async function sync(io: ReviewIO) {
   if (!(await needDatabase(io))) return 2;
   let result: Awaited<ReturnType<typeof readReviewLog>>;
   try {
-    result = await readReviewLog({
-      apiUrl: ENV.counterauditApiUrl,
-      readKey: ENV.counterauditReviewReadKey,
-      orgId: ENV.counterauditReviewOrgId,
-      known: await listReviewLogRecords(),
-      // Not below the newest signed checkpoint any read has reached (review AB-01).
-      minHead: await getReviewLogHead(),
-      fetch: io.fetch,
-      now: io.now(),
-    });
+    const wrongOrg = await reviewLogOrgProblem(ENV.counterauditReviewOrgId);
+    result = wrongOrg
+      ? { rows: [], listed: 0, listedComplete: false, problem: wrongOrg, checkpoint: null }
+      : await readReviewLog({
+          apiUrl: ENV.counterauditApiUrl,
+          readKey: ENV.counterauditReviewReadKey,
+          orgId: ENV.counterauditReviewOrgId,
+          known: await listReviewLogRecords(),
+          // Not below the newest signed checkpoint any read has reached (review AB-01).
+          minHead: await getReviewLogHead(),
+          fetch: io.fetch,
+          now: io.now(),
+        });
   } catch (error) {
     io.log(`Could not read the review log: ${describeError(error)}.`);
     await recordReviewLogSync({ at: io.now(), problem: `could not read the review log: ${describeError(error)}`, listedCount: null });
@@ -992,6 +1007,7 @@ async function sync(io: ReviewIO) {
   });
   // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
   if (result.checkpoint) await recordReviewLogCheckpoint(result.checkpoint, io.now());
+  if (!result.problem) await bindReviewLogOrg(ENV.counterauditReviewOrgId, io.now());
   const fresh = new Set(result.rows.map(r => r.sequence));
   const log = await loadReviewLog();
   io.log(`Read ${added} new packet${added === 1 ? "" : "s"}.`);
@@ -1008,6 +1024,76 @@ async function sync(io: ReviewIO) {
   }
   await settleEvery(io, log);
   return result.problem ? 1 : 0;
+}
+
+/**
+ * pnpm review move: replaces the Bureau's copy of the review log with the whole log of the
+ * organization COUNTERAUDIT_REVIEW_ORG_ID names, for a new genesis in a review organization of its
+ * own (docs/two-person-review.md). It goes only from a log the pinned genesis does not count in to
+ * one it does. So every move rests on a public pull request changing REVIEW_GENESIS, and a log
+ * cannot be swapped for one that leaves out a decision while its genesis stands. A return to an
+ * organization is held to the head the copy had reached there.
+ */
+async function moveCommand(io: ReviewIO): Promise<number> {
+  const missing = [
+    ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],
+    ["COUNTERAUDIT_REVIEW_READ_KEY", ENV.counterauditReviewReadKey],
+  ].filter(([, value]) => !value);
+  if (missing.length) {
+    io.log(`Not set: ${missing.map(([name]) => name).join(", ")}. See docs/two-person-review.md.`);
+    return 2;
+  }
+  if (!(await needDatabase(io))) return 2;
+  const to = ENV.counterauditReviewOrgId;
+  const from = (await getReviewLogSync())?.orgId ?? null;
+  if (from === to) {
+    io.log(`The Bureau's copy of the review log is already organization ${to}'s. Nothing to move: run pnpm review sync.`);
+    return 1;
+  }
+  if ((await loadReviewLog()).reviewers) {
+    io.log(
+      `Not moved: the pinned genesis has taken effect in the log held here. A move needs a new genesis: change REVIEW_GENESIS by pull request first, so a log cannot be swapped for one that leaves out a decision.`
+    );
+    return 1;
+  }
+  let target: Awaited<ReturnType<typeof readReviewLogNow>>;
+  try {
+    target = await readReviewLogNow({
+      apiUrl: ENV.counterauditApiUrl,
+      readKey: ENV.counterauditReviewReadKey,
+      orgId: to,
+      minHead: await getReviewLogMoveHead(to),
+      fetch: io.fetch,
+      now: io.now(),
+    });
+  } catch (error) {
+    target = { problem: describeError(error) };
+  }
+  if ("problem" in target) {
+    io.log(`Not moved: organization ${to}'s review log could not be read whole: ${target.problem}.`);
+    return 1;
+  }
+  if (!target.log.reviewers) {
+    io.log(
+      `Not moved: the pinned genesis has not taken effect in organization ${to}'s review log. Every reviewer it names must seal it there first.`
+    );
+    return 1;
+  }
+  await moveReviewLog({
+    toOrgId: to,
+    rows: target.rows,
+    checkpoint: target.checkpoint,
+    pinnedGenesis: REVIEW_GENESIS,
+    at: io.now(),
+  });
+  io.log(`Moved the Bureau's copy of the review log from organization ${from ?? "not recorded"} to ${to}. Its ${target.rows.length} packet${target.rows.length === 1 ? "" : "s"} are read.`);
+  const head = target.position;
+  if (head) {
+    io.log(`Its head is sequence ${head.sequence}. Set COUNTERAUDIT_REVIEW_MIN_HEAD to ${head.sequence}:${head.entryHash} wherever pnpm file verify --current runs.`);
+  }
+  for (const line of describeLog(target.log)) io.log(line);
+  await settleEvery(io, target.log);
+  return 0;
 }
 
 /**
@@ -1067,7 +1153,12 @@ async function headCommand(io: ReviewIO): Promise<number> {
     io.log("NOT CHECKED: DATABASE_URL is set, but the Bureau's recorded head could not be read (the database is not ready).");
     failed = true;
   }
-  const recorded = ready ? await getReviewLogHead() : null;
+  const wrongOrg = ready ? await reviewLogOrgProblem(ENV.counterauditReviewOrgId) : null;
+  if (wrongOrg) {
+    io.log(`NOT CHECKED: ${wrongOrg}.`);
+    failed = true;
+  }
+  const recorded = ready && !wrongOrg ? await getReviewLogHead() : null;
   if (recorded) {
     io.log(`The Bureau's recorded head: sequence ${recorded.sequence}, entry hash ${recorded.entryHash}.`);
     if (!cp || cp.sequence < recorded.sequence) {
@@ -1160,6 +1251,8 @@ export async function runReview(
       return approveKeyCommand(args, io);
     case "sync":
       return noArgs(() => sync(io));
+    case "move":
+      return noArgs(() => moveCommand(io));
     case "head":
       return noArgs(() => headCommand(io));
     case "queue":

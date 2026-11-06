@@ -48,11 +48,22 @@ type SyncRow = {
   checkpointSequence?: number | null;
   checkpointEntryHash?: string | null;
   checkpointIssuedAt?: Date | null;
+  orgId?: string | null;
+};
+type MoveRow = {
+  fromOrgId: string | null;
+  toOrgId: string;
+  fromPackets: number;
+  fromCheckpointSequence: number | null;
+  fromCheckpointEntryHash: string | null;
+  pinnedGenesis: string | null;
+  movedAt: Date;
 };
 const store = vi.hoisted(() => ({
   rows: [] as Row[],
   log: [] as LogRow[],
   sync: undefined as SyncRow | undefined,
+  moves: [] as MoveRow[],
 }));
 
 const db = vi.hoisted(() => ({
@@ -113,6 +124,49 @@ const db = vi.hoisted(() => ({
         checkpointEntryHash: c.entryHash,
         checkpointIssuedAt: c.issuedAt,
       });
+    }
+  ),
+  // As server/db.ts records the organization: only the first time.
+  bindReviewLogOrg: vi.fn(async (orgId: string, at: Date) => {
+    store.sync ??= { lastAttemptAt: at, lastSuccessAt: null, listedCount: null, listedAt: null, problem: null };
+    store.sync.orgId ??= orgId;
+  }),
+  getReviewLogMoveHead: vi.fn(async (orgId: string) => {
+    const left = [...store.moves].reverse().find(m => m.fromOrgId === orgId);
+    return left?.fromCheckpointSequence != null && left.fromCheckpointEntryHash
+      ? { sequence: left.fromCheckpointSequence, entryHash: left.fromCheckpointEntryHash }
+      : null;
+  }),
+  // As server/db.ts moves the copy: all at once.
+  moveReviewLog: vi.fn(
+    async (move: {
+      toOrgId: string;
+      rows: Omit<LogRow, "id">[];
+      checkpoint: { sequence: number; entryHash: string; issuedAt: Date } | null;
+      pinnedGenesis: string | null;
+      at: Date;
+    }) => {
+      store.moves.push({
+        fromOrgId: store.sync?.orgId ?? null,
+        toOrgId: move.toOrgId,
+        fromPackets: store.log.length,
+        fromCheckpointSequence: store.sync?.checkpointSequence ?? null,
+        fromCheckpointEntryHash: store.sync?.checkpointEntryHash ?? null,
+        pinnedGenesis: move.pinnedGenesis,
+        movedAt: move.at,
+      });
+      store.log = move.rows.map((row, n) => ({ ...row, id: n + 1 }));
+      store.sync = {
+        orgId: move.toOrgId,
+        lastAttemptAt: move.at,
+        lastSuccessAt: move.at,
+        listedCount: move.rows.length,
+        listedAt: move.at,
+        problem: null,
+        checkpointSequence: move.checkpoint?.sequence ?? null,
+        checkpointEntryHash: move.checkpoint?.entryHash ?? null,
+        checkpointIssuedAt: move.checkpoint?.issuedAt ?? null,
+      };
     }
   ),
 }));
@@ -290,16 +344,21 @@ function seal(...records: unknown[]) {
 }
 
 // CounterAudit's list and verify routes over a review organization holding these records.
-function counterAudit(records: unknown[], skip: number[] = []) {
+function counterAudit(
+  records: unknown[],
+  skip: number[] = [],
+  place: { org?: string; base?: number; sealedAt?: Date } = {}
+) {
+  const { org = ORG, base = 0, sealedAt = NOW } = place;
   const chain = records
     .map((record, n) => ({
-      packet_id: idOf(n),
-      org_id: ORG,
+      packet_id: idOf(base + n),
+      org_id: org,
       sequence: n,
       connector_id: "agent-bureau-review-v1",
       signed_event: record,
-      integrity: { prev_hash: hashOf(n - 1), entry_hash: hashOf(n) },
-      created_at: NOW.toISOString(),
+      integrity: { prev_hash: n === 0 ? hashOf(-1) : hashOf(base + n - 1), entry_hash: hashOf(base + n) },
+      created_at: sealedAt.toISOString(),
     }))
     .filter(p => !skip.includes(p.sequence));
   return vi.fn(async (url: string) => {
@@ -365,6 +424,7 @@ beforeEach(() => {
   store.rows = [];
   store.log = [];
   store.sync = undefined;
+  store.moves = [];
   pin.genesis = genesisHash(TEAM);
   vi.stubEnv("DATABASE_URL", "mysql://bureau:secret@127.0.0.1/bureau");
   vi.stubEnv("COUNTERAUDIT_API_URL", API);
@@ -682,6 +742,7 @@ describe("pnpm review sync", () => {
       checkpointSequence: 2,
       checkpointEntryHash: hashOf(2),
       checkpointIssuedAt: new Date("2026-11-03T12:00:00.000Z"),
+      orgId: ORG,
     });
 
     // A later run stopped at a gap keeps the last success and records the new head.
@@ -1185,5 +1246,221 @@ describe("pnpm review admit, revoke-admission and admissions", () => {
     const { io, printed } = fakeIO();
     expect(await runReview(["admissions"], io)).toBe(0);
     expect(printed()).toContain("No furnisher is admitted, so no live line is released.");
+  });
+});
+
+describe("moving to a new review organization", () => {
+  const NEW_ORG = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const NEW_TEAM = TEAM.map(r => ({ ...r, name: `${r.name} (independent)` }));
+  const newGenesis = () =>
+    (["alice", "bob", "carol"] as const).map(p => keyRecord(p, { type: "genesis", reviewers: NEW_TEAM }));
+  const inNewOrg = (records: unknown[], skip: number[] = []) =>
+    counterAudit(records, skip, { org: NEW_ORG, base: 1000 });
+  const REJECTION = () => decision("bob", { decision: "reject", reason: "related payer" });
+
+  // The Bureau's copy as a sync of the old organization left it.
+  async function onOldOrg(records: unknown[]) {
+    expect(await runReview(["sync"], fakeIO({}, counterAudit(records)).io)).toBe(0);
+    expect(store.sync!.orgId).toBe(ORG);
+  }
+  const toNewOrg = () => {
+    pin.genesis = genesisHash(NEW_TEAM);
+    vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+  };
+
+  describe("the copy holds one organization's log", () => {
+    it("records the organization at the first read that reaches the whole log", async () => {
+      expect(await runReview(["sync"], fakeIO({}, counterAudit(genesis())).io)).toBe(0);
+      expect(store.sync!.orgId).toBe(ORG);
+    });
+
+    it("does not record it from a read that stopped", async () => {
+      expect(await runReview(["sync"], fakeIO({}, counterAudit(genesis(), [1])).io)).toBe(1);
+      expect(store.sync!.orgId ?? null).toBeNull();
+    });
+
+    it("refuses another organization before reading anything from it", async () => {
+      await onOldOrg(genesis());
+      const before = { log: [...store.log], head: store.sync!.checkpointSequence };
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+      const fetch = inNewOrg([...newGenesis(), decision("alice")]);
+      const { io, printed } = fakeIO({}, fetch);
+
+      expect(await runReview(["sync"], io)).toBe(1);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(printed()).toContain(`Stopped: the Bureau's copy of the review log is organization ${ORG}'s, not ${NEW_ORG}`);
+      expect(printed()).toContain("pnpm review move");
+      expect(store.log).toEqual(before.log);
+      expect(store.sync!.checkpointSequence).toBe(before.head);
+      expect(store.sync!.orgId).toBe(ORG);
+    });
+
+    it("still refuses another organization's packets when no organization is recorded yet", async () => {
+      // A copy from before the organization was recorded.
+      seal(...genesis());
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+      const { io, printed } = fakeIO({}, inNewOrg(newGenesis()));
+      expect(await runReview(["sync"], io)).toBe(1);
+      expect(printed()).toContain("two packets claim sequence 0");
+      expect(store.sync!.orgId ?? null).toBeNull();
+    });
+
+    it("says so in pnpm review head, rather than comparing another organization's head", async () => {
+      await onOldOrg(genesis());
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+      const { io, printed } = fakeIO({}, inNewOrg(newGenesis()));
+      expect(await runReview(["head"], io)).toBe(1);
+      expect(printed()).toContain(`NOT CHECKED: the Bureau's copy of the review log is organization ${ORG}'s`);
+      expect(printed()).not.toContain("WENT BACK");
+    });
+
+    it("names the organization in the queue", async () => {
+      await onOldOrg(genesis());
+      const { io, printed } = fakeIO();
+      expect(await runReview(["queue"], io)).toBe(0);
+      expect(printed()).toContain(`Review organization: ${ORG}.`);
+    });
+  });
+
+  describe("pnpm review move", () => {
+    it("moves the copy once a new genesis is pinned and has taken effect in the new organization", async () => {
+      store.rows.push(row());
+      await onOldOrg([...genesis(), REJECTION()]);
+      expect(store.rows[0].displayState).not.toBe("released");
+      const oldHead = { sequence: store.sync!.checkpointSequence, entryHash: store.sync!.checkpointEntryHash };
+      toNewOrg();
+
+      const { io, printed } = fakeIO({}, inNewOrg([...newGenesis(), decision("alice")]));
+      expect(await runReview(["move"], io)).toBe(0);
+
+      expect(store.log.map(r => r.packetId)).toEqual([0, 1, 2, 3].map(n => idOf(1000 + n)));
+      expect(store.sync).toMatchObject({
+        orgId: NEW_ORG,
+        problem: null,
+        lastSuccessAt: NOW,
+        listedCount: 4,
+        checkpointSequence: 3,
+        checkpointEntryHash: hashOf(1003),
+      });
+      expect(store.moves).toEqual([
+        {
+          fromOrgId: ORG,
+          toOrgId: NEW_ORG,
+          fromPackets: 4,
+          fromCheckpointSequence: oldHead.sequence,
+          fromCheckpointEntryHash: oldHead.entryHash,
+          pinnedGenesis: genesisHash(NEW_TEAM),
+          movedAt: NOW,
+        },
+      ]);
+      // Lines are settled by the new log straight away.
+      expect(store.rows[0].displayState).toBe("released");
+      expect(printed()).toContain(`Moved the Bureau's copy of the review log from organization ${ORG} to ${NEW_ORG}`);
+      expect(printed()).toContain(`COUNTERAUDIT_REVIEW_MIN_HEAD to 3:${hashOf(1003)}`);
+
+      // And from here a sync reads the new organization.
+      const again = fakeIO({}, inNewOrg([...newGenesis(), decision("alice")]));
+      expect(await runReview(["sync"], again.io)).toBe(0);
+      expect(again.printed()).toContain("Read 0 new packets.");
+    });
+
+    it("cannot swap a log for one that leaves out a rejection while its genesis is still pinned", async () => {
+      store.rows.push(row());
+      const rejected = [...genesis(), REJECTION()];
+      await onOldOrg(rejected);
+      const held = [...store.log];
+      // Every reviewer's key signs the same genesis again in another organization, with no rejection.
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+      const { io, printed } = fakeIO({}, inNewOrg([...genesis(), decision("alice")]));
+
+      expect(await runReview(["move"], io)).toBe(1);
+      expect(printed()).toContain("Not moved: the pinned genesis has taken effect in the log held here");
+      expect(printed()).toContain("REVIEW_GENESIS");
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+      expect(store.log).toEqual(held);
+      expect(store.sync!.orgId).toBe(ORG);
+      expect(store.rows[0].displayState).not.toBe("released");
+    });
+
+    it("refuses an organization where the pinned genesis has not taken effect", async () => {
+      await onOldOrg(genesis());
+      toNewOrg();
+      // Two of the three have signed.
+      const { io, printed } = fakeIO({}, inNewOrg(newGenesis().slice(0, 2)));
+      expect(await runReview(["move"], io)).toBe(1);
+      expect(printed()).toContain(`Not moved: the pinned genesis has not taken effect in organization ${NEW_ORG}'s review log`);
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+      expect(store.sync!.orgId).toBe(ORG);
+    });
+
+    it("refuses signatures replayed into another organization a day later", async () => {
+      // A copy holding nothing that counts, and the pinned genesis copied from elsewhere.
+      seal(keyRecord("alice", { type: "genesis", reviewers: NEW_TEAM }));
+      pin.genesis = genesisHash(TEAM);
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
+      const later = new Date(NOW.getTime() + 2 * 24 * 3_600_000);
+      const fetch = counterAudit(genesis(), [], { org: NEW_ORG, base: 1000, sealedAt: later });
+      const { io, printed } = fakeIO({}, fetch);
+      expect(await runReview(["move"], io)).toBe(1);
+      expect(printed()).toContain("has not taken effect");
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+    });
+
+    it("refuses a new organization's log it cannot read whole", async () => {
+      await onOldOrg(genesis());
+      toNewOrg();
+      const { io, printed } = fakeIO({}, inNewOrg([...newGenesis(), decision("alice")], [1]));
+      expect(await runReview(["move"], io)).toBe(1);
+      expect(printed()).toContain(`Not moved: organization ${NEW_ORG}'s review log could not be read whole`);
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+
+      const down = fakeIO({}, async () => new Response(null, { status: 503 }));
+      expect(await runReview(["move"], down.io)).toBe(1);
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+    });
+
+    it("has nothing to do when the copy is already that organization's", async () => {
+      await onOldOrg(genesis());
+      pin.genesis = genesisHash(NEW_TEAM);
+      const { io, printed } = fakeIO({}, counterAudit(genesis()));
+      expect(await runReview(["move"], io)).toBe(1);
+      expect(printed()).toContain("already organization");
+      expect(db.moveReviewLog).not.toHaveBeenCalled();
+    });
+
+    it("moves a copy from before the organization was recorded", async () => {
+      seal(...genesis());
+      toNewOrg();
+      const { io, printed } = fakeIO({}, inNewOrg(newGenesis()));
+      expect(await runReview(["move"], io)).toBe(0);
+      expect(store.moves[0]).toMatchObject({ fromOrgId: null, toOrgId: NEW_ORG, fromPackets: 3 });
+      expect(store.sync!.orgId).toBe(NEW_ORG);
+      expect(printed()).toContain("from organization not recorded");
+    });
+
+    it("holds a return to an organization to the head the copy had reached there", async () => {
+      const oldLog = [...genesis(), decision("alice"), REJECTION()];
+      await onOldOrg(oldLog);
+      toNewOrg();
+      expect(await runReview(["move"], fakeIO({}, inNewOrg(newGenesis())).io)).toBe(0);
+
+      // The pin goes back, and the old organization has been restored from a backup.
+      pin.genesis = genesisHash(TEAM);
+      vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", ORG);
+      const restored = fakeIO({}, counterAudit(oldLog.slice(0, 3)));
+      expect(await runReview(["move"], restored.io)).toBe(1);
+      expect(restored.printed()).toContain("its head went back");
+      expect(store.sync!.orgId).toBe(NEW_ORG);
+
+      // The whole log is taken back, and the head it had reached stands again.
+      expect(await runReview(["move"], fakeIO({}, counterAudit(oldLog)).io)).toBe(0);
+      expect(store.sync).toMatchObject({ orgId: ORG, checkpointSequence: 4, checkpointEntryHash: hashOf(4) });
+    });
+
+    it("needs the review organization and the Bureau's read key, and takes no arguments", async () => {
+      expect(await runReview(["move", "--to", NEW_ORG], fakeIO().io)).toBe(2);
+      vi.stubEnv("COUNTERAUDIT_REVIEW_READ_KEY", "");
+      expect(await runReview(["move"], fakeIO().io)).toBe(2);
+    });
   });
 });

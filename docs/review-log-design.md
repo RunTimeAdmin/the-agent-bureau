@@ -113,6 +113,20 @@ A checkpoint says where the chain stood when it was signed, not that it is still
 
 What this does not cover: a server that holds CounterAudit's export key and serves a database restored behind a head signs a fresh attestation of the stale tip. A reader that holds a later head refuses it: the Bureau's recorded head where it has a database, `COUNTERAUDIT_REVIEW_MIN_HEAD` for `pnpm file verify --current`, which exits 3 when it is not set, and `COUNTERAUDIT_MIN_HEAD` for the Bureau's organization, whose dispute records a restore could otherwise hide from that read. The receipts reviewers keep, compared with `pnpm review head`, are the check for the rest. CounterAudit allows 60 checkpoint and chain reads per organization in 15 minutes (`CA_CHAIN_VERIFY_RATE_MAX`), shared by every key of the review organization; a read refused for that stops and can run again later.
 
+### One organization's log
+
+A recorded head is a head of one organization's chain, so the copy records which (`review_log_sync.orgId`, migration 0018), from the first read that reaches the whole log. Every read into the copy refuses another organization first. Otherwise pointing `COUNTERAUDIT_REVIEW_ORG_ID` somewhere else would leave the head behind, and with it the reason a log cut short or rolled back is noticed. `pnpm file verify --current` keeps no copy and holds a file to the organization it names.
+
+`pnpm review move` replaces the copy when the review log really has moved. The threat is an operator using it to swap a log for one that leaves out a rejection, or for an older one. Three things stop that:
+
+- **It needs a new pin.** It refuses while the pinned genesis has taken effect in the log held here, so it rests on a pull request changing `REVIEW_GENESIS`, which anyone can see.
+- **It lands only where the pin counts.** The pinned genesis must have taken effect in the new organization's whole log, read to its attested head. A genesis needs every reviewer it names to have signed it, and a key record sealed more than a day after it was signed is ignored (Rules), so old signatures cannot be sealed again somewhere else. The same reviewers in a new organization, with the same hash, are refused by the first check.
+- **A return is held to what was reached.** `review_log_moves` keeps the head the copy had reached in each organization it left, and a read of that organization must reach it again.
+
+The copy is replaced, not kept beside the new log. Nothing reads the old rows once the pin has moved, and CounterAudit keeps the packets, which a review organization never erases.
+
+What this does not cover: whoever can merge and deploy can change the pin, in public. Whoever can write to the Bureau's database can change the recorded organization, as they can the recorded head, which is why `pnpm file verify --current` holds a pin of its own. Moving away from stolen reviewer keys leaves the old organization governed by those keys in CounterAudit, though the Bureau no longer reads it, and furnisher admissions start over under the new genesis.
+
 ### CounterAudit
 
 - **The connector** `agent-bureau-review-v1`, global like `agent-bureau-outcome-v1`. It refuses a record that is not one of the three forms above, seals the signed record in the packet body, and returns a receipt. Review packets are not public (`public_proof` is refused): reasons are for the subject and the reviewers.

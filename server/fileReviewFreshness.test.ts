@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const store = vi.hoisted(() => ({
   lines: [] as unknown[],
   log: [] as { id: number; sequence: number; [k: string]: unknown }[],
+  orgId: null as string | null,
   disputes: [] as { packetId: string; disputeId: string; outcomeEventId: number; [k: string]: unknown }[],
 }));
 vi.mock("./db", () => ({
@@ -58,6 +59,10 @@ vi.mock("./db", () => ({
   }),
   getReviewLogHead: vi.fn(async () => null),
   recordReviewLogCheckpoint: vi.fn(async () => {}),
+  getReviewLogSync: vi.fn(async () => (store.orgId ? { orgId: store.orgId } : undefined)),
+  bindReviewLogOrg: vi.fn(async (orgId: string) => {
+    store.orgId ??= orgId;
+  }),
 }));
 
 const pin = vi.hoisted(() => ({ genesis: null as string | null }));
@@ -474,6 +479,7 @@ beforeEach(() => {
   source.answer = () => ({ ok: true, proof: proofFor() });
   store.lines = [LINE];
   store.log = [];
+  store.orgId = null;
   store.disputes = [];
   pin.genesis = genesisHash(TEAM);
   process.env.DATABASE_URL = "mysql://test";
@@ -563,6 +569,20 @@ describe("pnpm file assemble and the review log", () => {
       { sequence: 3, packet_id: idOf(3), decision: "approve" },
       { sequence: 4, packet_id: idOf(4), decision: "approve" },
     ]);
+  });
+
+  it("records the organization whose log it read, and refuses to sign from another", async () => {
+    const { io } = fileIO(counterAudit(approved()));
+    expect(await assemble(io, "one.json")).toBe(0);
+    expect(store.orgId).toBe(REVIEW_ORG);
+
+    process.env.COUNTERAUDIT_REVIEW_ORG_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const other = fileIO(counterAudit(approved()));
+    expect(await assemble(other.io, "two.json")).toBe(1);
+    expect(other.files["two.json"]).toBeUndefined();
+    expect(other.out.join("\n")).toContain(
+      `Not signed: the review log could not be brought up to date: the Bureau's copy of the review log is organization ${REVIEW_ORG}'s`
+    );
   });
 
   it("signs no file with a live line, though two reviewers released it, until counsel's review", async () => {
