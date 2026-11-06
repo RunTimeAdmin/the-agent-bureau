@@ -626,27 +626,19 @@ async function main(): Promise<void> {
     `${JSON.stringify({ packet_id: packetId, event })}\n`
   );
   note(
-    "the intake checks proofs against the export keys pinned in server/counterauditKeys.ts and takes none from its caller, so the local server's export key is added to that list in memory for the intake's run only, and taken out after it."
+    "the intake checks proofs against the export keys pinned in server/counterauditKeys.ts and takes none from its caller, and pnpm review sync and file assembly check signed heads against that list too, so the local server's export key is added to it in memory for the rest of the run."
   );
   const intake = output();
   COUNTERAUDIT_EXPORT_KEYS.keys.push(localJwk);
-  let intakeCode: number;
-  try {
-    intakeCode = await runIntake(
-      ["--test-data", "--sealed", sealedPath],
-      {
-        readText: path => readFile(path, "utf8"),
-        log: intake.log,
-        now: () => new Date(),
-      },
-      furnishers
-    );
-  } finally {
-    COUNTERAUDIT_EXPORT_KEYS.keys.splice(
-      COUNTERAUDIT_EXPORT_KEYS.keys.indexOf(localJwk),
-      1
-    );
-  }
+  const intakeCode = await runIntake(
+    ["--test-data", "--sealed", sealedPath],
+    {
+      readText: path => readFile(path, "utf8"),
+      log: intake.log,
+      now: () => new Date(),
+    },
+    furnishers
+  );
   const stored = await line(furnisherId, event.event_id);
   expect(
     intakeCode === 0 &&
