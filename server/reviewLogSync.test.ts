@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReviewLogRecordRow } from "../drizzle/schema";
 
 // The checkpoints below are signed with a key made for this run; the pinned keys gain it here only.
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./reviewLog", async importOriginal => ({
   ...(await importOriginal<typeof import("./reviewLog")>()),
   REVIEW_ORG_ID: "11111111-2222-4333-8444-555555555555",
@@ -176,19 +178,19 @@ describe("reading the review log", () => {
     expect(verified).toEqual([`${API}/v1/audit/verify/${idOf(3)}`, `${API}/v1/audit/verify/${idOf(2)}`]);
   });
 
-  it("stops at a missing packet and keeps what comes before it", async () => {
+  it("stops at a missing packet and stores nothing, since it did not reach the signed head", async () => {
     const chain = packets(5).filter(p => p.sequence !== 2);
     const { rows, problem } = await read(fakeCounterAudit(chain));
-    expect(rows.map(r => r.sequence)).toEqual([0, 1]);
-    expect(problem).toBe("the chain breaks between sequence 1 and 3; read up to 1");
+    expect(rows).toEqual([]);
+    expect(problem).toBe("the chain breaks between sequence 1 and 3");
   });
 
   it("stops at a packet that does not link to the one before", async () => {
     const chain = packets(4);
     chain[2].integrity.prev_hash = hashOf(99);
     const { rows, problem } = await read(fakeCounterAudit(chain));
-    expect(rows.map(r => r.sequence)).toEqual([0, 1]);
-    expect(problem).toBe("the chain breaks between sequence 1 and 2; read up to 1");
+    expect(rows).toEqual([]);
+    expect(problem).toBe("the chain breaks between sequence 1 and 2");
   });
 
   it("refuses a log that does not start at sequence 0", async () => {
@@ -268,10 +270,14 @@ describe("the signed head (review AB-01)", () => {
   });
 
   it("reads the checkpoint before the listing, and the listing past CounterAudit's cache", async () => {
-    // A packet sealed between the two only makes the listing longer than the checkpoint.
+    // A packet sealed between the two only makes the listing longer than the checkpoint, and it
+    // waits for the next read, whose head will cover it.
     const chain = packets(5);
     const fetch = fakeCounterAudit(chain, { checkpoint: tipOf(chain[2]) });
-    expect((await read(fetch)).problem).toBeNull();
+    const result = await read(fetch);
+    expect(result.problem).toBeNull();
+    expect(result.rows.map(r => r.sequence)).toEqual([0, 1, 2]);
+    expect(result.listed).toBe(3);
     const urls = fetch.mock.calls.map(([url]) => new URL(url));
     expect(urls[0].pathname).toBe(`/v1/audit/chain/${ORG}/checkpoint`);
     const lists = urls.filter(u => u.pathname === "/v1/audit/packets");

@@ -976,8 +976,8 @@ async function settleAll(io: ReviewIO) {
 }
 
 // Reads the review log's new packets with the Bureau's read key, stores them
-// and settles every line. Exits 1 when it stopped at a problem; what it read
-// before the problem is kept.
+// and settles every line. Exits 1 when it stopped at a problem, and stores
+// nothing from that read: only a read that reached the signed head is anchored.
 async function sync(io: ReviewIO) {
   const missing = [
     ["COUNTERAUDIT_REVIEW_ORG_ID", ENV.counterauditReviewOrgId],

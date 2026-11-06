@@ -43,6 +43,38 @@ export function signedByTestKey(payload: Record<string, unknown>, signedAt = "20
   };
 }
 
+/** The statement CounterAudit signs when it erases a packet, as its verify route gives it. */
+export function erasureStatementOf(
+  orgId: string,
+  packet: {
+    packetId: string;
+    sequence: number;
+    entryHash: string;
+    prevHash: string;
+    connectorId: string;
+    kind?: string;
+    retentionMonths?: number | null;
+    expiredAt?: string;
+  },
+  fields: Record<string, unknown> = {}
+) {
+  return signedByTestKey({
+    statement_type: "counteraudit.packet_erasure_statement",
+    statement_version: 1,
+    org_id: orgId,
+    packet_id: packet.packetId,
+    sequence: packet.sequence,
+    prev_hash: packet.prevHash,
+    entry_hash: packet.entryHash,
+    connector_id: packet.connectorId,
+    kind: packet.kind ?? "scheduled",
+    retention_months: packet.retentionMonths === undefined ? 24 : packet.retentionMonths,
+    expired_at: packet.expiredAt ?? "2028-11-02T12:00:00.000Z",
+    commitment: "linkage_only",
+    ...fields,
+  });
+}
+
 /** A signed checkpoint for the packet at the tip of a chain. */
 export function checkpointOf(orgId: string, tip: { sequence: number; entryHash: string; packetId: string }) {
   return signedByTestKey({

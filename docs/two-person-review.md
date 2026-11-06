@@ -122,7 +122,7 @@ pnpm review sync
 pnpm review queue
 ```
 
-`sync` reads the review log's new packets with the Bureau's read key, says what each reviewer-key record did, and settles every line. It stops at a gap in the chain, a packet of another organization, or one erased or not verified, keeps what came before, and exits 1. `queue` prints the sequence read to and the reviewers; then, for each line not withdrawn or superseded, the line, its outcome, data class and display state, its `signed_event_hash`, the proof and evidence results, the decisions sealed for it with their packets, what still holds it back, and a `sign with:` line with the arguments a decision needs. It ends with the subject disputes that wait on someone (below).
+`sync` reads the review log's new packets with the Bureau's read key, says what each reviewer-key record did, and settles every line. It stops at a gap in the chain, a packet of another organization, or one erased, not verified or whose body does not hash to its entry hash. It stores nothing from a read that stopped, or past CounterAudit's signed head, and exits 1 when it stopped. `queue` prints the sequence read to and the reviewers; then, for each line not withdrawn or superseded, the line, its outcome, data class and display state, its `signed_event_hash`, the proof and evidence results, the decisions sealed for it with their packets, what still holds it back, and a `sign with:` line with the arguments a decision needs. It ends with the subject disputes that wait on someone (below).
 
 **3. Decide and seal (each reviewer, on their own machine):**
 

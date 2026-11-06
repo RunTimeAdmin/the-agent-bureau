@@ -6,11 +6,13 @@
 // Links show a packet missing from the middle, not from the end: a listing that stops early, from
 // a stale or dishonest endpoint, still links. So every read also takes CounterAudit's signed chain
 // checkpoint, the tip sequence and entry hash signed with its export key, and the log read must
-// reach it (review AB-01, docs/review-log-design.md "The signed head").
+// reach it (review AB-01, docs/review-log-design.md "The signed head"). Each packet's body must hash
+// to its entry hash, so that head holds for the bodies too, and only what it covers is kept.
 import { randomBytes } from "node:crypto";
 import type { InsertReviewLogRecord, ReviewLogRecordRow } from "../drizzle/schema";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { isRecord, verifyCounterauditSignature } from "./outcomeProof";
+import { packetHashProblem } from "./packetHash";
 import { REVIEW_CONNECTOR_ID, REVIEW_ORG_ID } from "./reviewLog";
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -21,7 +23,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 // A new CounterAudit organization's chain starts at sequence 0, linked to this.
-const CHAIN_START = "0".repeat(64);
+export const CHAIN_START = "0".repeat(64);
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** CounterAudit's base URL: https, or plain http to this machine only, since requests carry a key. */
@@ -237,10 +239,12 @@ export function parseHead(text: string): Head | null {
 }
 
 export type ReadResult = {
-  // Packets to store, in sequence order, each linked to the one before.
+  // Packets to store, in sequence order, each linked to the one before. Only from a read that
+  // reached the signed checkpoint, and only up to it: nothing else anchors them.
   rows: InsertReviewLogRecord[];
-  // How many packets CounterAudit listed for the organization (as far as the listing got), so a
-  // caller can tell whether what it holds after storing the rows is the whole log.
+  // How many packets CounterAudit listed for the organization (as far as the listing got), up to
+  // the signed checkpoint once one is reached, so a caller can tell whether what it holds after
+  // storing the rows is the whole log.
   listed: number;
   // Whether the listing reached its end, so `listed` is the whole count.
   listedComplete: boolean;
@@ -261,10 +265,12 @@ export function pinnedOrgProblem(orgId: string): string | null {
 
 /**
  * Reads the review organization's packets that `known` does not hold yet. Every packet's body
- * comes from CounterAudit's verify route, which checks the packet's seal and hashes; this checks
- * the organization, and that each packet's sequence and previous hash follow the one before it.
- * The log read must then reach CounterAudit's signed checkpoint, and `minHead`, a head the caller
- * already holds, when it gives one: a log that ends short of either is a problem, not a shorter log.
+ * comes from CounterAudit's verify route; this checks the organization, that the body hashes to
+ * the packet's entry hash, and that each packet's sequence and previous hash follow the one before
+ * it. The log read must then reach CounterAudit's signed checkpoint, and `minHead`, a head the
+ * caller already holds, when it gives one: a log that ends short of either is a problem, not a
+ * shorter log. Packets past the checkpoint wait for the next read, and a read that stopped gives
+ * back no packets, since nothing signed anchors them.
  */
 export async function readReviewLog(options: {
   apiUrl: string;
@@ -346,6 +352,8 @@ export async function readReviewLog(options: {
     if (packet.packet_id !== id) {
       return done([], `CounterAudit answered for another packet than ${id}`);
     }
+    const hashProblem = packetHashProblem(packet);
+    if (hashProblem) return done([], `packet ${id} ${hashProblem}`);
     const sequence = packet.sequence;
     const prevHash = integrity.prev_hash;
     const entryHash = integrity.entry_hash;
@@ -382,35 +390,30 @@ export async function readReviewLog(options: {
   if (all.length > 0 && (all[0].sequence !== 0 || all[0].prevHash !== CHAIN_START)) {
     return done([], `the review log does not start at sequence 0 (its first packet is ${all[0].sequence})`);
   }
-  const rows: InsertReviewLogRecord[] = [];
-  for (let i = 0; i < all.length; i++) {
+  for (let i = 1; i < all.length; i++) {
     const row = all[i];
     const before = all[i - 1];
-    if (before && (row.sequence !== before.sequence + 1 || row.prevHash !== before.entryHash)) {
+    if (row.sequence !== before.sequence + 1 || row.prevHash !== before.entryHash) {
       return done(
-        rows,
+        [],
         row.sequence === before.sequence
           ? `two packets claim sequence ${row.sequence}`
-          : `the chain breaks between sequence ${before.sequence} and ${row.sequence}; read up to ${before.sequence}`
+          : `the chain breaks between sequence ${before.sequence} and ${row.sequence}`
       );
-    }
-    if (row.isNew) {
-      const { isNew: _isNew, ...stored } = row;
-      rows.push(stored);
     }
   }
 
-  if (!checkpoint.ok) return done(rows, checkpoint.problem);
+  if (!checkpoint.ok) return done([], checkpoint.problem);
   const cp = checkpoint.head;
   // CounterAudit issues a checkpoint for any chain with a numbered packet, so "none yet" for a log
   // that lists packets is an endpoint hiding it, or one without the route (review AB-01).
   if (!cp && all.length > 0) {
-    return done(rows, "CounterAudit gives no signed checkpoint for a review log it lists packets in");
+    return done([], "CounterAudit gives no signed checkpoint for a review log it lists packets in");
   }
   const minHead = options.minHead ?? null;
   if (cp && minHead && cp.sequence < minHead.sequence) {
     return done(
-      rows,
+      [],
       `CounterAudit's signed checkpoint is at sequence ${cp.sequence}, below sequence ${minHead.sequence}, which the review log has already reached: its head went back`,
       cp
     );
@@ -425,23 +428,31 @@ export async function readReviewLog(options: {
     const found = atSequence.get(head.sequence);
     if (found === undefined) {
       return done(
-        rows,
+        [],
         `${what} is at sequence ${head.sequence}, but the log read ends ${tip === null ? "before sequence 0" : `at sequence ${tip}`}: it is not the whole log`,
         cp
       );
     }
     if (found.entryHash !== head.entryHash || ("packetId" in head && found.packetId !== head.packetId)) {
       // Nothing is recorded over a contradiction: it would hide the head that shows it.
-      return done(rows, `${what} names another packet at sequence ${head.sequence} than the log read holds`, null);
+      return done([], `${what} names another packet at sequence ${head.sequence} than the log read holds`, null);
     }
   }
-  return done(rows, null, cp);
+  // Only what the signed head covers is anchored. A packet past it may have been sealed since, or
+  // may not exist at all, and the next read's head will say which.
+  const covered = (row: { sequence: number }) => cp !== null && row.sequence <= cp.sequence;
+  if (options.known.some(row => !covered(row))) {
+    return done([], `the Bureau's copy holds packets past CounterAudit's signed checkpoint${cp ? ` at sequence ${cp.sequence}` : ""}: its head went back`, cp);
+  }
+  const past = fresh.filter(row => !covered(row)).length;
+  const rows = all.filter(row => row.isNew && covered(row)).map(({ isNew: _isNew, ...stored }) => stored);
+  return { rows, listed: ids.length - past, listedComplete: true, problem: null, checkpoint: cp };
 }
 
 /**
  * One review-log packet as CounterAudit's verify route returns it, for a reader checking a
- * file's review-log references (pnpm file verify). CounterAudit checks the packet's seal and
- * hashes; this returns where it sits and the signed record it holds.
+ * file's review-log references (pnpm file verify). This checks its body hashes to its entry hash,
+ * and returns where it sits and the signed record it holds.
  */
 export async function readReviewPacket(
   packetId: string,
@@ -461,6 +472,8 @@ export async function readReviewPacket(
     return { ok: false, reason: `CounterAudit could not verify it (${got.status})` };
   }
   const packet = body.packet;
+  const hashProblem = packetHashProblem(packet);
+  if (hashProblem) return { ok: false, reason: `it ${hashProblem}` };
   const integrity = isRecord(packet.integrity) ? packet.integrity : {};
   return {
     ok: true,

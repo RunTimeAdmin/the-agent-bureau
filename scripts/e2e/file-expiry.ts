@@ -464,7 +464,7 @@ async function main(): Promise<void> {
   const { fetchProof } = await import("../../server/counteraudit");
   const { COUNTERAUDIT_EXPORT_KEYS } =
     await import("../../server/counterauditKeys");
-  const { verifyLineTombstone } = await import("../../server/outcomeProof");
+  const { verifyCounterauditSignature, verifyLineTombstone } = await import("../../server/outcomeProof");
   const { evidenceDigest, reviewerPublicKey } =
     await import("../../server/reviewDecision");
   const { addMonthsUtc } = await import("../../server/retention");
@@ -921,6 +921,23 @@ async function main(): Promise<void> {
     gone.status === 410 && tombstone?.signature != null && tombstoneCheck.ok,
     `3c GET /v1/proofs/${packetId} answers 410 with a tombstone the export key signed, erased at ${tombstone?.expired_at} (the server answered 200 from its proof cache for ${duration(Date.now() - erasedAt)} after the erasure)`,
     brief(gone)
+  );
+  // What a holder of the organization's read key gets, as the Bureau reads its own organization.
+  const erasedAnswer = await ca("GET", `/v1/audit/verify/${packetId}`, adminF);
+  const { signature: statementSignature, ...stated } = erasedAnswer.body?.signed_statement ?? {};
+  expect(
+    erasedAnswer.status === 410 &&
+      verifyCounterauditSignature(stated, statementSignature, jwks).valid &&
+      stated.statement_type === "counteraudit.packet_erasure_statement" &&
+      stated.org_id === orgF &&
+      stated.packet_id === packetId &&
+      stated.sequence === fileLine.counteraudit.sequence &&
+      stated.entry_hash === fileLine.counteraudit.entry_hash &&
+      /^[0-9a-f]{64}$/.test(String(stated.prev_hash)) &&
+      stated.kind === "scheduled" &&
+      stated.retention_months === 1,
+    `3d GET /v1/audit/verify/${packetId} answers 410 with a statement the export key signed: its place, previous hash and connector, erased by the job, sealed for ${stated.retention_months} month`,
+    brief(erasedAnswer)
   );
 
   // ---- 4 ----

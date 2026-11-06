@@ -18,12 +18,14 @@ import { evidenceDigest } from "./reviewDecision";
 
 // CounterAudit's checkpoints and head attestations in these fakes are signed with a key made for the
 // test run (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./counterauditKeys", async importOriginal => {
   const actual = await importOriginal<typeof import("./counterauditKeys")>();
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { attestationOf, chainOf, checkpointOf, checkpointResponse } from "./testCheckpoint";
+import { attestationOf, chainOf, checkpointOf, checkpointResponse, erasureStatementOf } from "./testCheckpoint";
 
 // The evidence records' shared vectors, which CounterAudit's agent-bureau-evidence-v1 connector
 // runs against its own form check. Line endings normalized, so a checkout that writes CRLF still
@@ -145,8 +147,24 @@ describe("readEvidenceSeals", () => {
         });
       }
       const packetId = u.pathname.split("/").at(-1)!;
-      if (answers[packetId]) return answers[packetId];
       const packet = chain.find(p => p.packet_id === packetId);
+      // An erased packet's answer carries the statement CounterAudit signed when it erased it.
+      if (answers[packetId]?.status === 410 && packet && "entry_hash" in packet) {
+        return Response.json(
+          {
+            error: "expired",
+            signed_statement: erasureStatementOf(ORG, {
+              packetId,
+              sequence: packet.sequence as number,
+              entryHash: packet.entry_hash,
+              prevHash: packet.prev_hash,
+              connectorId: packet.connector_id,
+            }),
+          },
+          { status: 410 }
+        );
+      }
+      if (answers[packetId]) return answers[packetId];
       return packet
         ? Response.json({ valid: true, packet: { org_id: ORG, ...packet } })
         : Response.json({ error: "not_found" }, { status: 404 });
@@ -274,13 +292,13 @@ describe("readEvidenceSeals", () => {
       );
     });
 
-    it("takes a seal made after the head was read, past it", async () => {
+    it("leaves a seal past the head for the next read, since nothing signed covers it", async () => {
       // The head is read before the listing: a seal made in between is listed after it.
       const head = chainOf(ORG, [sealed(1, 5)]).tip!;
       const later = (nonce: string | null) => Response.json({ checkpoint: checkpointOf(ORG, head), attestation: attestationOf(ORG, head, nonce) });
       const got = await read(counterAudit([sealed(1, 5, { evidence_digest: "11".repeat(32) }), sealed(2, 6, { evidence_digest: "22".repeat(32) })], {}, { checkpoint: later }));
       if ("problem" in got) throw new Error(got.problem);
-      expect(sealFor(got.seals, LINE)?.packetId).toBe(id(2));
+      expect(sealFor(got.seals, LINE)?.packetId).toBe(id(1));
     });
 
     it("needs the head attested over this read's nonce", async () => {
@@ -289,12 +307,11 @@ describe("readEvidenceSeals", () => {
       expect(await problem(counterAudit([sealed(1, 5)], {}, { checkpoint: replayed }))).toBe(
         "the Bureau organization's head attestation answers another read's nonce: an old answer, replayed"
       );
-      // Attested empty, then packets listed: sealed since the head was read, which the verify route
-      // places after it.
+      // Attested empty, then packets listed: nothing signed covers them yet.
       const empty = (nonce: string | null) => checkpointResponse(ORG, null, nonce);
       const since = await read(counterAudit([sealed(1, 0)], {}, { checkpoint: empty }));
       if ("problem" in since) throw new Error(since.problem);
-      expect(sealFor(since.seals, LINE)?.packetId).toBe(id(1));
+      expect(since.seals.size).toBe(0);
       // An organization with no packets yet has no seals, and that is no problem.
       const none = await read(counterAudit([]));
       expect("seals" in none && none.seals.size).toBe(0);

@@ -9,6 +9,8 @@ const store = vi.hoisted(() => ({
   lines: [] as unknown[],
   log: [] as { id: number; sequence: number; [k: string]: unknown }[],
 }));
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./db", () => ({
   schemaReady: vi.fn(async () => true),
   listFileLines: vi.fn(async () => store.lines),

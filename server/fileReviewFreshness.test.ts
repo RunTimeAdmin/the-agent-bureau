@@ -13,6 +13,8 @@ const store = vi.hoisted(() => ({
   orgId: null as string | null,
   disputes: [] as { packetId: string; disputeId: string; outcomeEventId: number; [k: string]: unknown }[],
 }));
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./db", () => ({
   schemaReady: vi.fn(async () => true),
   listFileLines: vi.fn(async () =>
@@ -103,7 +105,8 @@ vi.mock("./counterauditKeys", async importOriginal => {
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { chainOf, checkpointResponse } from "./testCheckpoint";
+import { chainOf, checkpointResponse, erasureStatementOf } from "./testCheckpoint";
+import { addMonthsUtc } from "./retention";
 
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
@@ -336,7 +339,35 @@ function counterAudit(
     }
     const packet = packets.find(p => path.endsWith(p.packet_id)) as (typeof chain)[number] | undefined;
     if (!packet) return Response.json({ error: "not_found" }, { status: 404 });
-    if ("expired_at" in packet) return Response.json({ error: "erased" }, { status: 410 });
+    if ("expired_at" in packet) {
+      const erased = packet as unknown as {
+        packet_id: string;
+        sequence: number;
+        entry_hash: string;
+        prev_hash: string;
+        connector_id: string;
+        created_at: string;
+        expired_at: string;
+      };
+      // CounterAudit's retention job erases a packet once its months are up, a day either way.
+      const byRetention =
+        new Date(erased.expired_at).getTime() >= addMonthsUtc(new Date(erased.created_at), 24).getTime() - 86_400_000;
+      return Response.json(
+        {
+          error: "erased",
+          signed_statement: erasureStatementOf(BUREAU_ORG, {
+            packetId: erased.packet_id,
+            sequence: erased.sequence,
+            entryHash: erased.entry_hash,
+            prevHash: erased.prev_hash,
+            connectorId: erased.connector_id,
+            kind: byRetention ? "scheduled" : "early",
+            expiredAt: erased.expired_at,
+          }),
+        },
+        { status: 410 }
+      );
+    }
     return Response.json({
       valid: true,
       entry_hash: packet.integrity.entry_hash,
