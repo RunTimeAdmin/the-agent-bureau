@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The review log's checkpoints in these fakes are signed with a key made for the test run
 // (server/testCheckpoint.ts); the pinned keys gain it in this file only.
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./counterauditKeys", async importOriginal => {
   const actual = await importOriginal<typeof import("./counterauditKeys")>();
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
@@ -733,18 +735,18 @@ describe("pnpm review sync", () => {
     expect(again.printed()).toContain("Read 0 new packets.");
   });
 
-  it("stops at a gap, keeping what comes before it, and exits 1", async () => {
+  it("stops at a gap, storing nothing from that read, and exits 1", async () => {
     store.rows.push(row());
     const records = [...genesis(), decision("bob", { decision: "reject", reason: "related payer" }), decision("alice")];
     const { io, printed } = fakeIO({}, counterAudit(records, [3]));
 
     expect(await runReview(["sync"], io)).toBe(1);
-    expect(store.log.map(r => r.sequence)).toEqual([0, 1, 2]);
+    expect(store.log).toEqual([]);
     // Bob's rejection is the packet missing, and Alice's approval past the gap
     // does not count, so the line stays as it was.
     expect(store.rows[0].displayState).toBe("unverified");
     expect(printed()).toContain(
-      "Stopped: the chain breaks between sequence 2 and 4; read up to 2. Nothing past it counts until it is resolved."
+      "Stopped: the chain breaks between sequence 2 and 4. Nothing past it counts until it is resolved."
     );
   });
 
@@ -769,7 +771,7 @@ describe("pnpm review sync", () => {
     gap.io.now = () => later;
     expect(await runReview(["sync"], gap.io)).toBe(1);
     expect(store.sync).toMatchObject({ lastAttemptAt: later, lastSuccessAt: NOW, listedCount: 4, listedAt: later });
-    expect(store.sync!.problem).toBe("the chain breaks between sequence 2 and 4; read up to 2");
+    expect(store.sync!.problem).toBe("the chain breaks between sequence 2 and 4");
     // A read that stopped still records the signed head it was shown, which the next read must reach.
     expect(store.sync!.checkpointSequence).toBe(4);
 
@@ -1001,9 +1003,9 @@ describe("pnpm review queue and settle", () => {
     expect(printed).toContain("Up to date as of the last sync.");
 
     // CounterAudit lists more than was read, and the last sync stopped there.
-    store.sync = { ...store.sync!, listedCount: 6, problem: "the chain breaks between sequence 3 and 5; read up to 3" };
+    store.sync = { ...store.sync!, listedCount: 6, problem: "the chain breaks between sequence 3 and 5" };
     printed = await queued();
-    expect(printed).toContain("STOPPED at the last sync: the chain breaks between sequence 3 and 5; read up to 3.");
+    expect(printed).toContain("STOPPED at the last sync: the chain breaks between sequence 3 and 5.");
     expect(printed).toContain("BEHIND: 2 listed packets not read here.");
     expect(printed).not.toContain("Up to date");
 

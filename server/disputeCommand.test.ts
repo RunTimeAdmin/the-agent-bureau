@@ -85,6 +85,8 @@ const db = vi.hoisted(() => ({
   ),
   getReviewLogSync: vi.fn(async () => undefined),
 }));
+// These fakes make up their packets' hashes; server/packetHash.test.ts runs the real check.
+vi.mock("./packetHash", () => ({ packetHashProblem: () => null }));
 vi.mock("./db", () => db);
 
 const pin = vi.hoisted(() => ({ genesis: null as string | null }));

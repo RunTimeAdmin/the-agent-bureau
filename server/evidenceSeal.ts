@@ -9,6 +9,7 @@ import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
 import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
+import { packetHashProblem } from "./packetHash";
 import { evidenceDigest } from "./reviewDecision";
 import { call, counterauditBase, readCheckpoint, type Fetch, type Head } from "./reviewLogSync";
 
@@ -133,10 +134,11 @@ export async function readEvidenceSeals(options: {
  * for this read and read first (readCheckpoint), as the review log's is: a listing that leaves out
  * a newer seal, or calls it something else, could otherwise pass an older one off as the last
  * (review AB-01, as it applies to seals). Every listed packet, bypassing CounterAudit's short
- * cache of the list, is read through its verify route, which checks its seal, and its place,
- * hashes and connector are taken from there, not from the listing. Walking back from the head by
- * each packet's previous hash must then find every packet down to sequence 0, and every packet
- * must sit at its place in that walk or after the head.
+ * cache of the list, is read through its verify route, its body must hash to its entry hash, and
+ * its place, hashes and connector are taken from there, not from the listing. Walking back from the
+ * head by each packet's previous hash must then find every packet down to sequence 0, and every
+ * packet must sit at its place in that walk or after the head. Only what the walk reaches counts:
+ * nothing signed anchors a packet after the head, and the next read's head will cover it if it is real.
  *
  * An erased packet's verify route answers 410 and gives nothing, so the listing's hashes stand in
  * for it, and the listing must say it is erased only of a packet the verify route agrees is.
@@ -265,6 +267,8 @@ export async function readBureauOrganization(options: {
       if (typeof integrity.prev_hash !== "string" || !HASH.test(integrity.prev_hash) || typeof integrity.entry_hash !== "string" || !HASH.test(integrity.entry_hash)) {
         return { problem: `packet ${p.id} is missing its hashes` };
       }
+      const hashProblem = packetHashProblem(packet);
+      if (hashProblem) return { problem: `packet ${p.id} ${hashProblem}` };
       node = {
         id: p.id,
         prevHash: integrity.prev_hash,
@@ -331,6 +335,7 @@ export async function readBureauOrganization(options: {
     return at && !Number.isNaN(at.getTime()) ? at : null;
   };
   for (const node of byEntryHash.values()) {
+    if (!placed.has(node.id)) continue;
     // Whether an erased dispute record went with its line is for storeSealedDisputes to judge.
     if (node.erased && node.connector === DISPUTE_CONNECTOR_ID) {
       erasedDisputes.push({ packetId: node.id, sealedAt: dateOf(node.createdAt), erasedAt: dateOf(node.expiredAt) });
