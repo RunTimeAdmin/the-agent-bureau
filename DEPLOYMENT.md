@@ -51,7 +51,7 @@ docker build -t the-agent-bureau .
 docker run --env-file .env -p 3000:3000 --restart unless-stopped the-agent-bureau
 ```
 
-Keep real credentials out of the Dockerfile, source files, archive, and frontend code. Never publish a deployment `.env` as a static file.
+Keep real credentials out of the Dockerfile, source files, archive, and frontend code. Never publish a deployment `.env` as a static file. `docs/key-custody.md` says who holds each key and secret and how to replace one.
 
 ## Environment values
 
