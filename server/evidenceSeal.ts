@@ -8,7 +8,8 @@ import { EVIDENCE_STATUSES } from "../drizzle/schema";
 import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
-import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
+import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
+import { FURNISH_CONNECTOR_ID, isRecord, verifyLineTombstone } from "./outcomeProof";
 import { packetHashProblem } from "./packetHash";
 import { evidenceDigest } from "./reviewDecision";
 import { call, counterauditBase, readCheckpoint, type Fetch, type Head } from "./reviewLogSync";
@@ -140,8 +141,11 @@ export async function readEvidenceSeals(options: {
  * packet must sit at its place in that walk or after the head. Only what the walk reaches counts:
  * nothing signed anchors a packet after the head, and the next read's head will cover it if it is real.
  *
- * An erased packet's verify route answers 410 and gives nothing, so the listing's hashes stand in
- * for it, and the listing must say it is erased only of a packet the verify route agrees is.
+ * An erased packet's verify route answers 410 with the tombstone CounterAudit signed when it erased
+ * it, which must name this organization and packet, and the entry hash and previous hash the listing
+ * gives for it (a tombstone signed before they named the previous hash leaves that to the listing).
+ * Without one anything could be hidden by calling it erased. Its connector and seal time are the
+ * listing's word, and the listing must say it is erased only of a packet the verify route agrees is.
  * Erased seals are left out, but only while each is below every seal still held, as when the
  * retention policy erases the oldest first: otherwise an older seal could stand in for a newer one
  * that was erased, so nothing is read. Anything else that cannot be read stops the reading too.
@@ -216,7 +220,7 @@ export async function readBureauOrganization(options: {
     prevHash: string;
     entryHash: string;
     connector: unknown;
-    // null for an erased packet, which gives none, and for one from before CounterAudit numbered packets.
+    // null for a packet from before CounterAudit numbered packets.
     sequence: number | null;
     erased: boolean;
     record?: unknown;
@@ -235,15 +239,28 @@ export async function readBureauOrganization(options: {
       if (typeof p.prevHash !== "string" || !HASH.test(p.prevHash) || typeof p.entryHash !== "string" || !HASH.test(p.entryHash)) {
         return { problem: `CounterAudit listed erased packet ${p.id} without its hashes` };
       }
+      const tombstone = isRecord(got.body) && isRecord(got.body.signed_tombstone) ? got.body.signed_tombstone : {};
+      const sequence = typeof tombstone.sequence === "number" ? tombstone.sequence : null;
+      const signed = verifyLineTombstone({
+        tombstone,
+        jwks: COUNTERAUDIT_EXPORT_KEYS,
+        packetId: p.id,
+        orgId: options.orgId,
+        sequence,
+        entryHash: p.entryHash,
+      });
+      if (!signed.ok || (tombstone.prev_hash !== undefined && tombstone.prev_hash !== p.prevHash)) {
+        return { problem: `CounterAudit says packet ${p.id} is erased, without a tombstone it signed that shows it` };
+      }
       node = {
         id: p.id,
         prevHash: p.prevHash,
         entryHash: p.entryHash,
         connector: p.connector,
-        sequence: null,
+        sequence,
         erased: true,
         createdAt: p.createdAt,
-        expiredAt: p.expiredAt,
+        expiredAt: tombstone.expired_at,
       };
     } else {
       if (p.erased) return { problem: `CounterAudit lists packet ${p.id} as erased, but its verify route holds it` };

@@ -105,7 +105,7 @@ vi.mock("./counterauditKeys", async importOriginal => {
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { chainOf, checkpointResponse } from "./testCheckpoint";
+import { chainOf, checkpointResponse, tombstoneOf } from "./testCheckpoint";
 
 
 const NOW = new Date("2026-11-01T12:00:00.000Z");
@@ -338,7 +338,22 @@ function counterAudit(
     }
     const packet = packets.find(p => path.endsWith(p.packet_id)) as (typeof chain)[number] | undefined;
     if (!packet) return Response.json({ error: "not_found" }, { status: 404 });
-    if ("expired_at" in packet) return Response.json({ error: "erased" }, { status: 410 });
+    if ("expired_at" in packet) {
+      const erased = packet as unknown as { packet_id: string; sequence: number; entry_hash: string; prev_hash: string; expired_at: string };
+      return Response.json(
+        {
+          error: "erased",
+          signed_tombstone: tombstoneOf(BUREAU_ORG, {
+            packetId: erased.packet_id,
+            sequence: erased.sequence,
+            entryHash: erased.entry_hash,
+            prevHash: erased.prev_hash,
+            expiredAt: erased.expired_at,
+          }),
+        },
+        { status: 410 }
+      );
+    }
     return Response.json({
       valid: true,
       entry_hash: packet.integrity.entry_hash,

@@ -14,12 +14,13 @@ vi.mock("./reviewLog", async importOriginal => ({
 }));
 
 import type { ReviewLogRecordRow } from "../drizzle/schema";
+import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import { EVIDENCE_CONNECTOR_ID, evidenceRecordFor, readBureauOrganization, sealFor } from "./evidenceSeal";
 import { canonicalizeJson } from "./outcomeProof";
 import { packetHashProblem } from "./packetHash";
 import { REVIEW_CONNECTOR_ID } from "./reviewLog";
 import { readReviewLog, readReviewPacket } from "./reviewLogSync";
-import { checkpointResponse } from "./testCheckpoint";
+import { checkpointResponse, tombstoneOf } from "./testCheckpoint";
 
 const API = "https://api.counteraudit.test";
 const NOW = new Date("2026-11-06T02:00:00.000Z");
@@ -69,7 +70,7 @@ const headOf = (packet: Packet, sequence: number) => ({
  * What answers at COUNTERAUDIT_API_URL. It forwards a head signed over the real chain, and may list
  * and serve something else: the signed head is the one thing it cannot make up.
  */
-function endpoint(signed: Packet[], served: Packet[] = signed) {
+function endpoint(signed: Packet[], served: Packet[] = signed, erased: Record<string, unknown> = {}) {
   return vi.fn(async (url: string) => {
     const u = new URL(url);
     if (u.pathname === `/v1/audit/chain/${ORG}/checkpoint`) {
@@ -82,7 +83,7 @@ function endpoint(signed: Packet[], served: Packet[] = signed) {
           packet_id: p.packet_id,
           connector_id: p.connector_id,
           created_at: p.created_at,
-          expired_at: null,
+          expired_at: p.packet_id in erased ? "2028-11-02T12:00:00.000Z" : null,
           prev_hash: p.integrity.prev_hash,
           entry_hash: p.integrity.entry_hash,
         })),
@@ -90,6 +91,9 @@ function endpoint(signed: Packet[], served: Packet[] = signed) {
       });
     }
     const packet = served.find(p => u.pathname.endsWith(p.packet_id));
+    if (packet && packet.packet_id in erased) {
+      return Response.json({ error: "expired", signed_tombstone: erased[packet.packet_id] }, { status: 410 });
+    }
     return packet
       ? Response.json({ valid: true, entry_hash: packet.integrity.entry_hash, packet })
       : Response.json({ error: "not_found" }, { status: 404 });
@@ -273,6 +277,77 @@ describe("reading the Bureau's organization against the signed head", () => {
     const real = chain();
     const got = await readOrg(endpoint(real, [real[0], { ...real[1], signed_event: seal("needs_review") }]));
     expect(got).toEqual({ problem: `packet ${idOf(1)} has a body that does not produce its payload hash` });
+  });
+
+  describe("and an erased packet", () => {
+    const placeOf = (p: Packet, n: number) => ({
+      packetId: p.packet_id,
+      sequence: n,
+      entryHash: p.integrity.entry_hash,
+      prevHash: p.integrity.prev_hash,
+    });
+    const three = () => sealChain([seal("needs_review"), seal("needs_review"), seal("verified")], { connector: EVIDENCE_CONNECTOR_ID });
+    const HIDDEN = `CounterAudit says packet ${idOf(0)} is erased, without a tombstone it signed that shows it`;
+
+    it("takes one with the tombstone CounterAudit signed", async () => {
+      const real = three();
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, placeOf(real[0], 0)) }));
+      if ("problem" in got) throw new Error(got.problem);
+      expect(sealFor(got.seals, LINE)?.packetId).toBe(idOf(2));
+    });
+
+    it("takes a tombstone signed before they named the previous hash", async () => {
+      const real = three();
+      const { prevHash: _prev, ...place } = placeOf(real[0], 0);
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, place) }));
+      expect("problem" in got).toBe(false);
+    });
+
+    it("refuses a live packet called erased, with nothing signed", async () => {
+      const real = three();
+      expect(await readOrg(endpoint(real, real, { [idOf(0)]: undefined }))).toEqual({ problem: HIDDEN });
+    });
+
+    it("refuses a tombstone that is unsigned, edited, or signed for something else", async () => {
+      const real = three();
+      const good = tombstoneOf(ORG, placeOf(real[0], 0));
+      const others = [
+        { ...good, signature: null },
+        { ...good, expired_at: "2029-01-01T00:00:00.000Z" },
+        tombstoneOf("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", placeOf(real[0], 0)),
+        tombstoneOf(ORG, { ...placeOf(real[0], 0), packetId: idOf(9) }),
+        tombstoneOf(ORG, { ...placeOf(real[0], 0), entryHash: "ab".repeat(32) }),
+        tombstoneOf(ORG, { ...placeOf(real[0], 0), prevHash: "ab".repeat(32) }),
+      ];
+      for (const tombstone of others) {
+        expect(await readOrg(endpoint(real, real, { [idOf(0)]: tombstone }))).toEqual({ problem: HIDDEN });
+      }
+    });
+
+    it("refuses one signed for another place in the chain than the walk finds it", async () => {
+      const real = three();
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, { ...placeOf(real[0], 0), sequence: 7 }) }));
+      expect(got).toEqual({
+        problem: `packet ${idOf(0)} says it is at sequence 7, which is not its place in the chain to CounterAudit's signed head`,
+      });
+    });
+
+    it("takes when a packet went from the tombstone, not the listing", async () => {
+      const real = sealChain([{ schema: "x" }, seal("verified")], { connector: DISPUTE_CONNECTOR_ID });
+      const signedAt = "2027-03-04T05:06:07.000Z";
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, { ...placeOf(real[0], 0), expiredAt: signedAt }) }));
+      if ("problem" in got) throw new Error(got.problem);
+      expect(got.erasedDisputes.map(d => d.erasedAt?.toISOString())).toEqual([signedAt]);
+    });
+
+    it("does not let a forged history stand below an erased packet", async () => {
+      const real = three();
+      // Below the erased packet, its own hashes and links hold, but it is not what was sealed.
+      const forged = sealChain([seal("verified")], { connector: EVIDENCE_CONNECTOR_ID, idFrom: 50 });
+      const rewired = { ...real[1], integrity: { ...real[1].integrity, prev_hash: forged[0].integrity.entry_hash } };
+      const got = await readOrg(endpoint(real, [forged[0], rewired, real[2]], { [idOf(1)]: tombstoneOf(ORG, placeOf(real[1], 1)) }));
+      expect(got).toEqual({ problem: `CounterAudit says packet ${idOf(1)} is erased, without a tombstone it signed that shows it` });
+    });
   });
 
   it("does not count a seal past the signed head, though it hashes and links", async () => {

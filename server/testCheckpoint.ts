@@ -43,6 +43,26 @@ export function signedByTestKey(payload: Record<string, unknown>, signedAt = "20
   };
 }
 
+/** The tombstone CounterAudit signs when it erases a packet, as its verify route gives it. */
+export function tombstoneOf(
+  orgId: string,
+  packet: { packetId: string; sequence: number; entryHash: string; prevHash?: string; expiredAt?: string },
+  fields: Record<string, unknown> = {}
+) {
+  return signedByTestKey({
+    tombstone_type: "counteraudit.packet_tombstone",
+    tombstone_version: 1,
+    org_id: orgId,
+    packet_id: packet.packetId,
+    sequence: packet.sequence,
+    entry_hash: packet.entryHash,
+    expired_at: packet.expiredAt ?? "2028-11-02T12:00:00.000Z",
+    commitment: "linkage_only",
+    ...(packet.prevHash ? { prev_hash: packet.prevHash } : {}),
+    ...fields,
+  });
+}
+
 /** A signed checkpoint for the packet at the tip of a chain. */
 export function checkpointOf(orgId: string, tip: { sequence: number; entryHash: string; packetId: string }) {
   return signedByTestKey({

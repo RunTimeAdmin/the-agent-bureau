@@ -116,7 +116,6 @@ Head pins (`COUNTERAUDIT_MIN_HEAD`, `COUNTERAUDIT_REVIEW_MIN_HEAD`) are kept whe
 
 - [ ] A new file key that meets the list above, pinned in the pull request that unpins `bureau-file-2026-11`, which has signed only test files.
 - [ ] Replacing and withdrawing a key rehearsed once on test data.
-- [ ] Every read checks each packet's body against the signed head.
 - [ ] Independent reviewers hold their own keys, `REVIEW_GENESIS` and `REVIEW_ORG_ID` name their genesis and organization, `pnpm review move` has taken the Bureau's copy there, and the testnet keys are destroyed.
 - [ ] A change to a pinned file needs an approver other than its author.
 - [ ] `/inbox` has a second factor or sits behind a stronger sign-in (`DEPLOYMENT.md`).
