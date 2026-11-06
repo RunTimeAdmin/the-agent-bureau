@@ -923,10 +923,10 @@ async function main(): Promise<void> {
     brief(gone)
   );
   // What a holder of the organization's read key gets, as the Bureau reads its own organization.
-  const verified = await ca("GET", `/v1/audit/verify/${packetId}`, adminF);
-  const { signature: statementSignature, ...stated } = verified.body?.signed_statement ?? {};
+  const erasedAnswer = await ca("GET", `/v1/audit/verify/${packetId}`, adminF);
+  const { signature: statementSignature, ...stated } = erasedAnswer.body?.signed_statement ?? {};
   expect(
-    verified.status === 410 &&
+    erasedAnswer.status === 410 &&
       verifyCounterauditSignature(stated, statementSignature, jwks).valid &&
       stated.statement_type === "counteraudit.packet_erasure_statement" &&
       stated.org_id === orgF &&
@@ -937,7 +937,7 @@ async function main(): Promise<void> {
       stated.kind === "scheduled" &&
       stated.retention_months === 1,
     `3d GET /v1/audit/verify/${packetId} answers 410 with a statement the export key signed: its place, previous hash and connector, erased by the job, sealed for ${stated.retention_months} month`,
-    brief(verified)
+    brief(erasedAnswer)
   );
 
   // ---- 4 ----
