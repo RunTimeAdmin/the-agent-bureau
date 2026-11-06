@@ -37,6 +37,11 @@ export const QUORUM = 2;
 // whoever administers the review organization counts for nothing. Until it is set, no genesis
 // counts and nothing is released.
 export const REVIEW_GENESIS: string | null = "8cb804864151e37ef952ddfef76ff788dffe6508bab7d50cfb17a5f51b5456df";
+// The organization whose log that genesis is read from, set by the same pull request. A hash alone
+// does not say where the log is: records can be sealed in any organization while their signatures
+// are fresh, and decisions at any time, so a copy of the log could leave out a rejection. Only this
+// organization's log is read.
+export const REVIEW_ORG_ID: string | null = "ad7b94fc-05be-45e6-9124-62f576f2d812";
 // The testnet genesis (2026-10-31): three reviewers the operator holds, named as such in the
 // testnet review organization, so the review flow runs end to end on testnet. While it is the
 // pinned genesis, a decision on live data counts for nothing, so no live line is released: live

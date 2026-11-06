@@ -115,17 +115,21 @@ What this does not cover: a server that holds CounterAudit's export key and serv
 
 ### One organization's log
 
-A recorded head is a head of one organization's chain, so the copy records which (`review_log_sync.orgId`, migration 0018), from the first read that reaches the whole log. Every read into the copy refuses another organization first. Otherwise pointing `COUNTERAUDIT_REVIEW_ORG_ID` somewhere else would leave the head behind, and with it the reason a log cut short or rolled back is noticed. `pnpm file verify --current` keeps no copy and holds a file to the organization it names.
+A genesis hash does not say where the log is. CounterAudit takes a review record in any organization, a key record counts if it is sealed within a day of being signed (Rules), and a decision counts whenever it is sealed. So while a genesis is being signed its records could be sealed in a second organization too, and that copy kept short of a rejection. `REVIEW_ORG_ID` (`server/reviewLog.ts`), set by the same pull request as `REVIEW_GENESIS`, names the one organization that is read: every read refuses any other before sending it anything.
 
-`pnpm review move` replaces the copy when the review log really has moved. The threat is an operator using it to swap a log for one that leaves out a rejection, or for an older one. Three things stop that:
+A recorded head is a head of one organization's chain, so the copy records which (`review_log_sync.orgId`, migration 0018), from the first read that reaches the whole log, and a read refuses while the pin has moved on from it. Until one is recorded, a stopped read records no head, since it may be of another log.
 
-- **It needs a new pin.** It refuses while the pinned genesis has taken effect in the log held here, so it rests on a pull request changing `REVIEW_GENESIS`, which anyone can see.
-- **It lands only where the pin counts.** The pinned genesis must have taken effect in the new organization's whole log, read to its attested head. A genesis needs every reviewer it names to have signed it, and a key record sealed more than a day after it was signed is ignored (Rules), so old signatures cannot be sealed again somewhere else. The same reviewers in a new organization, with the same hash, are refused by the first check.
-- **A return is held to what was reached.** `review_log_moves` keeps the head the copy had reached in each organization it left, and a read of that organization must reach it again.
+`pnpm review move` replaces the copy when the pin has moved. The threat is an operator using it to swap a log for one that leaves out a rejection, or for an older one:
+
+- **It goes only to the pinned organization,** so it rests on a pull request anyone can see, which the reviewers check.
+- **It needs a new genesis.** It refuses while the pinned genesis has taken effect in the log held here, so a pull request moving the organization alone drops no decision.
+- **It lands only where the pin counts.** The pinned genesis must have taken effect in that organization's whole log, read to its attested head.
+- **A return is held to what was reached.** `review_log_moves` keeps the head the copy had reached in each organization it left, and a read of that organization must reach it again. A copy with packets and no organization recorded is refused, since its head could not be kept.
+- **It acts on what it checked.** Under a lock on the sync row it checks that the copy's organization and size have not changed since its checks. A read that a move overtakes stores nothing: its packets are refused and its head ignored.
 
 The copy is replaced, not kept beside the new log. Nothing reads the old rows once the pin has moved, and CounterAudit keeps the packets, which a review organization never erases.
 
-What this does not cover: whoever can merge and deploy can change the pin, in public. Whoever can write to the Bureau's database can change the recorded organization, as they can the recorded head, which is why `pnpm file verify --current` holds a pin of its own. Moving away from stolen reviewer keys leaves the old organization governed by those keys in CounterAudit, though the Bureau no longer reads it, and furnisher admissions start over under the new genesis.
+What this does not cover: whoever can merge and deploy can change both pins, in public. Whoever can write to the Bureau's database can change the recorded organization, as they can the recorded head, which is why `pnpm file verify --current` holds a pin of its own. Moving away from stolen reviewer keys leaves the old organization governed by those keys in CounterAudit, though the Bureau no longer reads it, and furnisher admissions start over under the new genesis. Reviewers who keep their keys across a move can have old decisions sealed again in the new log by whoever holds an ingest key there, so a new genesis uses new keys. Checking each packet's body against the signed head is separate work.
 
 ### CounterAudit
 

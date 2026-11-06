@@ -30,13 +30,16 @@ vi.mock("./db", () => ({
   bindReviewLogOrg: vi.fn(async () => {}),
 }));
 
-const pin = vi.hoisted(() => ({ genesis: null as string | null }));
+const pin = vi.hoisted(() => ({ genesis: null as string | null, org: "11111111-2222-4333-8444-555555555555" }));
 vi.mock("./reviewLog", async importOriginal => {
   const actual = await importOriginal<typeof import("./reviewLog")>();
   return {
     ...actual,
     get REVIEW_GENESIS() {
       return pin.genesis;
+    },
+    get REVIEW_ORG_ID() {
+      return pin.org;
     },
     replayReviewLog: (records: Parameters<typeof actual.replayReviewLog>[0]) =>
       actual.replayReviewLog(records, pin.genesis),

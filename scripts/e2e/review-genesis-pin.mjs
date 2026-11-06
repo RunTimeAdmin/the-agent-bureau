@@ -4,7 +4,8 @@
 // so when server/reviewLog.ts is loaded into the test's process, this replaces the pinned hash
 // with the test's genesis hash. The file on disk does not change. TESTNET_GENESIS, while it is
 // the same hash, is replaced with it, so the log still counts as the testnet one and only
-// test-data decisions count, as now.
+// test-data decisions count, as now. REVIEW_ORG_ID is replaced with the test's review organization,
+// which the test creates and names in the environment before it loads this file.
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -40,5 +41,14 @@ export async function load(url, context, nextLoad) {
       "the loaded server/reviewLog.ts does not hold the pinned genesis hash"
     );
   }
-  return { ...result, source: source.replaceAll(pinned, genesis) };
+  const pinnedOrg = /export const REVIEW_ORG_ID[^=]*=\s*("[0-9a-f-]{36}")/.exec(original)?.[1];
+  if (!pinnedOrg || !source.includes(pinnedOrg)) {
+    throw new Error("the loaded server/reviewLog.ts pins no REVIEW_ORG_ID for the e2e test to replace");
+  }
+  return {
+    ...result,
+    source: source
+      .replaceAll(pinned, genesis)
+      .replaceAll(pinnedOrg, "process.env.COUNTERAUDIT_REVIEW_ORG_ID"),
+  };
 }

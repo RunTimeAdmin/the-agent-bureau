@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import type { InsertReviewLogRecord, ReviewLogRecordRow } from "../drizzle/schema";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
 import { isRecord, verifyCounterauditSignature } from "./outcomeProof";
-import { REVIEW_CONNECTOR_ID } from "./reviewLog";
+import { REVIEW_CONNECTOR_ID, REVIEW_ORG_ID } from "./reviewLog";
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -252,6 +252,13 @@ export type ReadResult = {
   checkpoint: Checkpoint | null;
 };
 
+/** Why this organization's review log may not be read, or null: only the pinned one may. */
+export function pinnedOrgProblem(orgId: string): string | null {
+  return orgId === REVIEW_ORG_ID
+    ? null
+    : `organization ${orgId} is not the review organization pinned in server/reviewLog.ts (REVIEW_ORG_ID)`;
+}
+
 /**
  * Reads the review organization's packets that `known` does not hold yet. Every packet's body
  * comes from CounterAudit's verify route, which checks the packet's seal and hashes; this checks
@@ -268,6 +275,8 @@ export async function readReviewLog(options: {
   fetch?: Fetch;
   now?: Date;
 }): Promise<ReadResult> {
+  const notPinned = pinnedOrgProblem(options.orgId);
+  if (notPinned) return { rows: [], listed: 0, listedComplete: false, problem: notPinned, checkpoint: null };
   const fetchImpl = options.fetch ?? fetch;
   const base = counterauditBase(options.apiUrl);
   const now = options.now ?? new Date();

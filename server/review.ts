@@ -68,6 +68,7 @@ import {
 import {
   parseHead,
   readCheckpoint,
+  pinnedOrgProblem,
   readReviewLog,
   submitReviewRecord,
   type Fetch,
@@ -999,14 +1000,19 @@ async function sync(io: ReviewIO) {
     await recordReviewLogSync({ at: io.now(), problem: `could not read the review log: ${describeError(error)}`, listedCount: null });
     return 2;
   }
-  const added = await insertReviewLogRecords(result.rows);
+  const added = await insertReviewLogRecords(result.rows, ENV.counterauditReviewOrgId);
   await recordReviewLogSync({
     at: io.now(),
     problem: result.problem,
     listedCount: result.listedComplete ? result.listed : null,
   });
   // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
-  if (result.checkpoint) await recordReviewLogCheckpoint(result.checkpoint, io.now());
+  if (result.checkpoint) {
+    await recordReviewLogCheckpoint(result.checkpoint, io.now(), {
+      orgId: ENV.counterauditReviewOrgId,
+      whole: result.problem === null,
+    });
+  }
   if (!result.problem) await bindReviewLogOrg(ENV.counterauditReviewOrgId, io.now());
   const fresh = new Set(result.rows.map(r => r.sequence));
   const log = await loadReviewLog();
@@ -1027,12 +1033,12 @@ async function sync(io: ReviewIO) {
 }
 
 /**
- * pnpm review move: replaces the Bureau's copy of the review log with the whole log of the
- * organization COUNTERAUDIT_REVIEW_ORG_ID names, for a new genesis in a review organization of its
- * own (docs/two-person-review.md). It goes only from a log the pinned genesis does not count in to
- * one it does. So every move rests on a public pull request changing REVIEW_GENESIS, and a log
- * cannot be swapped for one that leaves out a decision while its genesis stands. A return to an
- * organization is held to the head the copy had reached there.
+ * pnpm review move: replaces the Bureau's copy of the review log with the whole log of the pinned
+ * organization, for a new genesis in a review organization of its own (docs/two-person-review.md).
+ * It goes only to REVIEW_ORG_ID, and only from a log the pinned genesis does not count in to one it
+ * does. So every move rests on a public pull request naming both, and a log cannot be swapped for
+ * a copy of it that leaves out a decision. A return to an organization is held to the head the copy
+ * had reached there.
  */
 async function moveCommand(io: ReviewIO): Promise<number> {
   const missing = [
@@ -1045,14 +1051,26 @@ async function moveCommand(io: ReviewIO): Promise<number> {
   }
   if (!(await needDatabase(io))) return 2;
   const to = ENV.counterauditReviewOrgId;
+  const notPinned = pinnedOrgProblem(to);
+  if (notPinned) {
+    io.log(`Not moved: ${notPinned}.`);
+    return 1;
+  }
   const from = (await getReviewLogSync())?.orgId ?? null;
   if (from === to) {
     io.log(`The Bureau's copy of the review log is already organization ${to}'s. Nothing to move: run pnpm review sync.`);
     return 1;
   }
+  const packets = (await listReviewLogRecords()).length;
+  if (from === null && packets > 0) {
+    io.log(
+      "Not moved: no organization is recorded for the log held here, so the head it reached could not be kept. Run pnpm review sync from the deployment that pins that organization, which records it."
+    );
+    return 1;
+  }
   if ((await loadReviewLog()).reviewers) {
     io.log(
-      `Not moved: the pinned genesis has taken effect in the log held here. A move needs a new genesis: change REVIEW_GENESIS by pull request first, so a log cannot be swapped for one that leaves out a decision.`
+      `Not moved: the pinned genesis has taken effect in the log held here. A move needs a new genesis: change REVIEW_GENESIS and REVIEW_ORG_ID by pull request first, so a log cannot be swapped for one that leaves out a decision.`
     );
     return 1;
   }
@@ -1079,14 +1097,20 @@ async function moveCommand(io: ReviewIO): Promise<number> {
     );
     return 1;
   }
-  await moveReviewLog({
-    toOrgId: to,
-    rows: target.rows,
-    checkpoint: target.checkpoint,
-    pinnedGenesis: REVIEW_GENESIS,
-    at: io.now(),
-  });
-  io.log(`Moved the Bureau's copy of the review log from organization ${from ?? "not recorded"} to ${to}. Its ${target.rows.length} packet${target.rows.length === 1 ? "" : "s"} are read.`);
+  try {
+    await moveReviewLog({
+      expected: { orgId: from, packets },
+      toOrgId: to,
+      rows: target.rows,
+      checkpoint: target.checkpoint,
+      pinnedGenesis: REVIEW_GENESIS,
+      at: io.now(),
+    });
+  } catch (error) {
+    io.log(`Not moved: ${describeError(error)}. Run it again with no other review run going.`);
+    return 1;
+  }
+  io.log(`Moved the Bureau's copy of the review log ${from ? `from organization ${from} ` : ""}to ${to}. Its ${target.rows.length} packet${target.rows.length === 1 ? "" : "s"} are read.`);
   const head = target.position;
   if (head) {
     io.log(`Its head is sequence ${head.sequence}. Set COUNTERAUDIT_REVIEW_MIN_HEAD to ${head.sequence}:${head.entryHash} wherever pnpm file verify --current runs.`);
@@ -1123,6 +1147,11 @@ async function headCommand(io: ReviewIO): Promise<number> {
   if (ENV.counterauditMinHead && !orgPinned) {
     io.log('COUNTERAUDIT_MIN_HEAD is not "sequence:entryhash".');
     return 2;
+  }
+  const notPinned = pinnedOrgProblem(ENV.counterauditReviewOrgId);
+  if (notPinned) {
+    io.log(`Stopped: ${notPinned}.`);
+    return 1;
   }
   let read: Awaited<ReturnType<typeof readCheckpoint>>;
   try {

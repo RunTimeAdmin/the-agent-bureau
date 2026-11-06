@@ -895,12 +895,14 @@ export async function getReviewLogHead(): Promise<{ sequence: number; entryHash:
 }
 
 // Records a signed checkpoint a read reached, if it is newer than the one recorded. Never moves the
-// recorded one back: the read that reached it has already checked it is not below it.
+// recorded one back: the read that reached it has already checked it is not below it. Only for the
+// organization the copy holds, so a read overtaken by pnpm review move changes nothing. With none
+// recorded yet, only from a read that reached the whole log: one that stopped may be of another's.
 export async function recordReviewLogCheckpoint(checkpoint: {
   sequence: number;
   entryHash: string;
   issuedAt: Date;
-}, at: Date): Promise<void> {
+}, at: Date, read: { orgId: string; whole: boolean }): Promise<void> {
   const db = await requireDb();
   await db
     .insert(reviewLogSync)
@@ -916,7 +918,10 @@ export async function recordReviewLogCheckpoint(checkpoint: {
     .where(
       and(
         eq(reviewLogSync.id, 1),
-        or(isNull(reviewLogSync.checkpointSequence), lt(reviewLogSync.checkpointSequence, checkpoint.sequence))
+        or(isNull(reviewLogSync.checkpointSequence), lt(reviewLogSync.checkpointSequence, checkpoint.sequence)),
+        read.whole
+          ? or(isNull(reviewLogSync.orgId), eq(reviewLogSync.orgId, read.orgId))
+          : eq(reviewLogSync.orgId, read.orgId)
       )
     );
 }
@@ -949,8 +954,11 @@ export async function getReviewLogMoveHead(orgId: string): Promise<{ sequence: n
 }
 
 // Replaces the copy with another organization's whole log, all at once (pnpm review move, which
-// checks that it may). What it held is noted in review_log_moves; CounterAudit keeps the packets.
+// checks that it may, against what `expected` says the copy held). Refuses if the copy has changed
+// since: the sync row's lock keeps a read's writes out until this is done. What it held is noted in
+// review_log_moves; CounterAudit keeps the packets.
 export async function moveReviewLog(move: {
+  expected: { orgId: string | null; packets: number };
   toOrgId: string;
   rows: InsertReviewLogRecord[];
   checkpoint: { sequence: number; entryHash: string; issuedAt: Date } | null;
@@ -959,8 +967,15 @@ export async function moveReviewLog(move: {
 }): Promise<void> {
   const db = await requireDb();
   await db.transaction(async tx => {
-    const [sync] = await tx.select().from(reviewLogSync).where(eq(reviewLogSync.id, 1));
+    await tx
+      .insert(reviewLogSync)
+      .values({ id: 1, lastAttemptAt: move.at })
+      .onDuplicateKeyUpdate({ set: { id: sql`${reviewLogSync.id}` } });
+    const [sync] = await tx.select().from(reviewLogSync).where(eq(reviewLogSync.id, 1)).for("update");
     const [held] = await tx.select({ packets: sql<number>`count(*)` }).from(reviewLogRecords);
+    if (sync.orgId !== move.expected.orgId || Number(held.packets) !== move.expected.packets) {
+      throw new Error("the Bureau's copy of the review log changed while this ran");
+    }
     await tx.insert(reviewLogMoves).values({
       fromOrgId: sync?.orgId ?? null,
       toOrgId: move.toOrgId,
@@ -993,18 +1008,31 @@ export async function listReviewLogRecords(): Promise<ReviewLogRecordRow[]> {
   return db.select().from(reviewLogRecords).orderBy(asc(reviewLogRecords.sequence));
 }
 
-// Stores packets read from the review log. A packet already stored is left as it was.
-export async function insertReviewLogRecords(rows: InsertReviewLogRecord[]): Promise<number> {
+// Stores packets read from this organization's review log. A packet already stored is left as it
+// was. Refuses if the copy has moved to another organization since the read began: pnpm review
+// move takes the same lock.
+export async function insertReviewLogRecords(rows: InsertReviewLogRecord[], orgId: string): Promise<number> {
+  if (rows.length === 0) return 0;
   const db = await requireDb();
-  let added = 0;
-  for (const row of rows) {
-    try {
-      await db.insert(reviewLogRecords).values(row);
-      added++;
-    } catch (error) {
-      const { code, cause } = error as { code?: string; cause?: { code?: string } };
-      if ((code ?? cause?.code) !== "ER_DUP_ENTRY") throw error;
+  return db.transaction(async tx => {
+    const [sync] = await tx
+      .select({ orgId: reviewLogSync.orgId })
+      .from(reviewLogSync)
+      .where(eq(reviewLogSync.id, 1))
+      .for("update");
+    if (sync?.orgId && sync.orgId !== orgId) {
+      throw new Error(`the Bureau's copy of the review log moved to organization ${sync.orgId} during this read`);
     }
-  }
-  return added;
+    let added = 0;
+    for (const row of rows) {
+      try {
+        await tx.insert(reviewLogRecords).values(row);
+        added++;
+      } catch (error) {
+        const { code, cause } = error as { code?: string; cause?: { code?: string } };
+        if ((code ?? cause?.code) !== "ER_DUP_ENTRY") throw error;
+      }
+    }
+    return added;
+  });
 }

@@ -26,7 +26,7 @@ import {
   type Review,
 } from "./lineState";
 import { replayReviewLog, type ReviewLog } from "./reviewLog";
-import { readReviewLog, type Checkpoint, type Fetch, type Head } from "./reviewLogSync";
+import { pinnedOrgProblem, readReviewLog, type Checkpoint, type Fetch, type Head } from "./reviewLogSync";
 
 const MAX_RELATION_HOPS = 10;
 
@@ -55,15 +55,17 @@ export async function loadReviewLog(): Promise<ReviewLog> {
 }
 
 /**
- * Why the Bureau's copy of the review log cannot be read as this organization's, or null. The copy
- * holds one organization's log, and its recorded head is that log's. Reading another into it would
- * take away what a head protects, so only pnpm review move changes it.
+ * Why the Bureau's copy of the review log cannot be read as this organization's, or null. Only the
+ * pinned organization is read. The copy holds one organization's log, and its recorded head is that
+ * log's, so when the pin has moved on, only pnpm review move replaces it.
  */
 export async function reviewLogOrgProblem(orgId: string): Promise<string | null> {
+  const notPinned = pinnedOrgProblem(orgId);
+  if (notPinned) return notPinned;
   const sync = await getReviewLogSync();
   const held = sync?.orgId ?? null;
   return held !== null && held !== orgId
-    ? `the Bureau's copy of the review log is organization ${held}'s, not ${orgId}, which COUNTERAUDIT_REVIEW_ORG_ID names. Only pnpm review move changes that, and only once a new genesis is pinned`
+    ? `the Bureau's copy of the review log is organization ${held}'s, not ${orgId}, the one pinned now. Only pnpm review move replaces it`
     : null;
 }
 
@@ -91,9 +93,14 @@ export async function loadCurrentReviewLog(options: {
     minHead: await getReviewLogHead(),
   });
   // Recorded even when the read stopped: a signed head the log did not reach is one the next read must.
-  if (read.checkpoint) await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date());
+  if (read.checkpoint) {
+    await recordReviewLogCheckpoint(read.checkpoint, options.now ?? new Date(), {
+      orgId: options.orgId,
+      whole: read.problem === null,
+    });
+  }
   if (read.problem) return { problem: read.problem };
-  await insertReviewLogRecords(read.rows);
+  await insertReviewLogRecords(read.rows, options.orgId);
   const stored = await listReviewLogRecords();
   const linked = linkedRecords(stored);
   if (linked.length !== stored.length) {

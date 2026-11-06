@@ -55,7 +55,7 @@ import { evidenceDigest, newReviewerKey, reviewerPublicKey } from "./reviewDecis
 import { readBureauOrganization, sealFor, type SealedDispute, type SealedEvidence, type SealedLine } from "./evidenceSeal";
 import { erasedByRetention, storeSealedDisputes } from "./disputeSync";
 import type { ReviewLog } from "./reviewLog";
-import { parseHead, readReviewPacket, type Fetch } from "./reviewLogSync";
+import { parseHead, pinnedOrgProblem, readReviewPacket, type Fetch } from "./reviewLogSync";
 import { assembleSubjectView } from "./subjectView";
 import {
   admissionFor,
@@ -1962,7 +1962,7 @@ async function checkReviewLog(
     failed++;
     io.log(`Review log: FAILED: ${printable(what)}`);
   };
-  if (stated.org_id !== ENV.counterauditReviewOrgId) {
+  if (stated.org_id !== ENV.counterauditReviewOrgId || pinnedOrgProblem(ENV.counterauditReviewOrgId)) {
     fail(
       `the file names organization ${stated.org_id}, not the review organization`
     );
