@@ -15,12 +15,13 @@ vi.mock("./reviewLog", async importOriginal => ({
 
 import type { ReviewLogRecordRow } from "../drizzle/schema";
 import { DISPUTE_CONNECTOR_ID } from "./dispute";
+import { erasedByRetention } from "./disputeSync";
 import { EVIDENCE_CONNECTOR_ID, evidenceRecordFor, readBureauOrganization, sealFor } from "./evidenceSeal";
 import { canonicalizeJson } from "./outcomeProof";
 import { packetHashProblem } from "./packetHash";
 import { REVIEW_CONNECTOR_ID } from "./reviewLog";
 import { readReviewLog, readReviewPacket } from "./reviewLogSync";
-import { checkpointResponse, tombstoneOf } from "./testCheckpoint";
+import { checkpointResponse, erasureStatementOf } from "./testCheckpoint";
 
 const API = "https://api.counteraudit.test";
 const NOW = new Date("2026-11-06T02:00:00.000Z");
@@ -92,7 +93,7 @@ function endpoint(signed: Packet[], served: Packet[] = signed, erased: Record<st
     }
     const packet = served.find(p => u.pathname.endsWith(p.packet_id));
     if (packet && packet.packet_id in erased) {
-      return Response.json({ error: "expired", signed_tombstone: erased[packet.packet_id] }, { status: 410 });
+      return Response.json({ error: "expired", signed_statement: erased[packet.packet_id] }, { status: 410 });
     }
     return packet
       ? Response.json({ valid: true, entry_hash: packet.integrity.entry_hash, packet })
@@ -285,22 +286,16 @@ describe("reading the Bureau's organization against the signed head", () => {
       sequence: n,
       entryHash: p.integrity.entry_hash,
       prevHash: p.integrity.prev_hash,
+      connectorId: p.connector_id as string,
     });
     const three = () => sealChain([seal("needs_review"), seal("needs_review"), seal("verified")], { connector: EVIDENCE_CONNECTOR_ID });
-    const HIDDEN = `CounterAudit says packet ${idOf(0)} is erased, without a tombstone it signed that shows it`;
+    const HIDDEN = `CounterAudit says packet ${idOf(0)} is erased, without a statement it signed that shows it`;
 
-    it("takes one with the tombstone CounterAudit signed", async () => {
+    it("takes one with the statement CounterAudit signed", async () => {
       const real = three();
-      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, placeOf(real[0], 0)) }));
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: erasureStatementOf(ORG, placeOf(real[0], 0)) }));
       if ("problem" in got) throw new Error(got.problem);
       expect(sealFor(got.seals, LINE)?.packetId).toBe(idOf(2));
-    });
-
-    it("takes a tombstone signed before they named the previous hash", async () => {
-      const real = three();
-      const { prevHash: _prev, ...place } = placeOf(real[0], 0);
-      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, place) }));
-      expect("problem" in got).toBe(false);
     });
 
     it("refuses a live packet called erased, with nothing signed", async () => {
@@ -308,45 +303,78 @@ describe("reading the Bureau's organization against the signed head", () => {
       expect(await readOrg(endpoint(real, real, { [idOf(0)]: undefined }))).toEqual({ problem: HIDDEN });
     });
 
-    it("refuses a tombstone that is unsigned, edited, or signed for something else", async () => {
+    it("refuses a statement that is unsigned, edited, or signed for something else", async () => {
       const real = three();
-      const good = tombstoneOf(ORG, placeOf(real[0], 0));
+      const place = placeOf(real[0], 0);
+      const good = erasureStatementOf(ORG, place);
       const others = [
         { ...good, signature: null },
-        { ...good, expired_at: "2029-01-01T00:00:00.000Z" },
-        tombstoneOf("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", placeOf(real[0], 0)),
-        tombstoneOf(ORG, { ...placeOf(real[0], 0), packetId: idOf(9) }),
-        tombstoneOf(ORG, { ...placeOf(real[0], 0), entryHash: "ab".repeat(32) }),
-        tombstoneOf(ORG, { ...placeOf(real[0], 0), prevHash: "ab".repeat(32) }),
+        { ...good, kind: "early" },
+        erasureStatementOf("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", place),
+        erasureStatementOf(ORG, { ...place, packetId: idOf(9) }),
+        erasureStatementOf(ORG, place, { statement_type: "counteraudit.packet_tombstone" }),
+        erasureStatementOf(ORG, place, { statement_version: 2 }),
+        erasureStatementOf(ORG, place, { prev_hash: undefined }),
+        erasureStatementOf(ORG, place, { entry_hash: "nope" }),
+        erasureStatementOf(ORG, place, { sequence: null }),
       ];
-      for (const tombstone of others) {
-        expect(await readOrg(endpoint(real, real, { [idOf(0)]: tombstone }))).toEqual({ problem: HIDDEN });
+      for (const statement of others) {
+        expect(await readOrg(endpoint(real, real, { [idOf(0)]: statement }))).toEqual({ problem: HIDDEN });
       }
     });
 
     it("refuses one signed for another place in the chain than the walk finds it", async () => {
       const real = three();
-      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, { ...placeOf(real[0], 0), sequence: 7 }) }));
+      const got = await readOrg(endpoint(real, real, { [idOf(0)]: erasureStatementOf(ORG, { ...placeOf(real[0], 0), sequence: 7 }) }));
       expect(got).toEqual({
         problem: `packet ${idOf(0)} says it is at sequence 7, which is not its place in the chain to CounterAudit's signed head`,
       });
     });
 
-    it("takes when a packet went from the tombstone, not the listing", async () => {
-      const real = sealChain([{ schema: "x" }, seal("verified")], { connector: DISPUTE_CONNECTOR_ID });
-      const signedAt = "2027-03-04T05:06:07.000Z";
-      const got = await readOrg(endpoint(real, real, { [idOf(0)]: tombstoneOf(ORG, { ...placeOf(real[0], 0), expiredAt: signedAt }) }));
-      if ("problem" in got) throw new Error(got.problem);
-      expect(got.erasedDisputes.map(d => d.erasedAt?.toISOString())).toEqual([signedAt]);
-    });
-
-    it("does not let a forged history stand below an erased packet", async () => {
+    it("follows the statement's previous hash, so a forged history cannot stand below it", async () => {
       const real = three();
-      // Below the erased packet, its own hashes and links hold, but it is not what was sealed.
+      // Below the erased packet, its own hashes and links hold, but it is not what was sealed. The
+      // listing points at it; the statement does not.
       const forged = sealChain([seal("verified")], { connector: EVIDENCE_CONNECTOR_ID, idFrom: 50 });
       const rewired = { ...real[1], integrity: { ...real[1].integrity, prev_hash: forged[0].integrity.entry_hash } };
-      const got = await readOrg(endpoint(real, [forged[0], rewired, real[2]], { [idOf(1)]: tombstoneOf(ORG, placeOf(real[1], 1)) }));
-      expect(got).toEqual({ problem: `CounterAudit says packet ${idOf(1)} is erased, without a tombstone it signed that shows it` });
+      const got = await readOrg(endpoint(real, [forged[0], rewired, real[2]], { [idOf(1)]: erasureStatementOf(ORG, placeOf(real[1], 1)) }));
+      expect(got).toEqual({
+        problem: "CounterAudit's listing of the Bureau organization's packets leaves out sequence 0, at or below its signed head at sequence 2",
+      });
+    });
+
+    it("takes what it was and when it went from the statement, not the listing", async () => {
+      const real = sealChain([{ schema: "x" }, seal("verified")], { connector: DISPUTE_CONNECTOR_ID });
+      const signedAt = "2027-03-04T05:06:07.000Z";
+      // The listing calls it something else, sealed long ago; neither is read.
+      const relabelled = { ...real[0], connector_id: "an-ordinary-connector", created_at: "2020-01-01T00:00:00.000Z" };
+      const got = await readOrg(
+        endpoint(real, [relabelled, real[1]], {
+          [idOf(0)]: erasureStatementOf(ORG, { ...placeOf(real[0], 0), kind: "early", expiredAt: signedAt }),
+        })
+      );
+      if ("problem" in got) throw new Error(got.problem);
+      expect(got.erasedDisputes).toEqual([
+        { packetId: idOf(0), kind: "early", retentionMonths: 24, erasedAt: new Date(signedAt) },
+      ]);
+    });
+
+    it("counts as retention only what the job erased after the full term it was sealed for", () => {
+      const judged = (kind: unknown, retentionMonths: unknown) =>
+        erasedByRetention({ packetId: idOf(0), kind, retentionMonths, erasedAt: NOW });
+      expect(judged("scheduled", 24)).toBe(true);
+      expect(judged("early", 24)).toBe(false);
+      // A policy shortened to erase it sooner does not pass.
+      expect(judged("scheduled", 1)).toBe(false);
+      expect(judged("scheduled", null)).toBe(false);
+      expect(judged(undefined, undefined)).toBe(false);
+    });
+  });
+
+  it("refuses a chain that does not begin where a chain begins", async () => {
+    const elsewhere = sealChain([seal("verified")], { connector: EVIDENCE_CONNECTOR_ID, prev: "ab".repeat(32) });
+    expect(await readOrg(endpoint(elsewhere))).toEqual({
+      problem: "the chain to CounterAudit's signed head for the Bureau organization does not begin where a chain begins",
     });
   });
 

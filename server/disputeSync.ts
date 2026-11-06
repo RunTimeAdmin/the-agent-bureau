@@ -20,7 +20,7 @@ import {
 import type { ErasedDispute, SealedDispute } from "./evidenceSeal";
 import type { Furnisher } from "./furnishers";
 import { canonicalizeJson } from "./outcomeProof";
-import { addMonthsUtc, RETENTION_MONTHS } from "./retention";
+import { RETENTION_MONTHS } from "./retention";
 import type { SigvaraClient } from "./sigvaraStanding";
 
 const sameJson = (a: unknown, b: unknown) => {
@@ -52,12 +52,10 @@ export type DisputeSyncResult = {
   problems: string[];
 };
 
-// CounterAudit's retention erases a packet once its months are up; a day either way for clocks.
-const DAY_MS = 86_400_000;
+// CounterAudit's own signed word: its retention job erased it, and it was sealed to be kept the full
+// term, so a policy shortened to erase it sooner does not pass.
 export const erasedByRetention = (e: ErasedDispute) =>
-  e.sealedAt !== null &&
-  e.erasedAt !== null &&
-  e.erasedAt.getTime() >= addMonthsUtc(e.sealedAt, RETENTION_MONTHS).getTime() - DAY_MS;
+  e.kind === "scheduled" && typeof e.retentionMonths === "number" && e.retentionMonths >= RETENTION_MONTHS;
 
 /**
  * Why the stored dispute records are not the ones CounterAudit sealed in the Bureau's

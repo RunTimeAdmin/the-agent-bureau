@@ -23,7 +23,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 // A new CounterAudit organization's chain starts at sequence 0, linked to this.
-const CHAIN_START = "0".repeat(64);
+export const CHAIN_START = "0".repeat(64);
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** CounterAudit's base URL: https, or plain http to this machine only, since requests carry a key. */

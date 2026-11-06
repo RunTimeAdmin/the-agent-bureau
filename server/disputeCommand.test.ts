@@ -127,7 +127,7 @@ vi.mock("./counterauditKeys", async importOriginal => {
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { chainOf, checkpointResponse, tombstoneOf } from "./testCheckpoint";
+import { chainOf, checkpointResponse, erasureStatementOf } from "./testCheckpoint";
 
 const T0 = new Date("2026-11-01T10:00:00.000Z");
 const DAY = 86_400_000;
@@ -604,14 +604,17 @@ describe("pnpm dispute sync", () => {
       }
       const packet = packets.find(p => u.pathname.endsWith(`/${p.packet_id}`));
       if (packet && erasedAt(packet.packet_id)) {
-        const signed_tombstone = tombstoneOf(ORG, {
+        const signed_statement = erasureStatementOf(ORG, {
           packetId: packet.packet_id,
           sequence: packet.sequence as number,
           entryHash: packet.entry_hash,
           prevHash: packet.prev_hash,
+          connectorId: packet.connector_id,
+          // CounterAudit's retention job erases a packet once its 24 months are up.
+          kind: erasedAt(packet.packet_id)!.getTime() - new Date(packet.created_at as string).getTime() > 700 * 86_400_000 ? "scheduled" : "early",
           expiredAt: erasedAt(packet.packet_id)!.toISOString(),
         });
-        return Response.json({ error: "gone", signed_tombstone }, { status: 410 });
+        return Response.json({ error: "gone", signed_statement }, { status: 410 });
       }
       return packet
         ? Response.json({ valid: true, packet: { org_id: ORG, ...packet } })

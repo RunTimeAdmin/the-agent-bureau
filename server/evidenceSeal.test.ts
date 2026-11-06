@@ -25,7 +25,7 @@ vi.mock("./counterauditKeys", async importOriginal => {
   const { TEST_EXPORT_KEY } = await import("./testCheckpoint");
   return { COUNTERAUDIT_EXPORT_KEYS: { keys: [...actual.COUNTERAUDIT_EXPORT_KEYS.keys, TEST_EXPORT_KEY] } };
 });
-import { attestationOf, chainOf, checkpointOf, checkpointResponse, tombstoneOf } from "./testCheckpoint";
+import { attestationOf, chainOf, checkpointOf, checkpointResponse, erasureStatementOf } from "./testCheckpoint";
 
 // The evidence records' shared vectors, which CounterAudit's agent-bureau-evidence-v1 connector
 // runs against its own form check. Line endings normalized, so a checkout that writes CRLF still
@@ -148,16 +148,17 @@ describe("readEvidenceSeals", () => {
       }
       const packetId = u.pathname.split("/").at(-1)!;
       const packet = chain.find(p => p.packet_id === packetId);
-      // An erased packet's answer carries the tombstone CounterAudit signed when it erased it.
+      // An erased packet's answer carries the statement CounterAudit signed when it erased it.
       if (answers[packetId]?.status === 410 && packet && "entry_hash" in packet) {
         return Response.json(
           {
             error: "expired",
-            signed_tombstone: tombstoneOf(ORG, {
+            signed_statement: erasureStatementOf(ORG, {
               packetId,
               sequence: packet.sequence as number,
               entryHash: packet.entry_hash,
               prevHash: packet.prev_hash,
+              connectorId: packet.connector_id,
             }),
           },
           { status: 410 }

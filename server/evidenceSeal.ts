@@ -9,10 +9,10 @@ import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import type { EvidenceResult } from "./evidence";
 import { needsWaiver } from "./lineState";
 import { COUNTERAUDIT_EXPORT_KEYS } from "./counterauditKeys";
-import { FURNISH_CONNECTOR_ID, isRecord, verifyLineTombstone } from "./outcomeProof";
+import { FURNISH_CONNECTOR_ID, isRecord, verifyCounterauditSignature } from "./outcomeProof";
 import { packetHashProblem } from "./packetHash";
 import { evidenceDigest } from "./reviewDecision";
-import { call, counterauditBase, readCheckpoint, type Fetch, type Head } from "./reviewLogSync";
+import { CHAIN_START, call, counterauditBase, readCheckpoint, type Fetch, type Head } from "./reviewLogSync";
 
 export const EVIDENCE_SCHEMA = "agent-bureau/evidence-result/v1";
 export const EVIDENCE_CONNECTOR_ID = "agent-bureau-evidence-v1";
@@ -20,6 +20,7 @@ export const EVIDENCE_CONNECTOR_ID = "agent-bureau-evidence-v1";
 const FURNISHER_ID = /^fur_[a-z0-9]{6,32}$/;
 const EVENT_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const HASH = /^[0-9a-f]{64}$/;
+const ERASURE_STATEMENT = "counteraudit.packet_erasure_statement";
 const TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE = 100;
@@ -109,7 +110,7 @@ export type SealedEvidence = { packetId: string; sequence: number; record: Evide
 export type SealedDispute = { packetId: string; sequence: number; sealedAt: Date; record: unknown };
 
 /** A dispute record CounterAudit erased, with when it says the packet was sealed and erased. */
-export type ErasedDispute = { packetId: string; sealedAt: Date | null; erasedAt: Date | null };
+export type ErasedDispute = { packetId: string; kind: unknown; retentionMonths: unknown; erasedAt: Date | null };
 
 /** A furnisher's signed event as CounterAudit sealed it, having checked its signature. */
 export type SealedLine = { packetId: string; sequence: number; sealedAt: Date; event: Record<string, unknown> };
@@ -141,11 +142,11 @@ export async function readEvidenceSeals(options: {
  * packet must sit at its place in that walk or after the head. Only what the walk reaches counts:
  * nothing signed anchors a packet after the head, and the next read's head will cover it if it is real.
  *
- * An erased packet's verify route answers 410 with the tombstone CounterAudit signed when it erased
- * it, which must name this organization and packet, and the entry hash and previous hash the listing
- * gives for it (a tombstone signed before they named the previous hash leaves that to the listing).
- * Without one anything could be hidden by calling it erased. Its connector and seal time are the
- * listing's word, and the listing must say it is erased only of a packet the verify route agrees is.
+ * An erased packet's verify route answers 410 with a statement CounterAudit signed from its erasure
+ * record, which must name this organization and packet. Everything about the packet comes from
+ * that, not the listing: its place, hashes and connector, how it went, and how long it was sealed to
+ * be kept. Without one anything could be hidden by calling it erased, or put below it. The listing
+ * must say a packet is erased only of one the verify route agrees is.
  * Erased seals are left out, but only while each is below every seal still held, as when the
  * retention policy erases the oldest first: otherwise an older seal could stand in for a newer one
  * that was erased, so nothing is read. Anything else that cannot be read stops the reading too.
@@ -177,16 +178,8 @@ export async function readBureauOrganization(options: {
   if (!signed.ok) return { problem: signed.problem };
   const head = signed.head;
 
-  // Every packet id, with what the listing says of it, used only for an erased packet.
-  const listed: {
-    id: string;
-    erased: boolean;
-    connector: unknown;
-    prevHash: unknown;
-    entryHash: unknown;
-    createdAt: unknown;
-    expiredAt: unknown;
-  }[] = [];
+  // Every packet id, and whether the listing calls it erased.
+  const listed: { id: string; erased: boolean }[] = [];
   let cursor: string | null = null;
   for (let page = 0; ; page++) {
     if (page === MAX_PAGES) return { problem: "the organization has more packets than one read lists" };
@@ -199,15 +192,7 @@ export async function readBureauOrganization(options: {
       if (!isRecord(p) || typeof p.packet_id !== "string" || !UUID.test(p.packet_id)) {
         return { problem: "CounterAudit listed a packet without a packet id" };
       }
-      listed.push({
-        id: p.packet_id,
-        erased: Boolean(p.expired_at),
-        connector: p.connector_id,
-        prevHash: p.prev_hash,
-        entryHash: p.entry_hash,
-        createdAt: p.created_at,
-        expiredAt: p.expired_at,
-      });
+      listed.push({ id: p.packet_id, erased: Boolean(p.expired_at) });
     }
     const next = got.body.next_cursor;
     if (typeof next !== "string" || next === "") break;
@@ -225,8 +210,10 @@ export async function readBureauOrganization(options: {
     erased: boolean;
     record?: unknown;
     createdAt?: unknown;
-    // For an erased packet, the listing's word on when it was erased.
+    // For an erased packet, from its signed statement.
     expiredAt?: unknown;
+    kind?: unknown;
+    retentionMonths?: unknown;
   };
   const byEntryHash = new Map<string, Node>();
   const seenIds = new Set<string>();
@@ -236,31 +223,30 @@ export async function readBureauOrganization(options: {
     const got = await call(fetchImpl, `${base}/v1/audit/verify/${p.id}`, options.readKey);
     let node: Node;
     if (got.status === 410) {
-      if (typeof p.prevHash !== "string" || !HASH.test(p.prevHash) || typeof p.entryHash !== "string" || !HASH.test(p.entryHash)) {
-        return { problem: `CounterAudit listed erased packet ${p.id} without its hashes` };
-      }
-      const tombstone = isRecord(got.body) && isRecord(got.body.signed_tombstone) ? got.body.signed_tombstone : {};
-      const sequence = typeof tombstone.sequence === "number" ? tombstone.sequence : null;
-      const signed = verifyLineTombstone({
-        tombstone,
-        jwks: COUNTERAUDIT_EXPORT_KEYS,
-        packetId: p.id,
-        orgId: options.orgId,
-        sequence,
-        entryHash: p.entryHash,
-      });
-      if (!signed.ok || (tombstone.prev_hash !== undefined && tombstone.prev_hash !== p.prevHash)) {
-        return { problem: `CounterAudit says packet ${p.id} is erased, without a tombstone it signed that shows it` };
+      const statement = isRecord(got.body) && isRecord(got.body.signed_statement) ? got.body.signed_statement : {};
+      const { signature, ...stated } = statement;
+      if (
+        !verifyCounterauditSignature(stated, signature, COUNTERAUDIT_EXPORT_KEYS).valid ||
+        stated.statement_type !== ERASURE_STATEMENT ||
+        stated.statement_version !== 1 ||
+        stated.org_id !== options.orgId ||
+        stated.packet_id !== p.id ||
+        typeof stated.sequence !== "number" ||
+        typeof stated.prev_hash !== "string" || !HASH.test(stated.prev_hash) ||
+        typeof stated.entry_hash !== "string" || !HASH.test(stated.entry_hash)
+      ) {
+        return { problem: `CounterAudit says packet ${p.id} is erased, without a statement it signed that shows it` };
       }
       node = {
         id: p.id,
-        prevHash: p.prevHash,
-        entryHash: p.entryHash,
-        connector: p.connector,
-        sequence,
+        prevHash: stated.prev_hash,
+        entryHash: stated.entry_hash,
+        connector: stated.connector_id,
+        sequence: stated.sequence,
         erased: true,
-        createdAt: p.createdAt,
-        expiredAt: tombstone.expired_at,
+        expiredAt: stated.expired_at,
+        kind: stated.kind,
+        retentionMonths: stated.retention_months,
       };
     } else {
       if (p.erased) return { problem: `CounterAudit lists packet ${p.id} as erased, but its verify route holds it` };
@@ -316,6 +302,9 @@ export async function readBureauOrganization(options: {
       placed.set(node.id, sequence);
       at = node.prevHash;
     }
+    if (at !== CHAIN_START) {
+      return { problem: "the chain to CounterAudit's signed head for the Bureau organization does not begin where a chain begins" };
+    }
   }
   const minHead = options.minHead ?? null;
   if (minHead && (!head || head.sequence < minHead.sequence)) {
@@ -355,7 +344,7 @@ export async function readBureauOrganization(options: {
     if (!placed.has(node.id)) continue;
     // Whether an erased dispute record went with its line is for storeSealedDisputes to judge.
     if (node.erased && node.connector === DISPUTE_CONNECTOR_ID) {
-      erasedDisputes.push({ packetId: node.id, sealedAt: dateOf(node.createdAt), erasedAt: dateOf(node.expiredAt) });
+      erasedDisputes.push({ packetId: node.id, kind: node.kind, retentionMonths: node.retentionMonths, erasedAt: dateOf(node.expiredAt) });
       continue;
     }
     if (!node.erased && node.connector === DISPUTE_CONNECTOR_ID) {
@@ -367,7 +356,6 @@ export async function readBureauOrganization(options: {
       continue;
     }
     if (node.erased) {
-      // An erased packet's connector is the listing's word; its place is the walk's.
       if (node.connector === EVIDENCE_CONNECTOR_ID) newestErased = Math.max(newestErased, placed.get(node.id) ?? Infinity);
       continue;
     }
