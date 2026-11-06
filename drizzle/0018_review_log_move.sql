@@ -11,3 +11,6 @@ CREATE TABLE `review_log_moves` (
 );
 --> statement-breakpoint
 ALTER TABLE `review_log_sync` ADD `orgId` varchar(36);
+--> statement-breakpoint
+-- A copy made before this migration holds the organization pinned when it runs (REVIEW_ORG_ID).
+UPDATE `review_log_sync` SET `orgId` = 'ad7b94fc-05be-45e6-9124-62f576f2d812' WHERE `id` = 1;

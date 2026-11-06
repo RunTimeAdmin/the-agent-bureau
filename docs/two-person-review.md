@@ -88,10 +88,10 @@ pnpm review approve-key --key ~/bureau-review.pem --reviewer rev_alice --request
 
 It says what the request does (for example "create a key with role ingest, labelled "rev_dave ingest", expiring in 90 days") and signs `agent-bureau/key-approval/v1` over the request's id, organization, operation and the SHA-256 of its payload. Read that line before handing anything back. The operator sends the file to `POST /v1/admin/keys/requests/:id/reviewer-approval`. CounterAudit takes it if it comes from a reviewer it counts as active, signed with their current key, and dated in the life of the request, and runs the request once it has as many different reviewers' approvals as it needs; an approval from a reviewer suspended or re-keyed since stops counting. An approval approves that request and nothing else.
 
-**Moving to a new review organization.** Only the organization pinned as `REVIEW_ORG_ID` in `server/reviewLog.ts` is read: `pnpm review sync`, `pnpm review head`, `pnpm file assemble`, `pnpm file subject` and `pnpm file verify` refuse any other, so a copy of the log sealed elsewhere counts for nothing. The Bureau's copy of the review log holds one organization's log, and the first read that reaches the whole log records which (`review_log_sync`, migration 0018). Going from the testnet genesis to independent reviewers, or to a new organization for any other reason, goes like this:
+**Moving to a new review organization.** Only the organization pinned as `REVIEW_ORG_ID` in `server/reviewLog.ts` is read: `pnpm review sync`, `pnpm review head`, `pnpm file assemble`, `pnpm file subject` and `pnpm file verify` refuse any other, so a copy of the log sealed elsewhere counts for nothing. `pnpm review submit` says so when a stale key seals a record in another organization. The Bureau's copy of the review log holds one organization's log, and the first read that reaches the whole log records which (`review_log_sync`, migration 0018, which records the existing copy as the testnet organization's). Going from the testnet genesis to independent reviewers, or to a new organization for any other reason, goes like this:
 
-1. The new reviewers make new keys and seal a genesis in the new organization, as above. With new keys, nothing signed for the old log can be sealed into the new one, and the genesis has another hash than the one pinned now.
-2. A pull request sets `REVIEW_GENESIS` to that hash and `REVIEW_ORG_ID` to the organization, each reviewer checks both in it, and it is deployed. `TESTNET_GENESIS` is never edited: with the pin left on it, an edit would let the operator-held reviewers' decisions count for live data. From here the old log counts for nothing, so nothing new is released until the move.
+1. The new reviewers make new keys and seal a genesis in the new organization, as above. With new keys, nothing signed for the old log can be sealed into the new one.
+2. A pull request sets `REVIEW_GENESIS` to its hash and `REVIEW_ORG_ID` to the organization, each reviewer checks both in it, and it is deployed. `TESTNET_GENESIS` is never edited: with the pin left on it, an edit would let the operator-held reviewers' decisions count for live data. From here the copy counts for nothing, whatever it holds, so nothing new is released until the move.
 3. The CounterAudit admin marks the new organization, as above. The setting is per organization.
 4. Where the Bureau runs, set `COUNTERAUDIT_REVIEW_ORG_ID` and `COUNTERAUDIT_REVIEW_READ_KEY` to the new organization's, and run:
 
@@ -99,11 +99,11 @@ It says what the request does (for example "create a key with role ingest, label
 pnpm review move
 ```
 
-It replaces the copy with the pinned organization's whole log, in one transaction, and settles every line. It refuses while the pinned genesis counts in the log held here, and unless it counts in the new one, so no move happens without the public pull request. It refuses a copy with no organization recorded, since the head it reached could not be kept: a `pnpm review sync` before the pin changes records it. It refuses if the copy changes while it runs. Going back to an organization is held to the head the copy had reached there (`review_log_moves`). CounterAudit keeps the old packets.
+It replaces the copy with the pinned organization's whole log, in one transaction, and settles every line. It goes only to the pinned organization, so no move happens without the pull request, and only once the pinned genesis counts in that log. It refuses a copy holding packets with no organization recorded, since the head it reached could not be kept, and it refuses if the copy changes while it runs. Going back to an organization is held to the head the copy had reached there (`review_log_moves`). CounterAudit keeps the old packets.
 
 5. Set `COUNTERAUDIT_REVIEW_MIN_HEAD` to the head it prints, wherever `pnpm file verify --current` runs, and have each reviewer point their own keys at the new organization.
 
-Only what is in the new log counts after that. Reviewers sign any decision that should stand and admit furnishers again, which starts their probation again. A file assembled before the move names the old organization, so a check with a review key fails: assemble a new file.
+Only what is in the new log counts after that. Reviewers sign any decision that should stand and admit furnishers again, which starts their probation again. A file assembled before the move names the old organization, so `pnpm file verify` fails it: assemble a new file.
 
 ## Steps
 

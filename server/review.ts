@@ -525,8 +525,16 @@ async function submit(args: string[], io: ReviewIO): Promise<number> {
     io.log(`Not sealed: ${sealed.reason}.`);
     return 1;
   }
+  // A stale key seals in another organization, and the reviewer must hear that it does not count.
+  const sealedIn = isRecord(sealed.receipt) ? sealed.receipt.org_id : undefined;
+  const elsewhere = typeof sealedIn === "string" && pinnedOrgProblem(sealedIn) !== null;
+  if (elsewhere) {
+    io.log(
+      `THIS DOES NOT COUNT: your ingest key sealed it in organization ${JSON.stringify(sealedIn)}, not the review organization pinned in server/reviewLog.ts. Get a key to that organization and submit it again.`
+    );
+  }
   io.log(
-    `${sealed.created ? "Sealed" : "Already sealed"} in the review log: packet ${sealed.packetId}${sealed.sequence === null ? "" : `, sequence ${sealed.sequence}`}. Once the operator syncs, pnpm review queue lists it there.`
+    `${sealed.created ? "Sealed" : "Already sealed"} in ${elsewhere ? "that organization" : "the review log"}: packet ${sealed.packetId}${sealed.sequence === null ? "" : `, sequence ${sealed.sequence}`}. Once the operator syncs, pnpm review queue lists it there.`
   );
   // CounterAudit's signed receipt, the reviewer's proof of where it was sealed.
   const receiptFile = `${args[0]}.receipt.json`;
@@ -537,7 +545,7 @@ async function submit(args: string[], io: ReviewIO): Promise<number> {
   } catch (error) {
     io.log(`Cannot write ${receiptFile} (${describeError(error)}). The receipt, to keep:\n${receipt}`);
   }
-  return 0;
+  return elsewhere ? 1 : 0;
 }
 
 // Control, format and line-separator characters (an escape sequence, a bidi override) could
@@ -781,6 +789,7 @@ async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
   const sync = await getReviewLogSync();
   const held = log.readTo === null ? 0 : log.readTo + 1;
   const org = sync?.orgId ? [`Review organization: ${sync.orgId}.`] : [];
+  const movedOn = sync?.orgId && pinnedOrgProblem(sync.orgId);
   const when = (at: Date) => {
     const hours = Math.floor((now.getTime() - at.getTime()) / 3_600_000);
     return `${at.toISOString()} (${hours < 1 ? "under an hour" : `${hours} hour${hours === 1 ? "" : "s"}`} ago)`;
@@ -792,6 +801,7 @@ async function describeSync(log: ReviewLog, now: Date): Promise<string[]> {
       ? "CounterAudit's head: no complete listing recorded yet."
       : `CounterAudit's head: ${sync.listedCount} packet${sync.listedCount === 1 ? "" : "s"} listed${sync.listedCount > 0 ? ` (sequence ${sync.listedCount - 1})` : ""} at ${sync.listedAt.toISOString()}; ${held} held here.`,
   ];
+  if (movedOn) out.push("MOVED ON: the pin names another organization, so nothing in this copy counts; run pnpm review move.");
   if (sync.problem) out.push(`STOPPED at the last sync: ${sync.problem}. Nothing past it counts until it is resolved.`);
   if (sync.listedCount !== null && sync.listedCount > held) {
     out.push(`BEHIND: ${sync.listedCount - held} listed packet${sync.listedCount - held === 1 ? "" : "s"} not read here.`);
@@ -1035,10 +1045,10 @@ async function sync(io: ReviewIO) {
 /**
  * pnpm review move: replaces the Bureau's copy of the review log with the whole log of the pinned
  * organization, for a new genesis in a review organization of its own (docs/two-person-review.md).
- * It goes only to REVIEW_ORG_ID, and only from a log the pinned genesis does not count in to one it
- * does. So every move rests on a public pull request naming both, and a log cannot be swapped for
- * a copy of it that leaves out a decision. A return to an organization is held to the head the copy
- * had reached there.
+ * It goes only to REVIEW_ORG_ID, and only once the pinned genesis counts in that log. So every move
+ * rests on a public pull request naming the organization, and a log cannot be swapped for a copy of
+ * it that leaves out a decision. A return to an organization is held to the head the copy had
+ * reached there.
  */
 async function moveCommand(io: ReviewIO): Promise<number> {
   const missing = [
@@ -1065,12 +1075,6 @@ async function moveCommand(io: ReviewIO): Promise<number> {
   if (from === null && packets > 0) {
     io.log(
       "Not moved: no organization is recorded for the log held here, so the head it reached could not be kept. Run pnpm review sync from the deployment that pins that organization, which records it."
-    );
-    return 1;
-  }
-  if ((await loadReviewLog()).reviewers) {
-    io.log(
-      `Not moved: the pinned genesis has taken effect in the log held here. A move needs a new genesis: change REVIEW_GENESIS and REVIEW_ORG_ID by pull request first, so a log cannot be swapped for one that leaves out a decision.`
     );
     return 1;
   }

@@ -609,7 +609,15 @@ describe("pnpm file assemble and the review log", () => {
     const plain = fileIO(counterAudit(approved()));
     plain.files["one.json"] = files["one.json"];
     expect(await runFile(["verify", "one.json"], plain.io)).not.toBe(0);
-    expect(plain.out.join("\n")).toContain(`Review log: FAILED: the file names organization ${REVIEW_ORG}, not the review organization`);
+    expect(plain.out.join("\n")).toContain(`Review log: FAILED: the file names organization ${REVIEW_ORG}, not the review organization pinned`);
+    // Nor does it take the file with no key to read the log.
+    const key = process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    delete process.env.COUNTERAUDIT_REVIEW_READ_KEY;
+    const keyless = fileIO(counterAudit(approved()));
+    keyless.files["one.json"] = files["one.json"];
+    expect(await runFile(["verify", "one.json"], keyless.io)).not.toBe(0);
+    expect(keyless.out.join("\n")).toContain("Review log: FAILED");
+    process.env.COUNTERAUDIT_REVIEW_READ_KEY = key;
 
     const current = fileIO(counterAudit(approved()));
     current.files["one.json"] = files["one.json"];

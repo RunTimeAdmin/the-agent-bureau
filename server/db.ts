@@ -1015,6 +1015,10 @@ export async function insertReviewLogRecords(rows: InsertReviewLogRecord[], orgI
   if (rows.length === 0) return 0;
   const db = await requireDb();
   return db.transaction(async tx => {
+    await tx
+      .insert(reviewLogSync)
+      .values({ id: 1, lastAttemptAt: rows[0].readAt })
+      .onDuplicateKeyUpdate({ set: { id: sql`${reviewLogSync.id}` } });
     const [sync] = await tx
       .select({ orgId: reviewLogSync.orgId })
       .from(reviewLogSync)

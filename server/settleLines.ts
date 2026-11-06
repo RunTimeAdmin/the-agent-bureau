@@ -48,9 +48,12 @@ function linkedRecords(rows: ReviewLogRecordRow[]): ReviewLogRecordRow[] {
  * The review log as stored by pnpm review sync, with its rules applied. Only
  * what reviewers sealed there counts; nothing the operator hands over does.
  * Only the run of packets linked from sequence 0 is read: a stored packet
- * missing or out of place stops it there, as a gap stops pnpm review sync.
+ * missing or out of place stops it there, as a gap stops pnpm review sync. A copy the pin has moved
+ * on from counts for nothing, whatever it holds, until pnpm review move replaces it.
  */
 export async function loadReviewLog(): Promise<ReviewLog> {
+  const held = (await getReviewLogSync())?.orgId ?? null;
+  if (held !== null && pinnedOrgProblem(held)) return replayLinked([]);
   return replayLinked(linkedRecords(await listReviewLogRecords()));
 }
 

@@ -1939,6 +1939,13 @@ async function checkReviewLog(
     ? signed.review_log
     : null;
   if (!stated) return 0;
+  // With or without a key to read it: a file from outside the pinned organization is not from the log.
+  if (pinnedOrgProblem(String(stated.org_id))) {
+    io.log(
+      `Review log: FAILED: the file names organization ${printable(String(stated.org_id))}, not the review organization pinned in server/reviewLog.ts`
+    );
+    return 1;
+  }
   if (!ENV.counterauditReviewOrgId || !ENV.counterauditReviewReadKey) {
     io.log(
       "Review log: not checked against CounterAudit (needs COUNTERAUDIT_REVIEW_ORG_ID and COUNTERAUDIT_REVIEW_READ_KEY)"
@@ -1962,7 +1969,7 @@ async function checkReviewLog(
     failed++;
     io.log(`Review log: FAILED: ${printable(what)}`);
   };
-  if (stated.org_id !== ENV.counterauditReviewOrgId || pinnedOrgProblem(ENV.counterauditReviewOrgId)) {
+  if (stated.org_id !== ENV.counterauditReviewOrgId) {
     fail(
       `the file names organization ${stated.org_id}, not the review organization`
     );

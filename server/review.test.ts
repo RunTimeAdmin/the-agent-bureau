@@ -1267,6 +1267,29 @@ describe("pnpm review admit, revoke-admission and admissions", () => {
   });
 });
 
+describe("pnpm review submit and the pinned organization", () => {
+  const OTHER = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const answer = (org: string) => async () =>
+    Response.json({ packet_id: idOf(4), sequence: 4, receipt: { packet_id: idOf(4), org_id: org } }, { status: 201 });
+  const files = () => ({ "d.json": JSON.stringify(decision("alice")) });
+
+  it("says so, and exits 1, when a stale key sealed it in another organization", async () => {
+    const { io, written, printed } = fakeIO(files(), answer(OTHER));
+    expect(await runReview(["submit", "d.json"], io)).toBe(1);
+    expect(printed()).toContain(`THIS DOES NOT COUNT: your ingest key sealed it in organization "${OTHER}"`);
+    expect(printed()).toContain(`Sealed in that organization: packet ${idOf(4)}`);
+    expect(printed()).not.toContain("in the review log");
+    // The receipt is still the reviewer's proof of where it went.
+    expect(JSON.parse(written["d.json.receipt.json"]).org_id).toBe(OTHER);
+  });
+
+  it("takes one sealed in the pinned organization", async () => {
+    const { io, printed } = fakeIO(files(), answer(ORG));
+    expect(await runReview(["submit", "d.json"], io)).toBe(0);
+    expect(printed()).toContain(`Sealed in the review log: packet ${idOf(4)}`);
+  });
+});
+
 describe("moving to a new review organization", () => {
   const NEW_ORG = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const NEW_TEAM = TEAM.map(r => ({ ...r, name: `${r.name} (independent)` }));
@@ -1424,23 +1447,45 @@ describe("moving to a new review organization", () => {
       expect(again.printed()).toContain("Read 0 new packets.");
     });
 
-    it("cannot swap a log for one that leaves out a rejection while its genesis is still pinned", async () => {
+    it("cannot swap a log for one that leaves out a rejection, with no pull request naming it", async () => {
       store.rows.push(row());
-      const rejected = [...genesis(), REJECTION()];
-      await onOldOrg(rejected);
+      await onOldOrg([...genesis(), REJECTION()]);
       const held = [...store.log];
-      // A pull request moves the organization alone, and every reviewer's key signs the same
-      // genesis again there, with no rejection.
-      pin.org = NEW_ORG;
+      // Every reviewer's key signs the same genesis again in another organization, with no rejection.
       vi.stubEnv("COUNTERAUDIT_REVIEW_ORG_ID", NEW_ORG);
-      const { io, printed } = fakeIO({}, inNewOrg([...genesis(), decision("alice")]));
+      const fork = inNewOrg([...genesis(), decision("alice")]);
+      const { io, printed } = fakeIO({}, fork);
 
       expect(await runReview(["move"], io)).toBe(1);
-      expect(printed()).toContain("Not moved: the pinned genesis has taken effect in the log held here");
-      expect(printed()).toContain("REVIEW_GENESIS");
+      expect(printed()).toContain(`Not moved: organization ${NEW_ORG} is not the review organization pinned`);
+      expect(fork).not.toHaveBeenCalled();
       expect(db.moveReviewLog).not.toHaveBeenCalled();
       expect(store.log).toEqual(held);
       expect(store.sync!.orgId).toBe(ORG);
+      expect(store.rows[0].displayState).not.toBe("released");
+    });
+
+    it("counts nothing in a copy the pin has left, and cannot be wedged by what was sealed there", async () => {
+      store.rows.push(row());
+      // During the ceremony the new genesis and a decision are sealed into the old organization too.
+      const old = [...genesis(), ...newGenesis(), decision("alice")];
+      await onOldOrg(old);
+      toNewOrg();
+
+      // Under the new pin that log would count, had it not been left behind.
+      const settled = fakeIO();
+      expect(await runReview(["settle"], settled.io)).toBe(0);
+      expect(store.rows[0].displayState).not.toBe("released");
+      const queue = fakeIO();
+      expect(await runReview(["queue"], queue.io)).toBe(0);
+      expect(queue.printed()).toContain("MOVED ON: the pin names another organization");
+      expect(queue.printed()).toContain("No genesis has taken effect");
+
+      // And the move still goes through, to the log the pull request named.
+      const { io } = fakeIO({}, inNewOrg(newGenesis()));
+      expect(await runReview(["move"], io)).toBe(0);
+      expect(store.sync!.orgId).toBe(NEW_ORG);
+      expect(store.log.map(r => r.packetId)).toEqual([0, 1, 2].map(n => idOf(1000 + n)));
       expect(store.rows[0].displayState).not.toBe("released");
     });
 
