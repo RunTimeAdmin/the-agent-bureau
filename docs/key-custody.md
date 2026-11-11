@@ -120,6 +120,9 @@ Head pins (`COUNTERAUDIT_MIN_HEAD`, `COUNTERAUDIT_REVIEW_MIN_HEAD`) are kept whe
 - [ ] A change to a pinned file needs an approver other than its author.
 - [ ] `/inbox` has a second factor or sits behind a stronger sign-in (`DEPLOYMENT.md`).
 - [ ] The operator's private list of signed files is in use.
+- [ ] An outside security audit of the release tag and the deployed configuration, including the evidence readers' contracts and chain settings as they are deployed (review of 11 November).
+- [ ] A written way for an outside verifier to get, keep, refresh and compare its own head pins for `pnpm file verify --current`, and readers told that a plain `pnpm file verify` checks signatures and proofs, not current standing.
+- [ ] A test that a dispute sealed after a file was issued changes what `pnpm file verify --current` reports.
 
 ## Limits
 
