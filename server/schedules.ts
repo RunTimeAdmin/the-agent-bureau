@@ -1,6 +1,9 @@
 import { runDispute } from "./disputeCommand";
+import { runGameExpiry } from "./gameExpiry";
 import { runLines } from "./lineExpiry";
 
+/** How often the server deletes abandoned games (server/gameExpiry.ts). */
+export const GAME_EXPIRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** How often the server runs pnpm dispute settle. */
 export const DISPUTE_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 /** How often the server runs pnpm dispute sync. */
@@ -122,6 +125,7 @@ export function jobStatus(expected: boolean, at: number = Date.now()) {
  * the seal. Hourly too, pnpm dispute settle, so a dispute the furnisher lets
  * lapse takes its line down, even while CounterAudit cannot be read. Daily, pnpm
  * lines expire, so a line goes with its CounterAudit source (docs/agent-file.md).
+ * Daily too, games expire, so a game nobody finishes does not stay forever.
  * Returns a function that stops them.
  */
 export function startSchedules(): () => void {
@@ -129,6 +133,7 @@ export function startSchedules(): () => void {
     runEvery("dispute sync", () => runDispute(["sync"]), DISPUTE_SYNC_INTERVAL_MS),
     runEvery("dispute settle", () => runDispute(["settle"]), DISPUTE_SETTLE_INTERVAL_MS),
     runEvery("lines expire", () => runLines(["expire"]), LINE_EXPIRY_INTERVAL_MS),
+    runEvery("games expire", runGameExpiry, GAME_EXPIRY_INTERVAL_MS),
   ];
   return () => stops.forEach(stop => stop());
 }

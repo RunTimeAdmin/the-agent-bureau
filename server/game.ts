@@ -31,6 +31,11 @@ export const DAILY_QUESTION_LIMIT = { humans: 1500, agents: 500 };
 // reserved in one place (server/game.ts imports nothing from agentApi.ts).
 export const AGENT_QUESTIONS_PER_DAY = 120;
 export const AGENT_GAMES_PER_DAY = 10;
+// Browser games started per day, across every address and every instance of the
+// server. A start costs no model call but writes a row, so without this a caller
+// with many addresses could fill the plays table (review AB-01, 11 November).
+// One a question is the most a day of questions can use.
+export const HUMAN_GAMES_PER_DAY = DAILY_QUESTION_LIMIT.humans;
 export const CLOSED_FOR_TODAY =
   "The Bureau is closed for today. Come back tomorrow.";
 
@@ -186,7 +191,16 @@ export async function startGame(
   }
   const playId = randomBytes(16).toString("hex");
   if (player.agentId === null) {
-    await createPlay(playId, caseId, null);
+    // Reserved atomically in the database, so it holds across restarts and instances.
+    if (!(await reserveDaily(day, "human-games", HUMAN_GAMES_PER_DAY))) {
+      throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: CLOSED_FOR_TODAY });
+    }
+    try {
+      await createPlay(playId, caseId, null);
+    } catch (error) {
+      await releaseDaily(day, "human-games");
+      throw error;
+    }
     return playId;
   }
   // Reserve a game slot atomically so parallel starts cannot exceed the cap.

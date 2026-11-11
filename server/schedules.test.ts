@@ -5,6 +5,7 @@ import { jobStatus, RETRY_MS, runEvery, startSchedules } from "./schedules";
 
 vi.mock("./disputeCommand", () => ({ runDispute: vi.fn(async () => 0) }));
 vi.mock("./lineExpiry", () => ({ runLines: vi.fn(async () => 0) }));
+vi.mock("./gameExpiry", () => ({ runGameExpiry: vi.fn(async () => 0) }));
 
 describe("startSchedules", () => {
   afterEach(() => vi.useRealTimers());
@@ -20,7 +21,7 @@ describe("startSchedules", () => {
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(runs()).toEqual(["settle", "settle", "sync", "sync"]);
     expect(runLines).toHaveBeenCalledTimes(1);
-    expect(Object.keys(jobStatus(true).jobs).sort()).toEqual(["dispute settle", "dispute sync", "lines expire"]);
+    expect(Object.keys(jobStatus(true).jobs).sort()).toEqual(["dispute settle", "dispute sync", "games expire", "lines expire"]);
     stop();
     expect(jobStatus(false).jobs).toEqual({});
   });
