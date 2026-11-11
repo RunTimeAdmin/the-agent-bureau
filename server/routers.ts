@@ -12,6 +12,7 @@ import {
   listAgents,
   listFinishedPlays,
   listInquiries,
+  reserveDaily,
   setAgentHidden,
   updateInquiryStatus,
 } from "./db";
@@ -24,6 +25,7 @@ import {
   questionSchema,
   startGame,
   suspectSchema,
+  utcDayKey,
   type Player,
 } from "./game";
 import { buildScoreboard } from "./scoreboard";
@@ -73,6 +75,10 @@ const inquiryRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
 });
+// Inquiries stored per day, across every address and every instance, counted in
+// the database. The limiter above is per process, so it alone could not stop a
+// caller with many addresses from filling the inbox (review AB-01, 11 November).
+export const INQUIRIES_PER_DAY = 200;
 // Operator sign-in: 10 attempts per 15 minutes from one address, and 50 from
 // all addresses together, so spreading guesses over many addresses buys little.
 // Counted in the database (consumeLoginAttempt), which holds across restarts
@@ -195,6 +201,13 @@ export const appRouter = router({
         const reference = generateInquiryReference();
         if (input.website) {
           return { success: true, reference } as const;
+        }
+        if (!(await reserveDaily(utcDayKey(), "inquiries", INQUIRIES_PER_DAY))) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message:
+              "The Bureau has taken all the inquiries it can for today. Please try again tomorrow.",
+          });
         }
 
         await createInquiry({

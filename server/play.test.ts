@@ -27,7 +27,7 @@ vi.mock("./interrogate", () => ({
 
 import { suspectIds } from "@shared/case001";
 import { CASE_001_MOLE, suspectPrompt, WITHHELD_REPLY } from "./cases/case001";
-import { DAILY_QUESTION_LIMIT } from "./game";
+import { DAILY_QUESTION_LIMIT, HUMAN_GAMES_PER_DAY } from "./game";
 import { appRouter, resetInquiryRateLimiter } from "./routers";
 
 const PLAY_ID = "0123456789abcdef0123456789abcdef";
@@ -95,6 +95,31 @@ describe("play.start", () => {
     });
     const neighbour = appRouter.createCaller(createContext("203.0.113.10"));
     await expect(neighbour.play.start()).resolves.toHaveProperty("playId");
+  });
+
+  // Review AB-01: the per-address limit lives in one process, so every browser
+  // start is also counted against one daily total held in the database.
+  it("counts every browser start against one daily total in the database", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-11T09:00:00Z") });
+    const caller = appRouter.createCaller(createContext());
+    await caller.play.start();
+    expect(db.reserveDaily).toHaveBeenCalledWith("2026-11-11", "human-games", HUMAN_GAMES_PER_DAY);
+
+    db.reserveDaily.mockResolvedValue(false);
+    const other = appRouter.createCaller(createContext("198.51.100.99"));
+    await expect(other.play.start()).rejects.toMatchObject({
+      code: "TOO_MANY_REQUESTS",
+      message: "The Bureau is closed for today. Come back tomorrow.",
+    });
+    expect(db.createPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the start back when the game cannot be stored", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-11T09:00:00Z") });
+    db.createPlay.mockRejectedValue(new Error("database unreachable"));
+    const caller = appRouter.createCaller(createContext());
+    await expect(caller.play.start()).rejects.toThrow();
+    expect(db.releaseDaily).toHaveBeenCalledWith("2026-11-11", "human-games");
   });
 });
 

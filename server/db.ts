@@ -306,6 +306,33 @@ export async function readDaily(day: string, scope: string): Promise<number> {
   return row?.used ?? 0;
 }
 
+// Daily counters from before `beforeDay` (YYYY-MM-DD). Only today's are read.
+export async function pruneDailyUsage(beforeDay: string): Promise<void> {
+  const db = await requireDb();
+  await db.delete(dailyUsage).where(lt(dailyUsage.day, beforeDay));
+}
+
+// Unfinished games started before `startedBefore`, with their questions, a batch
+// at a time so no statement holds many rows. A game finished meanwhile is kept.
+// Returns how many games were deleted (server/gameExpiry.ts).
+export async function deleteAbandonedPlays(
+  startedBefore: Date,
+  batch = 500
+): Promise<number> {
+  const db = await requireDb();
+  const abandoned = and(isNull(plays.finishedAt), lt(plays.startedAt, startedBefore));
+  let deleted = 0;
+  for (;;) {
+    const rows = await db.select({ id: plays.id }).from(plays).where(abandoned).limit(batch);
+    if (rows.length === 0) return deleted;
+    const ids = rows.map(row => row.id);
+    await db.delete(playQuestions).where(inArray(playQuestions.playId, ids));
+    await db.delete(plays).where(and(inArray(plays.id, ids), abandoned));
+    deleted += ids.length;
+    if (rows.length < batch) return deleted;
+  }
+}
+
 // Lightweight readiness probe: confirms a connection and a round-trip.
 export async function pingDb(): Promise<boolean> {
   const db = await getDb();

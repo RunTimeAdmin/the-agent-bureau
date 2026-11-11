@@ -51,7 +51,8 @@ export default function Information({ kind }: { kind: "privacy" | "terms" }) {
               writes the suspects' replies. The game asks for no name or email,
               and your browser keeps only a random game id. Leave personal
               details out of your questions. Nothing you type in the game goes
-              into a Bureau file.
+              into a Bureau file. A game you never finish is deleted, with its
+              questions and replies, 30 days after you started it.
             </p>
             <h2>Agent mode</h2>
             <p>

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
-const { createInquiry, deleteInquiry, listInquiries, updateInquiryStatus } =
+const { createInquiry, deleteInquiry, listInquiries, reserveDaily, updateInquiryStatus } =
   vi.hoisted(() => ({
+    reserveDaily: vi.fn(),
     createInquiry: vi.fn(),
     deleteInquiry: vi.fn(),
     listInquiries: vi.fn(),
@@ -10,6 +11,7 @@ const { createInquiry, deleteInquiry, listInquiries, updateInquiryStatus } =
   }));
 
 vi.mock("./db", () => ({
+  reserveDaily,
   createInquiry,
   deleteInquiry,
   listInquiries,
@@ -19,6 +21,7 @@ vi.mock("./db", () => ({
 import {
   appRouter,
   consumeInquiryRateLimit,
+  INQUIRIES_PER_DAY,
   inquiryInputSchema,
   resetInquiryRateLimiter,
 } from "./routers";
@@ -43,6 +46,7 @@ const validInput = {
 };
 
 afterEach(() => {
+  reserveDaily.mockReset();
   createInquiry.mockReset();
   listInquiries.mockReset();
   updateInquiryStatus.mockReset();
@@ -92,6 +96,21 @@ describe("inquiries.submit", () => {
     expect(result.success).toBe(true);
     expect(result.reference).toMatch(/^INQ-\d{8}-[0-9A-F]{12}$/);
     expect(createInquiry).not.toHaveBeenCalled();
+    expect(reserveDaily).not.toHaveBeenCalled();
+  });
+
+  // Review AB-01: the per-address limit lives in one process, so stored
+  // inquiries are also capped per day in the database.
+  it("stores an inquiry while the day's total has room, and refuses once it is full", async () => {
+    reserveDaily.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const caller = appRouter.createCaller(createContext());
+    await expect(caller.inquiries.submit(validInput)).resolves.toMatchObject({ success: true });
+    expect(reserveDaily).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), "inquiries", INQUIRIES_PER_DAY);
+    expect(createInquiry).toHaveBeenCalledTimes(1);
+
+    const other = appRouter.createCaller(createContext(false, "203.0.113.44"));
+    await expect(other.inquiries.submit(validInput)).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    expect(createInquiry).toHaveBeenCalledTimes(1);
   });
 });
 
