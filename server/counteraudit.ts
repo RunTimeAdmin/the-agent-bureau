@@ -7,8 +7,12 @@ import { ENV } from "./_core/env";
 import { DISPUTE_CONNECTOR_ID } from "./dispute";
 import { EVIDENCE_CONNECTOR_ID } from "./evidenceSeal";
 import { FURNISH_CONNECTOR_ID, isRecord } from "./outcomeProof";
+import { readCappedText } from "./cappedBody";
 
 const TIMEOUT_MS = 15_000;
+// CounterAudit's answers are read up to this size. A larger one is not parsed and
+// reads as no answer, so every caller below fails closed on it.
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 // CounterAudit serves its export keys with Cache-Control: max-age=3600.
 
 function baseUrl(): string {
@@ -23,7 +27,8 @@ function describeError(error: unknown): string {
 
 async function readJson(res: Response): Promise<unknown> {
   try {
-    return await res.json();
+    const text = await readCappedText(res, MAX_RESPONSE_BYTES);
+    return text === null ? null : JSON.parse(text);
   } catch {
     return null;
   }
@@ -280,6 +285,13 @@ export async function fetchProof(packetId: string): Promise<ProofResult> {
   }
   const body = await readJson(res);
   if (res.status === 200 && isRecord(body)) return { ok: true, proof: body };
+  if (body === null) {
+    return {
+      ok: false,
+      status: res.status,
+      message: `CounterAudit's answer was not JSON of at most ${MAX_RESPONSE_BYTES} bytes`,
+    };
+  }
   if (res.status === 410 && isRecord(body)) {
     return {
       ok: false,

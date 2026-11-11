@@ -8,8 +8,12 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { cappedFetch } from "./cappedBody";
 import type { ChainReader } from "./evidence";
 import type { WalletState } from "./fundingScreen";
+
+// An RPC answer is read up to this size; a larger one fails the read (review of 11 November).
+const MAX_RPC_ANSWER_BYTES = 8 * 1024 * 1024;
 
 const LEVY_READS = parseAbi([
   "function subscriptions(uint256) view returns (address subscriber, uint256 planId, uint64 start, uint64 nextChargeAt, uint64 failedAttempts, uint256 credit, uint256 chargeCount, uint8 status)",
@@ -19,7 +23,7 @@ const LEVY_READS = parseAbi([
 /** A wallet's nonce and balance at a past block, for the funding screen. Needs a node that keeps old state, as Arc's public RPC does. */
 export function walletState(rpcUrl: string): WalletState {
   const client = createPublicClient({
-    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1 }),
+    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1, fetchFn: cappedFetch(MAX_RPC_ANSWER_BYTES) }),
   });
   return {
     nonceAt: (address, blockNumber) => client.getTransactionCount({ address, blockNumber }),
@@ -32,7 +36,7 @@ export function walletState(rpcUrl: string): WalletState {
 
 export function rpcReader(rpcUrl: string): ChainReader {
   const client = createPublicClient({
-    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1 }),
+    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1, fetchFn: cappedFetch(MAX_RPC_ANSWER_BYTES) }),
   });
   return {
     chainId: () => client.getChainId(),
