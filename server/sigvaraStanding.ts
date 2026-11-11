@@ -11,7 +11,11 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { cappedFetch } from "./cappedBody";
 import { isRecord, type CheckResult } from "./outcomeProof";
+
+// An RPC answer is read up to this size; a larger one fails the read (review of 11 November).
+const MAX_RPC_ANSWER_BYTES = 8 * 1024 * 1024;
 
 // Sigvara's deployment on Arc testnet (RunTimeAdmin/Sigvara,
 // deployments/5042002.json). Pinned by pull request: a file states what these
@@ -312,7 +316,7 @@ async function quietly<T>(what: string, run: () => Promise<T>): Promise<T> {
 /** Sigvara's contracts over JSON-RPC, read at a given block. */
 export function rpcSigvaraClient(rpcUrl: string): SigvaraClient {
   const client = createPublicClient({
-    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1 }),
+    transport: http(rpcUrl, { timeout: 10_000, retryCount: 1, fetchFn: cappedFetch(MAX_RPC_ANSWER_BYTES) }),
   });
   const read = <T>(
     address: string,

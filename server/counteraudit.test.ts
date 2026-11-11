@@ -168,4 +168,12 @@ describe("fetchProof", () => {
       message: "No public proof",
     });
   });
+
+  // Review of 11 November: an answer was parsed whatever its size.
+  it("refuses an answer larger than 4 MiB instead of parsing it", async () => {
+    const huge = JSON.stringify({ packet_id: "p", pad: "x".repeat(4 * 1024 * 1024) });
+    fetchMock.mockResolvedValueOnce(new Response(huge, { status: 200 }));
+    const result = await fetchProof("x");
+    expect(result).toMatchObject({ ok: false, status: 200 });
+  });
 });
