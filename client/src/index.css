@@ -4142,3 +4142,71 @@ button.case-board-label {
     visibility: hidden;
   }
 }
+
+/* The room a case is played in (GameRoom.tsx). */
+.game-room {
+  position: relative;
+  height: 0;
+  overflow: hidden;
+}
+.game-room.is-drawn {
+  height: clamp(124px, 12vw, 156px);
+  margin-bottom: 14px;
+  border: 1px solid var(--play-line);
+  border-radius: 10px;
+  background: #060d18;
+}
+.game-room canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.game-room canvas.is-pick {
+  cursor: pointer;
+}
+.game-room-name {
+  position: absolute;
+  transform: translate(-50%, 0);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: "Archivo", "Manrope", sans-serif;
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--play-dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.game-room:not(.is-drawn) .game-room-name {
+  display: none;
+}
+.game-room-name.is-lit {
+  color: var(--play-text);
+}
+.game-room-name.is-mole {
+  color: var(--play-red);
+}
+.game-room-name em {
+  min-height: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-stretch: 100%;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.play-verdict .game-room.is-drawn {
+  height: clamp(200px, 23vw, 260px);
+  margin-bottom: 26px;
+}
+@media (max-width: 520px) {
+  .game-room-name {
+    font-size: 9px;
+    font-stretch: 100%;
+  }
+}

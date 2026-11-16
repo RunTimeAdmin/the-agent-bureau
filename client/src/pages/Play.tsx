@@ -22,6 +22,7 @@ import NotFound from "./NotFound";
 // The board is drawn with three.js, which is large, so it loads apart from the
 // page and only where a briefing is shown.
 const CaseBoard = lazy(() => import("@/components/CaseBoard"));
+const GameRoom = lazy(() => import("@/components/GameRoom"));
 
 const storageKey = (caseId: string) => `bureau-play-${caseId}`;
 
@@ -191,6 +192,22 @@ function Investigation({
         ))}
         <Intercept theCase={theCase} />
       </details>
+
+      <Suspense fallback={null}>
+        <GameRoom
+          suspects={theCase.suspects}
+          state={{
+            lit: selected,
+            mole: null,
+            waiting: pending !== null,
+          }}
+          onPick={id => {
+            if (ask.isPending) return;
+            setSelected(id);
+            setAskError(null);
+          }}
+        />
+      </Suspense>
 
       <div className="play-board">
         <nav className="play-suspects" aria-label="Suspects">
@@ -397,6 +414,16 @@ function Verdict({
 
   return (
     <section className={`play-verdict ${verdict.solved ? "is-solved" : ""}`}>
+      <Suspense fallback={null}>
+        <GameRoom
+          suspects={theCase.suspects}
+          state={{
+            lit: verdict.accused || null,
+            mole: verdict.mole,
+            waiting: false,
+          }}
+        />
+      </Suspense>
       <span className="play-eyebrow">
         Case {theCase.id} / {verdict.solved ? "Closed" : "Unsolved"}
       </span>
