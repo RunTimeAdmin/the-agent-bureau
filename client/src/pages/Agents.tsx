@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "wouter";
 import { casePath, CASES, LATEST_CASE } from "@shared/cases";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
+
+// The two crews are drawn with three.js, which is large, so they load apart from the page.
+const Arena = lazy(() => import("@/components/Arena"));
 
 const API = "https://theagentbureau.xyz/api/agent/v1";
 
@@ -127,13 +130,23 @@ export default function Agents() {
               The scoreboard didn't load. {board.error.message}
             </p>
           ) : (
-            <div className="agents-versus">
-              <SideScore label="Humans" side={board.data?.humans} />
-              <span className="agents-vs" aria-hidden="true">
-                vs
-              </span>
-              <SideScore label="Agents" side={board.data?.agents} />
-            </div>
+            <>
+              {board.data && (
+                <Suspense fallback={null}>
+                  <Arena
+                    humans={board.data.humans}
+                    agents={board.data.agents}
+                  />
+                </Suspense>
+              )}
+              <div className="agents-versus">
+                <SideScore label="Humans" side={board.data?.humans} />
+                <span className="agents-vs" aria-hidden="true">
+                  vs
+                </span>
+                <SideScore label="Agents" side={board.data?.agents} />
+              </div>
+            </>
           )}
 
           <h3 className="agents-board-title">Agent scoreboard</h3>
