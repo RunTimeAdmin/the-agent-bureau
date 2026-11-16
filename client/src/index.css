@@ -3851,3 +3851,218 @@ img {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The board on a case's briefing page (CaseBoard.tsx). */
+.play-brief-wrap {
+  display: grid;
+  gap: 28px 40px;
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .play-main:has(.play-brief-wrap) {
+    max-width: 1320px;
+  }
+  .play-brief-wrap {
+    grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+  }
+  .case-board {
+    position: sticky;
+    top: 20px;
+  }
+}
+.case-board-room {
+  position: relative;
+  height: clamp(400px, 38vw, 500px);
+  border: 1px solid var(--play-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #060d18;
+}
+.case-board-room canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.case-board-room canvas.is-pick {
+  cursor: pointer;
+}
+.case-board-label {
+  position: absolute;
+  transform: translate(-50%, 0);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--play-dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+button.case-board-label {
+  pointer-events: auto;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.case-board-label.name:hover {
+  color: var(--play-neon);
+}
+.case-board-label.name {
+  font-family: "Archivo", "Manrope", sans-serif;
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--play-text);
+}
+.case-board-label.name.is-picked {
+  color: var(--play-neon);
+}
+.case-board-label.cut {
+  transform: translate(-50%, -100%);
+  font-size: 10px;
+  white-space: normal;
+  width: 74px;
+  text-align: center;
+  line-height: 1.25;
+}
+.case-board-label.end {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.case-board-label.time {
+  transform: translate(-50%, -100%);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #060d18e6;
+  color: var(--play-text);
+}
+.case-board-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.case-board-chips button {
+  padding: 5px 10px;
+  border: 1px solid var(--play-line);
+  border-radius: 4px;
+  background: transparent;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--play-dim);
+}
+.case-board-chips button:hover,
+.case-board-chips button.is-on {
+  border-color: var(--play-neon);
+  color: var(--play-neon);
+}
+.case-board-file {
+  min-height: 150px;
+  margin-top: 8px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--play-line);
+  background: var(--play-panel);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.case-board-file b {
+  display: block;
+  font-family: "Archivo", "Manrope", sans-serif;
+  font-stretch: 125%;
+  font-size: 18px;
+  letter-spacing: 0.03em;
+  color: var(--play-neon);
+}
+.case-board-file span,
+.case-board-file dt {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--play-dim);
+}
+.case-board-file dl {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 6px 12px;
+  margin: 10px 0 0;
+}
+.case-board-file dt {
+  padding-top: 3px;
+}
+.case-board-file dd,
+.case-board-file p {
+  margin: 0;
+  color: #c9d3e3;
+}
+.case-board-file p {
+  margin-top: 8px;
+}
+.case-board-file .case-board-hint {
+  margin: 0;
+  color: var(--play-dim);
+}
+@media (max-width: 520px) {
+  .case-board-room {
+    height: 360px;
+  }
+  .case-board-label.name {
+    font-size: 9px;
+    font-stretch: 100%;
+  }
+  .case-board-label.cut {
+    width: auto;
+  }
+}
+.case-board-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: #b4c1d6;
+}
+.case-board-key li::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.case-board-key .is-brief::before {
+  background: var(--play-text);
+}
+.case-board-key .is-intercept::before {
+  background: var(--play-red);
+}
+.case-board-key .is-dossier::before {
+  background: var(--play-neon);
+}
+.game .case-board-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b4c1d6;
+}
+.case-board-label.hour {
+  padding: 0 3px;
+  background: #060d18;
+}
+.case-board-label.cut {
+  transform: translate(-50%, -50%);
+  width: auto;
+  font-size: 11px;
+  color: var(--play-text);
+}
+@media (max-width: 520px) {
+  /* A picked time's label needs the room the two ends of the rail are named in. */
+  .is-tagged .case-board-label.end {
+    visibility: hidden;
+  }
+}

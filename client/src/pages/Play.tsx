@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "wouter";
 import {
   casePath,
@@ -11,6 +18,10 @@ import { shareText } from "@shared/share";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
 import { trpc } from "@/lib/trpc";
 import NotFound from "./NotFound";
+
+// The board is drawn with three.js, which is large, so it loads apart from the
+// page and only where a briefing is shown.
+const CaseBoard = lazy(() => import("@/components/CaseBoard"));
 
 const storageKey = (caseId: string) => `bureau-play-${caseId}`;
 
@@ -67,34 +78,46 @@ function Brief({
   starting: boolean;
   error: string | null;
 }) {
+  // The board needs a browser to draw in, so it joins the page after the
+  // prerendered briefing is on screen.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
-    <section className="play-brief">
-      <span className="play-eyebrow">Case {theCase.id} / Eyes only</span>
-      <h1>{theCase.title}</h1>
-      {theCase.brief.map(paragraph => (
-        <p key={paragraph}>{paragraph}</p>
-      ))}
-      <Intercept theCase={theCase} />
-      <p className="play-orders">{theCase.orders}</p>
-      <button
-        className="play-button"
-        onClick={onStart}
-        disabled={starting}
-        type="button"
-      >
-        {starting ? "Opening the case…" : "Open the case"}
-      </button>
-      {error && (
-        <p className="play-error" role="alert">
-          {error}
+    <div className="play-brief-wrap">
+      <section className="play-brief">
+        <span className="play-eyebrow">Case {theCase.id} / Eyes only</span>
+        <h1>{theCase.title}</h1>
+        {theCase.brief.map(paragraph => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+        <Intercept theCase={theCase} />
+        <p className="play-orders">{theCase.orders}</p>
+        <button
+          className="play-button"
+          onClick={onStart}
+          disabled={starting}
+          type="button"
+        >
+          {starting ? "Opening the case…" : "Open the case"}
+        </button>
+        {error && (
+          <p className="play-error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="play-fine">
+          The suspects are played by Claude, an AI model. Your questions are
+          stored with your game and sent to Anthropic to write the replies, so
+          leave personal details out of them.{" "}
+          <Link href="/privacy">Privacy</Link>
         </p>
+      </section>
+      {mounted && (
+        <Suspense fallback={null}>
+          <CaseBoard theCase={theCase} />
+        </Suspense>
       )}
-      <p className="play-fine">
-        The suspects are played by Claude, an AI model. Your questions are
-        stored with your game and sent to Anthropic to write the replies, so
-        leave personal details out of them. <Link href="/privacy">Privacy</Link>
-      </p>
-    </section>
+    </div>
   );
 }
 
