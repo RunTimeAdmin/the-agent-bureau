@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Fingerprint, Wallet, FileCheck2, ArrowUpRight } from "lucide-react";
 import { artwork } from "@/lib/bureau";
+
+// The file is drawn with three.js, which is large, so it loads apart from the page.
+const FileScene = lazy(() => import("@/components/FileScene"));
 const nodes = [
   {
     label: "OPERATOR",
@@ -26,8 +29,12 @@ const nodes = [
 ];
 export default function HeroVisual() {
   const [active, setActive] = useState(0);
+  // The file needs a browser to draw in, so it joins after the prerendered page is on screen.
+  const [mounted, setMounted] = useState(false);
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
-    <div className="hero-visual">
+    <div className={`hero-visual ${drawn ? "has-scene" : ""}`}>
       <img
         className="hero-art"
         src={artwork.hero}
@@ -42,6 +49,16 @@ export default function HeroVisual() {
         <span>{String(active + 1).padStart(2, "0")} / 03</span>
       </div>
       <div className="orbit-stage">
+        {mounted && (
+          <Suspense fallback={null}>
+            <FileScene
+              labels={nodes.map(node => node.label)}
+              active={active}
+              onPick={setActive}
+              onDrawn={setDrawn}
+            />
+          </Suspense>
+        )}
         <div className="orbital-ring ring-one" />
         <div className="orbital-ring ring-two" />
         <div className="orbital-ring ring-three" />
