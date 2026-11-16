@@ -4210,3 +4210,53 @@ button.case-board-label {
     font-stretch: 100%;
   }
 }
+
+/* The Bureau file in the hero (FileScene.tsx). Until it is drawn, the hero keeps its picture and rings. */
+.file-scene {
+  position: absolute;
+  inset: 0;
+}
+.file-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.file-scene canvas.is-pick {
+  cursor: pointer;
+}
+.hero-visual.has-scene .hero-art {
+  opacity: 0;
+}
+.hero-visual.has-scene .orbital-ring,
+.hero-visual.has-scene .orbit-center,
+.hero-visual.has-scene .orbit-paths {
+  display: none;
+}
+.hero-visual.has-scene .agent-node,
+.hero-visual.has-scene .agent-node:hover,
+.hero-visual.has-scene .agent-node.active {
+  transform: translate(-50%, -50%);
+  transition:
+    border-color 0.3s,
+    background 0.3s;
+}
+.hero-visual.has-scene .agent-node {
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .hero-visual.has-scene .agent-node {
+    gap: 6px;
+    min-height: 36px;
+    padding: 10px 9px;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+  }
+  .hero-visual.has-scene .agent-node svg {
+    width: 12px;
+    height: 12px;
+  }
+  .hero-visual.has-scene .agent-node .node-dot {
+    display: none;
+  }
+}
