@@ -3124,21 +3124,107 @@ img {
   font-size: 11px;
   color: var(--play-neon);
 }
-.home-exchange {
-  animation: home-in 0.6s ease 0.2s both;
+.home-exchange,
+.home-exchange .play-a {
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+}
+.home-exchange.is-waiting {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.home-exchange .play-a.is-waiting {
+  opacity: 0;
+}
+.home-file .is-untyped {
+  visibility: hidden;
 }
 .home-exchange + .home-exchange {
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px dashed var(--play-line);
-  animation-delay: 0.8s;
 }
 .home-file mark {
   padding-bottom: 2px;
   background: linear-gradient(var(--play-neon), var(--play-neon)) no-repeat 0
-    100% / 100% 2px;
+    100% / 0 2px;
   color: inherit;
-  animation: home-mark 0.6s ease 1.6s both;
+  transition: background-size 0.7s ease;
+}
+.home-file .is-marked mark {
+  background-size: 100% 2px;
+}
+.home-thread {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.home-thread path {
+  fill: none;
+  stroke: var(--play-red);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.home-replay {
+  position: absolute;
+  left: 22px;
+  bottom: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--play-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.home-replay:hover {
+  color: var(--play-neon);
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-replay {
+    display: none;
+  }
+}
+/* The room behind the headline (HeroRoom.tsx). */
+.home-hero-wrap {
+  position: relative;
+  /* The line-up stands in a band of its own under the headline and the card. */
+  padding-bottom: clamp(190px, 19vw, 240px);
+  overflow: hidden;
+}
+.home-hero-wrap .home-hero {
+  padding-bottom: 20px;
+}
+@media (min-width: 860px) {
+  .home-hero-wrap .home-hero {
+    padding-top: 64px;
+  }
+}
+.home-room {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(220px, 24vw, 300px);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  pointer-events: none;
+  mask-image: linear-gradient(transparent, #000 5%, #000 82%, transparent);
+}
+.home-room.is-drawn {
+  opacity: 1;
+}
+.home-room canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .home-stamp {
   position: absolute;
@@ -3156,25 +3242,15 @@ img {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
+  opacity: 0;
+  transform: rotate(-5deg) scale(1.4);
+  transition:
+    opacity 0.2s ease,
+    transform 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.is-stamped .home-stamp {
+  opacity: 1;
   transform: rotate(-5deg);
-  animation: home-stamp 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) 2.2s both;
-}
-@keyframes home-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-@keyframes home-mark {
-  from {
-    background-size: 0 2px;
-  }
-}
-@keyframes home-stamp {
-  from {
-    opacity: 0;
-    transform: rotate(-5deg) scale(1.4);
-  }
 }
 .home-section {
   border-top: 1px solid var(--play-line);

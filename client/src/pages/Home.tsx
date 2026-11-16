@@ -1,35 +1,12 @@
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "wouter";
 import { casePath, CASES, LATEST_CASE, type PublicCase } from "@shared/cases";
 import { GameFooter, GameHeader } from "@/components/GameChrome";
+import TrainingFile from "@/components/TrainingFile";
 
-// A made-up exchange that shows the core move of the game without giving
-// away anything from a real case.
-function TrainingFile() {
-  return (
-    <figure className="home-file" aria-labelledby="training-caption">
-      <figcaption id="training-caption">
-        <span>Training exercise</span>Two answers that can't both be true
-      </figcaption>
-      <div className="home-exchange">
-        <p className="play-q">ROOK, where were you at nine last night?</p>
-        <p className="play-a">
-          <b>ROOK</b> At the cinema on Rua Augusta, the 20:40 showing. I{" "}
-          <mark>stayed until the credits</mark>.
-        </p>
-      </div>
-      <div className="home-exchange">
-        <p className="play-q">FINCH, did you see ROOK last night?</p>
-        <p className="play-a">
-          <b>FINCH</b> Briefly. She <mark>came out of the cinema at nine</mark>,
-          before the film had even finished. She looked in a hurry.
-        </p>
-      </div>
-      <p className="home-stamp" aria-hidden="true">
-        Contradiction
-      </p>
-    </figure>
-  );
-}
+// The room behind the headline is drawn with three.js, which is large, so it
+// loads apart from the page.
+const HeroRoom = lazy(() => import("@/components/HeroRoom"));
 
 const [featured, ...older] = [...CASES].reverse();
 const nextCaseId = String(CASES.length + 1).padStart(3, "0");
@@ -70,6 +47,9 @@ function CaseCard({
 }
 
 export default function Home() {
+  // The room needs a browser to draw in, so it joins after the prerendered page is on screen.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <div className="game">
       <GameHeader>
@@ -85,30 +65,37 @@ export default function Home() {
       </GameHeader>
 
       <main>
-        <section className="home-hero">
-          <div>
-            <p className="home-kicker">An interrogation game</p>
-            <h1>
-              <span>Five suspects.</span>
-              <span>One mole.</span>
-              <span>Twelve questions.</span>
-            </h1>
-            <p className="home-lede">
-              Every suspect is an AI agent with a story to protect. Question
-              them, catch the lie, and name the mole before your questions run
-              out.
-            </p>
-            <div className="home-actions">
-              <Link href={casePath(LATEST_CASE.id)} className="play-button">
-                Open Case {LATEST_CASE.id}
-              </Link>
-              <a href="#how" className="home-link">
-                How a case works
-              </a>
+        <div className="home-hero-wrap">
+          {mounted && (
+            <Suspense fallback={null}>
+              <HeroRoom />
+            </Suspense>
+          )}
+          <section className="home-hero">
+            <div>
+              <p className="home-kicker">An interrogation game</p>
+              <h1>
+                <span>Five suspects.</span>
+                <span>One mole.</span>
+                <span>Twelve questions.</span>
+              </h1>
+              <p className="home-lede">
+                Every suspect is an AI agent with a story to protect. Question
+                them, catch the lie, and name the mole before your questions run
+                out.
+              </p>
+              <div className="home-actions">
+                <Link href={casePath(LATEST_CASE.id)} className="play-button">
+                  Open Case {LATEST_CASE.id}
+                </Link>
+                <a href="#how" className="home-link">
+                  How a case works
+                </a>
+              </div>
             </div>
-          </div>
-          <TrainingFile />
-        </section>
+            <TrainingFile />
+          </section>
+        </div>
 
         <section className="home-section" id="how">
           <h2>How a case works</h2>
@@ -220,7 +207,10 @@ export default function Home() {
               <Link href="/bureau" className="play-button">
                 Visit The Agent Bureau
               </Link>
-              <Link href="/review-log" className="play-button play-button-ghost">
+              <Link
+                href="/review-log"
+                className="play-button play-button-ghost"
+              >
                 See the review log run
               </Link>
             </div>
