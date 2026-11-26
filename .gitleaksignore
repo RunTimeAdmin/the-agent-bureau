@@ -1,0 +1,6 @@
+# Findings checked by hand and known to be harmless. Format: commit:file:rule:line.
+# Secrets made up for the test file and never deployed.
+71d2099b3491502c40aeb2be9e5d41ae56ff4001:server/auth.test.ts:generic-api-key:20
+71d2099b3491502c40aeb2be9e5d41ae56ff4001:server/auth.test.ts:generic-api-key:21
+# A bur_test fixture key, matching no real key.
+7dd87cb5434d614dfbadab5f7257e6ddfb670908:server/agentApi.test.ts:generic-api-key:40
